@@ -62,7 +62,7 @@ confirm_uninstall() {
     return 0
   fi
 
-  if [ ! -t 1 ] || [ ! -r /dev/tty ]; then
+  if [ ! -r /dev/tty ] || [ ! -w /dev/tty ]; then
     die "Non-interactive mode requires --yes."
   fi
 
@@ -172,6 +172,11 @@ BEGIN { state = "normal" }
 
   print
 }
+END {
+  if (state != "normal") {
+    exit 1
+  }
+}
 ' "$rc_file" > "$tmp_file"; then
     rm -f "$tmp_file"
     warn "Could not parse PATH entries in $rc_file"
@@ -183,7 +188,14 @@ BEGIN { state = "normal" }
     return 0
   fi
 
-  if mv "$tmp_file" "$rc_file"; then
+  if [ -L "$rc_file" ]; then
+    if cat "$tmp_file" > "$rc_file"; then
+      rm -f "$tmp_file"
+      PATH_UPDATES=$((PATH_UPDATES + 1))
+      say "Cleaned PATH entries in $rc_file"
+      return 0
+    fi
+  elif mv "$tmp_file" "$rc_file"; then
     PATH_UPDATES=$((PATH_UPDATES + 1))
     say "Cleaned PATH entries in $rc_file"
     return 0
