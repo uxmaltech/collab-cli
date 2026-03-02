@@ -24,7 +24,7 @@
     "format": "prettier --check .",
     "format:write": "prettier --write .",
     "start": "node dist/index.js",
-    "test": "npm run build && node --test tests/**/*.test.mjs",
+    "test": "npm run build && node scripts/run-tests.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
