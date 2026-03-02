@@ -1,0 +1,82 @@
+export const infraTemplate = `services:
+  qdrant:
+    image: \${QDRANT_IMAGE}
+    container_name: collab-qdrant
+    ports:
+      - "\${QDRANT_PORT}:6333"
+    volumes:
+      - qdrant:/qdrant/storage
+    networks:
+      - collab
+
+  metad0:
+    image: "vesoft/nebula-metad:\${NEBULA_VERSION}"
+    container_name: nebula-metad0
+    ports:
+      - "\${NEBULA_METAD_PORT}:9559"
+      - "\${NEBULA_METAD_HTTP_PORT}:19559"
+    volumes:
+      - nebula-metad0:/usr/local/nebula/data/meta
+    command:
+      - nebula-metad
+      - --meta_server_addrs=metad0:9559
+      - --local_ip=metad0
+      - --ws_ip=metad0
+      - --port=9559
+      - --ws_http_port=19559
+      - --data_path=/usr/local/nebula/data/meta
+    networks:
+      - collab
+
+  storaged0:
+    image: "vesoft/nebula-storaged:\${NEBULA_VERSION}"
+    container_name: nebula-storaged0
+    depends_on:
+      - metad0
+    ports:
+      - "\${NEBULA_STORAGED_PORT}:9779"
+      - "\${NEBULA_STORAGED_HTTP_PORT}:19779"
+    volumes:
+      - nebula-storaged0:/usr/local/nebula/data/storage
+    command:
+      - nebula-storaged
+      - --meta_server_addrs=metad0:9559
+      - --local_ip=storaged0
+      - --ws_ip=storaged0
+      - --port=9779
+      - --ws_http_port=19779
+      - --data_path=/usr/local/nebula/data/storage
+    networks:
+      - collab
+
+  graphd:
+    image: "vesoft/nebula-graphd:\${NEBULA_VERSION}"
+    container_name: nebula-graphd
+    depends_on:
+      - metad0
+      - storaged0
+    ports:
+      - "\${NEBULA_GRAPHD_PORT}:9669"
+      - "\${NEBULA_GRAPHD_HTTP_PORT}:19669"
+    command:
+      - nebula-graphd
+      - --meta_server_addrs=metad0:9559
+      - --local_ip=graphd
+      - --ws_ip=graphd
+      - --port=9669
+      - --ws_http_port=19669
+    networks:
+      - collab
+
+networks:
+  collab:
+    name: \${COLLAB_NETWORK}
+
+volumes:
+  qdrant:
+    name: \${QDRANT_VOLUME}
+  nebula-metad0:
+    name: \${NEBULA_METAD_VOLUME}
+  nebula-storaged0:
+    name: \${NEBULA_STORAGED_VOLUME}
+`;
