@@ -1,0 +1,109 @@
+name: Promote Development to Main (FF Only)
+
+on:
+  pull_request_review:
+    types:
+      - submitted
+
+permissions:
+  contents: write
+  pull-requests: read
+  checks: read
+  statuses: read
+
+concurrency:
+  group: promote-main-ff-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    if: >
+      github.event.review.state == 'approved' &&
+      github.event.pull_request.base.ref == 'main' &&
+      github.event.pull_request.head.ref == 'development' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.state == 'open' &&
+      github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate approval and checks
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const { owner, repo } = context.repo;
+
+            const reviews = await github.paginate(github.rest.pulls.listReviews, {
+              owner,
+              repo,
+              pull_number: pr.number,
+              per_page: 100
+            });
+
+            const latestByUser = new Map();
+            for (const review of reviews) {
+              if (!review.user?.login) continue;
+              latestByUser.set(review.user.login, review.state);
+            }
+
+            const approvals = [...latestByUser.values()].filter((state) => state === "APPROVED").length;
+            const changesRequested = [...latestByUser.values()].filter((state) => state === "CHANGES_REQUESTED").length;
+            if (approvals < 1 || changesRequested > 0) {
+              core.setFailed(`Review gate failed (approvals=${approvals}, changes_requested=${changesRequested}).`);
+              return;
+            }
+
+            const checksResponse = await github.rest.checks.listForRef({
+              owner,
+              repo,
+              ref: pr.head.sha,
+              per_page: 100
+            });
+            const checkRuns = checksResponse.data.check_runs ?? [];
+            const pendingChecks = checkRuns.filter((check) => check.status !== "completed");
+            const failedChecks = checkRuns.filter((check) =>
+              check.status === "completed" &&
+              !["success", "neutral", "skipped"].includes(check.conclusion ?? "")
+            );
+
+            const statusResponse = await github.rest.repos.getCombinedStatusForRef({
+              owner,
+              repo,
+              ref: pr.head.sha
+            });
+            const statuses = statusResponse.data.statuses ?? [];
+            const failingStatuses = statuses.filter((status) => status.state !== "success");
+
+            if (pendingChecks.length > 0 || failedChecks.length > 0 || failingStatuses.length > 0) {
+              core.setFailed(
+                `Status gate failed (pending_checks=${pendingChecks.length}, failed_checks=${failedChecks.length}, failing_statuses=${failingStatuses.length}).`
+              );
+            }
+
+      - name: Promote development to main (fast-forward only)
+        run: |
+          set -euo pipefail
+
+          git fetch origin main development
+          main_sha="$(git rev-parse origin/main)"
+          dev_sha="$(git rev-parse origin/development)"
+
+          echo "origin/main: $main_sha"
+          echo "origin/development: $dev_sha"
+
+          if [ "$main_sha" = "$dev_sha" ]; then
+            echo "main is already aligned with development."
+            exit 0
+          fi
+
+          if ! git merge-base --is-ancestor origin/main origin/development; then
+            echo "Refusing promotion: main is not an ancestor of development."
+            exit 1
+          fi
+
+          git push origin origin/development:refs/heads/main
