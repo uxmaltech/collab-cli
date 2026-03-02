@@ -134,8 +134,8 @@ cleanup_rc_file() {
     -v marker="$PATH_MARKER" \
     -v local_export="export PATH=\"$LOCAL_BIN_DIR:\$PATH\"" \
     -v system_export="export PATH=\"$SYSTEM_BIN_DIR:\$PATH\"" \
-    -v local_fish="set -gx PATH \"$LOCAL_BIN_DIR\" \$PATH" \
-    -v system_fish="set -gx PATH \"$SYSTEM_BIN_DIR\" \$PATH" '
+    -v local_fish_if="if not contains \"$LOCAL_BIN_DIR\" \$PATH" \
+    -v system_fish_if="if not contains \"$SYSTEM_BIN_DIR\" \$PATH" '
 BEGIN { state = "normal" }
 {
   if (state == "fish") {
@@ -151,11 +151,11 @@ BEGIN { state = "normal" }
   }
 
   if (state == "after_marker") {
-    if ($0 ~ /^export PATH=".*:\$PATH"$/) {
+    if ($0 == local_export || $0 == system_export) {
       state = "normal"
       next
     }
-    if ($0 ~ /^if not contains ".*" \$PATH$/) {
+    if ($0 == local_fish_if || $0 == system_fish_if) {
       state = "fish"
       next
     }
@@ -164,10 +164,6 @@ BEGIN { state = "normal" }
       next
     }
     state = "normal"
-  }
-
-  if ($0 == local_export || $0 == system_export || $0 == local_fish || $0 == system_fish) {
-    next
   }
 
   print
