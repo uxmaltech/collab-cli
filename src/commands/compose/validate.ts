@@ -68,7 +68,7 @@ Examples:
       const mode = parseValidateMode(options.mode);
       const files = resolveFiles(options, context.config, mode);
 
-      assertComposeFilesValid(files, context.config.workspaceDir, context.logger);
+      assertComposeFilesValid(files, context.config.workspaceDir, context.executor);
       context.logger.result(`Compose validation successful for ${files.length} file(s).`);
     });
 }

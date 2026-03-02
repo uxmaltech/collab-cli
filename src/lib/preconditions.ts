@@ -3,9 +3,20 @@ import fs from 'node:fs';
 import { CliError } from './errors';
 import { resolveCommandPath } from './shell';
 
-export function ensureCommandAvailable(commandName: string): string {
+export interface CommandAvailabilityOptions {
+  dryRun?: boolean;
+}
+
+export function ensureCommandAvailable(
+  commandName: string,
+  options: CommandAvailabilityOptions = {},
+): string | null {
   const resolved = resolveCommandPath(commandName);
   if (!resolved) {
+    if (options.dryRun) {
+      return null;
+    }
+
     throw new CliError(
       `Required command '${commandName}' is not available in PATH. Install it and retry.`,
     );

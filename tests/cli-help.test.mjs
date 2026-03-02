@@ -9,10 +9,12 @@ test('collab --help exposes top-level commands', () => {
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /Usage: collab/);
   assert.match(result.stdout, /--version/);
+  assert.match(result.stdout, /--dry-run/);
   assert.match(result.stdout, /init/);
   assert.match(result.stdout, /compose/);
   assert.match(result.stdout, /infra/);
   assert.match(result.stdout, /mcp/);
+  assert.match(result.stdout, /up/);
   assert.match(result.stdout, /seed/);
   assert.match(result.stdout, /doctor/);
 });
@@ -29,4 +31,8 @@ test('compose, infra, and mcp commands expose help examples', () => {
   const mcp = runCli(['mcp', '--help']);
   assert.equal(mcp.status, 0, mcp.stderr);
   assert.match(mcp.stdout, /collab mcp start/);
+
+  const up = runCli(['up', '--help']);
+  assert.equal(up.status, 0, up.stderr);
+  assert.match(up.stdout, /full startup pipeline/);
 });

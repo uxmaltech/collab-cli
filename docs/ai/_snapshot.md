@@ -1,10 +1,12 @@
 # Snapshot
 
-- Phase: 1 (core compose generation)
+- Phase: 2 (orchestration + wizard assembly)
 - Build system: TypeScript (`tsc`)
 - CLI framework: Commander
-- Command tree: `init`, `compose`, `infra`, `mcp`, `seed`, `doctor`
-- Compose modes: `consolidated`, `split`
-- Compose safety: validation, hash-based drift detection, `.env` override preservation
-- Logging: shared logger with `--verbose` and `--quiet`
+- Command tree: `init`, `compose`, `infra`, `mcp`, `up`, `seed`, `doctor`
+- Wizard capabilities: `--yes`, `--resume`, mode selection (`file-only` / `indexed`)
+- Runtime orchestration: staged workflow with persisted recovery state
+- Health checks: shared HTTP/TCP checker reused across infra/mcp/doctor
+- Dry-run: global `--dry-run` with executor-driven zero side effects
+- Compatibility: `ecosystem.manifest.json` + doctor/wizard checks
 - CI: GitHub Actions (`lint`, `build`, `test`)

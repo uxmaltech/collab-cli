@@ -22,11 +22,11 @@ Examples:
   collab mcp status --file docker-compose.mcp.yml
 `,
     )
-    .action((options: McpCommandOptions, command: Command) => {
+    .action(async (options: McpCommandOptions, command: Command) => {
       const context = createCommandContext(command);
       const selection = resolveMcpComposeFile(context.config, options.outputDir, options.file);
 
-      runMcpCompose(context.logger, context.config.workspaceDir, selection, 'ps');
+      await runMcpCompose(context.logger, context.executor, context.config, selection, 'ps');
       context.logger.result(`MCP status checked via ${selection.filePath}`);
     });
 }

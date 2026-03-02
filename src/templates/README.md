@@ -6,4 +6,8 @@ Compose templates are implemented as TypeScript string templates:
 - `infra.ts`
 - `mcp.ts`
 
-Rendering and file output logic lives in `src/lib/compose-renderer.ts`.
+Rendering and output orchestration live in:
+
+- `src/lib/compose-renderer.ts`
+- `src/lib/compose-validator.ts`
+- `src/lib/compose-env.ts`
