@@ -35,6 +35,18 @@ Update an existing latest-main installation:
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/uxmaltech/collab-cli/main/install.sh)" -- --update
 ```
 
+Uninstall latest-main installation:
+
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/uxmaltech/collab-cli/main/uninstall.sh)"
+```
+
+Uninstall non-interactive:
+
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/uxmaltech/collab-cli/main/uninstall.sh)" -- --yes
+```
+
 ## Local development install
 
 ```bash
