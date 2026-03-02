@@ -2,11 +2,9 @@
 
 `collab-cli` is the command-line entrypoint for UxmalTech collaborative workflows.
 
-Phase 2 delivers orchestration and wizard assembly:
-- shared orchestration runner with persisted stage state (`--resume` support)
-- shared health checker for HTTP/TCP dependencies
-- global dry-run executor with zero-side-effect command/file execution
-- onboarding wizard with mode selection (`file-only` / `indexed`)
-- startup pipeline command (`collab up`)
-- extended doctor checks (system, infra, MCP, config, version compatibility)
-- ecosystem version manifest (`ecosystem.manifest.json`) with compatibility checks
+Phase 3 adds comprehensive testing coverage:
+- compose template snapshot and parameter coverage tests (`tests/compose/*`)
+- command-level tests for wizard interaction and subcommand argument validation (`tests/commands/*`)
+- shared library unit tests for preflight, executor, mode/config parsing, health checks, and orchestration recovery (`tests/lib/*`)
+- opt-in E2E full-flow test from indexed init to MCP tool call (`tests/e2e/full-flow.test.mjs`)
+- CI e2e job with Docker support and strict timeout/cleanup

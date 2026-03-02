@@ -34,3 +34,49 @@ jobs:
 
       - name: Test
         run: npm test
+
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: validate
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Checkout collab-architecture-mcp
+        uses: actions/checkout@v4
+        with:
+          repository: uxmaltech/collab-architecture-mcp
+          path: mcp-source
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Docker versions
+        run: |
+          docker --version
+          docker compose version
+
+      - name: Build MCP image for E2E
+        run: |
+          rm -rf ./mcp-source/node_modules
+          docker build -t collab-architecture-mcp:e2e ./mcp-source
+
+      - name: Run E2E full flow
+        env:
+          COLLAB_E2E_MCP_IMAGE: collab-architecture-mcp:e2e
+        run: npm run test:e2e
+
+      - name: Cleanup docker resources
+        if: always()
+        run: |
+          docker rm -f collab-mcp collab-qdrant nebula-graphd nebula-metad0 nebula-storaged0 || true
+          docker volume rm collab-mcp-data collab-qdrant-data collab-nebula-metad0 collab-nebula-storaged0 || true
+          docker network rm collab-network || true
