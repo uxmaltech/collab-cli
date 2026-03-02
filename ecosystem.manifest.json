@@ -1,0 +1,7 @@
+{
+  "manifestVersion": "1.0.0",
+  "cliVersionRange": ">=0.1.0",
+  "collabArchitectureSchemaRange": "^1.0.0",
+  "collabArchitectureMcpVersionRange": "^0.1.0",
+  "collabArchitectureMcpContractRange": "^1.0.0"
+}

@@ -1,0 +1,36 @@
+name: Integration
+
+on:
+  pull_request:
+  push:
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run integration suite (no containers)
+        run: npm test
+
+      - name: Verify package tarball can be installed
+        run: |
+          set -eu
+          package_tgz="$(npm pack | tail -n 1)"
+          temp_dir="$(mktemp -d)"
+          cp "$package_tgz" "$temp_dir/"
+          cd "$temp_dir"
+          npm init -y >/dev/null 2>&1
+          npm install "./$package_tgz"
+          npx collab --version

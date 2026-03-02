@@ -7,6 +7,7 @@ CLI_DIR="$INSTALL_BASE/cli"
 LOCAL_BIN_DIR="$HOME/.local/bin"
 SYSTEM_BIN_DIR="/usr/local/bin"
 MIN_NODE_MAJOR=20
+MODE=install
 
 say() {
   printf '%s\n' "$*"
@@ -15,6 +16,36 @@ say() {
 die() {
   printf 'Error: %s\n' "$*" >&2
   exit 1
+}
+
+usage() {
+  cat <<'EOF'
+Usage: install.sh [--update] [--help]
+
+Install collab-cli from uxmaltech/collab-cli main branch.
+
+Options:
+  --update  Update an existing installation in ~/.collab/cli
+  --help    Show this help message
+EOF
+}
+
+parse_args() {
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --update)
+        MODE=update
+        ;;
+      -h|--help)
+        usage
+        exit 0
+        ;;
+      *)
+        die "Unknown option: $1 (use --help)"
+        ;;
+    esac
+    shift
+  done
 }
 
 require_cmd() {
@@ -32,10 +63,10 @@ detect_platform() {
     *) die "Unsupported operating system: $os_name" ;;
   esac
 
-  case "$arch_name" in
-    arm64|aarch64|x86_64|amd64) ;;
+  case "$os_name/$arch_name" in
+    Darwin/arm64|Darwin/x86_64|Linux/x86_64|Linux/amd64) ;;
     *)
-      say "Warning: architecture '$arch_name' is not officially validated yet."
+      die "Unsupported platform: $os_name/$arch_name (supported: macOS arm64/x86_64, Linux x86_64)"
       ;;
   esac
 
@@ -56,6 +87,12 @@ check_node_version() {
   say "Node.js version: $(node -v)"
 }
 
+ensure_clean_checkout() {
+  if [ -n "$(git -C "$CLI_DIR" status --porcelain 2>/dev/null)" ]; then
+    die "Local changes detected in $CLI_DIR. Commit/stash or reset before update."
+  fi
+}
+
 resolve_bin_dir() {
   if mkdir -p "$LOCAL_BIN_DIR" 2>/dev/null; then
     BIN_DIR=$LOCAL_BIN_DIR
@@ -71,8 +108,21 @@ resolve_bin_dir() {
 }
 
 sync_repo() {
+  if [ "$MODE" = update ]; then
+    [ -d "$CLI_DIR/.git" ] || die "No existing installation found at $CLI_DIR for --update."
+    ensure_clean_checkout
+    say "Updating existing installation in $CLI_DIR from origin/main"
+    git -C "$CLI_DIR" fetch origin main
+    git -C "$CLI_DIR" checkout main
+    git -C "$CLI_DIR" pull --ff-only origin main
+    return
+  fi
+
   if [ -d "$CLI_DIR/.git" ]; then
-    say "Updating existing installation in $CLI_DIR"
+    ensure_clean_checkout
+    say "Existing installation found in $CLI_DIR; refreshing from origin/main"
+    git -C "$CLI_DIR" fetch origin main
+    git -C "$CLI_DIR" checkout main
     git -C "$CLI_DIR" pull --ff-only origin main
     return
   fi
@@ -81,9 +131,9 @@ sync_repo() {
     die "Path exists but is not a git checkout: $CLI_DIR"
   fi
 
-  say "Cloning repository into $CLI_DIR"
+  say "Cloning repository main branch into $CLI_DIR"
   mkdir -p "$INSTALL_BASE"
-  git clone "$REPO_URL" "$CLI_DIR"
+  git clone --branch main --single-branch "$REPO_URL" "$CLI_DIR"
 }
 
 build_cli() {
@@ -125,6 +175,8 @@ verify_install() {
 }
 
 main() {
+  parse_args "$@"
+
   say "Starting collab-cli installation"
   detect_platform
 
@@ -135,6 +187,7 @@ main() {
 
   resolve_bin_dir
   say "Using binary directory: $BIN_DIR"
+  say "Mode: $MODE"
 
   sync_repo
   build_cli

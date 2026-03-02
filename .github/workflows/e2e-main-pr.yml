@@ -1,0 +1,73 @@
+name: E2E Main PR
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Checkout collab-architecture-mcp (optional)
+        id: checkout_mcp
+        continue-on-error: true
+        uses: actions/checkout@v4
+        with:
+          repository: uxmaltech/collab-architecture-mcp
+          path: mcp-source
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Docker versions
+        run: |
+          docker --version
+          docker compose version
+
+      - name: Build local MCP mock image fallback
+        run: docker build -t collab-architecture-mcp:mock-e2e ./tests/e2e/mock-mcp-image
+
+      - name: Resolve MCP image for E2E
+        id: resolve_mcp_image
+        env:
+          MCP_CHECKOUT_OUTCOME: ${{ steps.checkout_mcp.outcome }}
+        run: |
+          set -eu
+          image="collab-architecture-mcp:mock-e2e"
+
+          if [ "$MCP_CHECKOUT_OUTCOME" = "success" ] && [ -d "./mcp-source" ]; then
+            echo "Using checked-out MCP source for local E2E image build."
+            rm -rf ./mcp-source/node_modules
+            docker build -t collab-architecture-mcp:e2e ./mcp-source
+            image="collab-architecture-mcp:e2e"
+          else
+            echo "MCP source checkout unavailable; falling back to local mock image: $image"
+          fi
+
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+
+      - name: Run E2E full flow
+        env:
+          COLLAB_E2E_MCP_IMAGE: ${{ steps.resolve_mcp_image.outputs.image }}
+        run: npm run test:e2e
+
+      - name: Cleanup docker resources
+        if: always()
+        run: |
+          set +e
+          docker rm -f collab-mcp collab-qdrant nebula-graphd nebula-metad0 nebula-storaged0
+          docker volume rm collab-mcp-data collab-qdrant-data collab-nebula-metad0 collab-nebula-storaged0
+          docker network rm collab-network
+          exit 0
