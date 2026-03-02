@@ -1,6 +1,6 @@
+import type { Executor } from './executor';
 import { CliError } from './errors';
 import { runDockerCompose } from './docker-compose';
-import type { Logger } from './logger';
 import { ensureCommandAvailable, ensureFileExists } from './preconditions';
 
 export interface ComposeValidationError {
@@ -20,22 +20,33 @@ function compactError(raw: string): string {
 export function validateComposeFiles(
   filePaths: readonly string[],
   cwd: string,
-  logger: Logger,
+  executor: Executor,
 ): ComposeValidationError[] {
+  if (executor.dryRun) {
+    for (const filePath of filePaths) {
+      executor.run('docker', ['compose', '-f', filePath, 'config'], {
+        cwd,
+        check: false,
+      });
+    }
+
+    return [];
+  }
+
   for (const filePath of filePaths) {
     ensureFileExists(filePath, 'Compose file');
   }
 
-  ensureCommandAvailable('docker');
+  ensureCommandAvailable('docker', { dryRun: executor.dryRun });
 
   const errors: ComposeValidationError[] = [];
 
   for (const filePath of filePaths) {
     const result = runDockerCompose({
+      executor,
       files: [filePath],
       arguments: ['config'],
       cwd,
-      logger,
       check: false,
     });
 
@@ -53,9 +64,9 @@ export function validateComposeFiles(
 export function assertComposeFilesValid(
   filePaths: readonly string[],
   cwd: string,
-  logger: Logger,
+  executor: Executor,
 ): void {
-  const errors = validateComposeFiles(filePaths, cwd, logger);
+  const errors = validateComposeFiles(filePaths, cwd, executor);
 
   if (errors.length === 0) {
     return;

@@ -46,12 +46,12 @@ Examples:
         return;
       }
 
-      ensureCommandAvailable('docker');
+      ensureCommandAvailable('docker', { dryRun: context.executor.dryRun });
       runDockerCompose({
+        executor: context.executor,
         files: [composeFile],
         arguments: ['ps'],
         cwd: context.config.workspaceDir,
-        logger: context.logger,
       });
 
       context.logger.result(

@@ -4,9 +4,10 @@ import path from 'node:path';
 import type { CollabConfig } from './config';
 import { ensureComposeEnvFile } from './compose-env';
 import { type ComposeMode, getComposeFilePaths } from './compose-paths';
+import type { EnvMap } from './env-file';
+import type { Executor } from './executor';
 import { sha256 } from './hash';
 import type { Logger } from './logger';
-import { ensureWritableDirectory } from './preconditions';
 import { loadState, saveState, toStateKey } from './state';
 import { consolidatedTemplate } from '../templates/consolidated';
 import { infraTemplate } from '../templates/infra';
@@ -21,6 +22,7 @@ export interface ComposeGenerationOptions {
   outputFile?: string;
   envFile?: string;
   logger: Logger;
+  executor: Executor;
 }
 
 export interface GeneratedComposeFile {
@@ -31,6 +33,7 @@ export interface GeneratedComposeFile {
 export interface ComposeGenerationResult {
   files: GeneratedComposeFile[];
   envFilePath: string;
+  env: EnvMap;
   driftWarnings: string[];
 }
 
@@ -96,7 +99,7 @@ function assignOutputPaths(
 
 export function generateComposeFiles(options: ComposeGenerationOptions): ComposeGenerationResult {
   const envFilePath = resolveEnvFilePath(options.config, options.envFile);
-  ensureComposeEnvFile(envFilePath, options.logger);
+  const env = ensureComposeEnvFile(envFilePath, options.logger, options.executor);
 
   const rendered = renderContent(options.mode);
   const files = assignOutputPaths(
@@ -111,7 +114,7 @@ export function generateComposeFiles(options: ComposeGenerationOptions): Compose
   const driftWarnings: string[] = [];
 
   for (const file of files) {
-    ensureWritableDirectory(path.dirname(file.filePath));
+    options.executor.ensureDirectory(path.dirname(file.filePath));
 
     const stateKey = toStateKey(options.config, file.filePath);
     const previous = state.generatedFiles[stateKey];
@@ -126,7 +129,7 @@ export function generateComposeFiles(options: ComposeGenerationOptions): Compose
       }
     }
 
-    fs.writeFileSync(file.filePath, file.content, 'utf8');
+    options.executor.writeFile(file.filePath, file.content, { description: 'write compose file' });
 
     state.generatedFiles[stateKey] = {
       hash: sha256(file.content),
@@ -134,11 +137,12 @@ export function generateComposeFiles(options: ComposeGenerationOptions): Compose
     };
   }
 
-  saveState(options.config, state);
+  saveState(options.config, state, options.executor);
 
   return {
     files,
     envFilePath,
+    env,
     driftWarnings,
   };
 }

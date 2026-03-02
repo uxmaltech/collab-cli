@@ -1,14 +1,10 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
 import { runCli } from './helpers/cli.mjs';
-
-function makeTempWorkspace() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'collab-cli-'));
-}
+import { makeTempWorkspace } from './helpers/workspace.mjs';
 
 test('compose generate (consolidated) is idempotent and preserves .env overrides', () => {
   const workspace = makeTempWorkspace();
@@ -83,6 +79,22 @@ test('compose generate (split) creates infra and mcp files with shared network n
   assert.match(mcpContent, /name: \$\{COLLAB_NETWORK\}/);
 });
 
+test('compose generate supports global dry-run with zero file side effects', () => {
+  const workspace = makeTempWorkspace();
+
+  const result = runCli(
+    ['--cwd', workspace, '--dry-run', 'compose', 'generate', '--mode', 'split', '--skip-validate'],
+    { cwd: workspace },
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /\[dry-run\]/);
+
+  assert.equal(fs.existsSync(path.join(workspace, '.env')), false);
+  assert.equal(fs.existsSync(path.join(workspace, 'docker-compose.infra.yml')), false);
+  assert.equal(fs.existsSync(path.join(workspace, 'docker-compose.mcp.yml')), false);
+});
+
 test('compose validate fails fast with file-path context when file is missing', () => {
   const workspace = makeTempWorkspace();
   const missing = path.join(workspace, 'missing-compose.yml');
@@ -93,5 +105,8 @@ test('compose validate fails fast with file-path context when file is missing', 
   );
 
   assert.equal(result.status, 1);
-  assert.match(result.stderr, new RegExp(`Compose file not found: ${missing.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+  assert.match(
+    result.stderr,
+    new RegExp(`Compose file not found: ${missing.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`),
+  );
 });

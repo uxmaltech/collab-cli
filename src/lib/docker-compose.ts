@@ -1,11 +1,11 @@
-import type { Logger } from './logger';
+import type { Executor } from './executor';
 import { runProcess } from './process';
 
 export interface DockerComposeExecution {
+  executor: Executor;
   files: readonly string[];
   arguments: readonly string[];
   cwd: string;
-  logger: Logger;
   check?: boolean;
 }
 
@@ -15,7 +15,7 @@ function composeArgs(files: readonly string[], args: readonly string[]): string[
 }
 
 export function runDockerCompose(command: DockerComposeExecution) {
-  return runProcess('docker', composeArgs(command.files, command.arguments), command.logger, {
+  return runProcess(command.executor, 'docker', composeArgs(command.files, command.arguments), {
     cwd: command.cwd,
     check: command.check,
   });

@@ -7,7 +7,6 @@ import { assertComposeFilesValid } from '../../lib/compose-validator';
 import { generateComposeFiles } from '../../lib/compose-renderer';
 import type { ComposeMode } from '../../lib/compose-paths';
 import { CliError } from '../../lib/errors';
-import { ensureWritableDirectory } from '../../lib/preconditions';
 
 interface ComposeGenerateOptions {
   mode?: string;
@@ -17,7 +16,7 @@ interface ComposeGenerateOptions {
   skipValidate?: boolean;
 }
 
-function parseMode(value: string | undefined): ComposeMode {
+function parseGenerationMode(value: string | undefined): ComposeMode {
   if (!value || value === 'consolidated' || value === 'split') {
     return (value ?? 'consolidated') as ComposeMode;
   }
@@ -45,19 +44,20 @@ Examples:
     )
     .action((options: ComposeGenerateOptions, command: Command) => {
       const context = createCommandContext(command);
-      const mode = parseMode(options.mode);
+      const mode = parseGenerationMode(options.mode);
 
       if (options.output && mode !== 'consolidated') {
         throw new CliError('--output can only be used with --mode consolidated.');
       }
 
       if (options.outputDir) {
-        ensureWritableDirectory(path.resolve(context.config.workspaceDir, options.outputDir));
+        context.executor.ensureDirectory(path.resolve(context.config.workspaceDir, options.outputDir));
       }
 
       const generation = generateComposeFiles({
         config: context.config,
         logger: context.logger,
+        executor: context.executor,
         mode,
         outputDirectory: options.outputDir,
         outputFile: options.output,
@@ -78,7 +78,7 @@ Examples:
         assertComposeFilesValid(
           generation.files.map((file) => file.filePath),
           context.config.workspaceDir,
-          context.logger,
+          context.executor,
         );
       }
 

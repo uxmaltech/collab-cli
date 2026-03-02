@@ -1,6 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { DEFAULT_MODE, type CollabMode, parseMode } from './mode';
+
 export interface ComposePathConfig {
   consolidatedFile: string;
   infraFile: string;
@@ -13,12 +15,14 @@ export interface CollabConfig {
   configFile: string;
   stateFile: string;
   envFile: string;
+  mode: CollabMode;
   compose: ComposePathConfig;
 }
 
 interface RawCollabConfig {
   compose?: Partial<ComposePathConfig>;
   envFile?: string;
+  mode?: string;
 }
 
 const DEFAULT_COMPOSE_PATHS: ComposePathConfig = {
@@ -37,6 +41,7 @@ export function defaultCollabConfig(cwd = process.cwd()): CollabConfig {
     configFile: path.join(collabDir, 'config.json'),
     stateFile: path.join(collabDir, 'state.json'),
     envFile: path.join(workspaceDir, '.env'),
+    mode: DEFAULT_MODE,
     compose: { ...DEFAULT_COMPOSE_PATHS },
   };
 }
@@ -57,6 +62,7 @@ export function loadCollabConfig(cwd = process.cwd()): CollabConfig {
 
   return {
     ...defaults,
+    mode: parseMode(raw.mode, defaults.mode),
     envFile: raw.envFile ? path.resolve(defaults.workspaceDir, raw.envFile) : defaults.envFile,
     compose: {
       consolidatedFile: raw.compose?.consolidatedFile ?? defaults.compose.consolidatedFile,
@@ -73,6 +79,7 @@ export function ensureCollabDirectory(config: CollabConfig): void {
 export function serializeUserConfig(config: CollabConfig): string {
   return JSON.stringify(
     {
+      mode: config.mode,
       compose: config.compose,
       envFile: path.relative(config.workspaceDir, config.envFile),
     },

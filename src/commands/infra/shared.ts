@@ -1,16 +1,29 @@
 import path from 'node:path';
 
 import type { CollabConfig } from '../../lib/config';
-import { runDockerCompose } from '../../lib/docker-compose';
+import type { Executor } from '../../lib/executor';
+import { CliError } from '../../lib/errors';
 import type { Logger } from '../../lib/logger';
 import { ensureCommandAvailable, ensureFileExists } from '../../lib/preconditions';
 import { getComposeFilePaths, selectInfraComposeFile } from '../../lib/compose-paths';
+import { runDockerCompose } from '../../lib/docker-compose';
+import {
+  dryRunHealthOptions,
+  loadRuntimeEnv,
+  logServiceHealth,
+  waitForInfraHealth,
+  type ServiceHealthOptions,
+} from '../../lib/service-health';
 
 export const INFRA_SERVICES = ['qdrant', 'metad0', 'storaged0', 'graphd'] as const;
 
 export interface InfraSelection {
   filePath: string;
   source: 'consolidated' | 'split';
+}
+
+export interface InfraRunOptions {
+  health?: ServiceHealthOptions;
 }
 
 export function resolveInfraComposeFile(
@@ -32,22 +45,36 @@ export function resolveInfraComposeFile(
   };
 }
 
-export function runInfraCompose(
+export async function runInfraCompose(
   logger: Logger,
-  cwd: string,
+  executor: Executor,
+  config: CollabConfig,
   selection: InfraSelection,
   action: 'up' | 'stop' | 'ps',
-): void {
-  ensureCommandAvailable('docker');
+  options: InfraRunOptions = {},
+): Promise<void> {
+  ensureCommandAvailable('docker', { dryRun: executor.dryRun });
   ensureFileExists(selection.filePath, 'Compose file');
 
   const args = action === 'up' ? ['up', '-d'] : action === 'stop' ? ['stop'] : ['ps'];
   const services = selection.source === 'consolidated' ? [...INFRA_SERVICES] : [];
 
   runDockerCompose({
+    executor,
     files: [selection.filePath],
     arguments: [...args, ...services],
-    cwd,
-    logger,
+    cwd: config.workspaceDir,
   });
+
+  if (action !== 'up') {
+    return;
+  }
+
+  const env = loadRuntimeEnv(config);
+  const health = await waitForInfraHealth(env, dryRunHealthOptions(executor, options.health ?? {}));
+  logServiceHealth(logger, 'infra health', health);
+
+  if (!health.ok) {
+    throw new CliError('Infrastructure services did not become healthy in time.');
+  }
 }

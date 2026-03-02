@@ -11,6 +11,7 @@ export function createCli(): Command {
     .description('CLI for collaborative architecture and delivery workflows')
     .version(readCliVersion(), '-v, --version', 'Show CLI version')
     .option('--cwd <path>', 'Working directory for collab operations')
+    .option('--dry-run', 'Preview actions without side effects')
     .option('--verbose', 'Enable verbose command logging')
     .option('--quiet', 'Reduce output to results and errors')
     .showHelpAfterError(true)

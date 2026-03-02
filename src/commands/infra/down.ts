@@ -22,11 +22,11 @@ Examples:
   collab infra down --file docker-compose.yml
 `,
     )
-    .action((options: InfraCommandOptions, command: Command) => {
+    .action(async (options: InfraCommandOptions, command: Command) => {
       const context = createCommandContext(command);
       const selection = resolveInfraComposeFile(context.config, options.outputDir, options.file);
 
-      runInfraCompose(context.logger, context.config.workspaceDir, selection, 'stop');
+      await runInfraCompose(context.logger, context.executor, context.config, selection, 'stop');
       context.logger.result(`Infrastructure stopped using ${selection.filePath}`);
     });
 }

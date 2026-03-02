@@ -22,11 +22,11 @@ Examples:
   collab mcp stop --file docker-compose.yml
 `,
     )
-    .action((options: McpCommandOptions, command: Command) => {
+    .action(async (options: McpCommandOptions, command: Command) => {
       const context = createCommandContext(command);
       const selection = resolveMcpComposeFile(context.config, options.outputDir, options.file);
 
-      runMcpCompose(context.logger, context.config.workspaceDir, selection, 'stop');
+      await runMcpCompose(context.logger, context.executor, context.config, selection, 'stop');
       context.logger.result(`MCP service stopped using ${selection.filePath}`);
     });
 }
