@@ -43,7 +43,9 @@
 - `ecosystem.manifest.json`: compatibility ranges for CLI/canon/MCP.
 
 ## Tests
-- `tests/cli-help.test.mjs`: top-level and grouped help assertions.
-- `tests/compose-generate.test.mjs`: generation idempotence, dry-run, env preservation, split outputs, validate preconditions.
-- `tests/phase2-workflows.test.mjs`: wizard behavior, up-mode behavior, orchestrator resume state.
-- `tests/helpers/*.mjs`: CLI and workspace test helpers.
+- `tests/compose/*`: template snapshots + parameter coverage + override/edge scenarios.
+- `tests/commands/*`: wizard flow and subcommand parsing/validation tests.
+- `tests/lib/*`: executor, preflight, health-checker, mode/config, orchestration-recovery tests.
+- `tests/e2e/full-flow.test.mjs`: indexed end-to-end flow and MCP tool-call validation.
+- `tests/cli-help.test.mjs`, `tests/compose-generate.test.mjs`, `tests/phase2-workflows.test.mjs`: baseline CLI integration and phase-2 behavior tests.
+- `tests/helpers/*.mjs`: reusable helpers for CLI execution, fake docker, snapshots, MCP HTTP, config/logger fixtures.

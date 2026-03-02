@@ -1,15 +1,12 @@
-name: CI
+name: Integration
 
 on:
   pull_request:
   push:
 
 jobs:
-  validate:
+  integration:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        node-version: [20, 22]
 
     steps:
       - name: Checkout
@@ -18,17 +15,11 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version: 22
           cache: npm
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Lint
-        run: npm run lint
-
-      - name: Build
-        run: npm run build
-
-      - name: Test
+      - name: Run integration suite (no containers)
         run: npm test

@@ -77,6 +77,7 @@ Generation creates/updates:
 - `npm run lint` - static analysis for TypeScript sources.
 - `npm run build` - compile TypeScript into `dist/`.
 - `npm test` - build and run test suite.
+- `npm run test:e2e` - run Docker-backed end-to-end flow (`init --mode indexed` to MCP tool call).
 - `npm run typecheck` - run TypeScript without emitting files.
 
 ## Project structure

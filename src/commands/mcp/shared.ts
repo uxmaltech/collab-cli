@@ -52,7 +52,9 @@ export async function runMcpCompose(
   options: McpRunOptions = {},
 ): Promise<void> {
   ensureCommandAvailable('docker', { dryRun: executor.dryRun });
-  ensureFileExists(selection.filePath, 'Compose file');
+  if (!executor.dryRun) {
+    ensureFileExists(selection.filePath, 'Compose file');
+  }
 
   const args = action === 'up' ? ['up', '-d'] : action === 'stop' ? ['stop'] : ['ps'];
   const serviceScope = selection.source === 'consolidated' ? ['mcp'] : [];
