@@ -5,6 +5,7 @@ REPO_URL=${COLLAB_REPO_URL:-https://github.com/uxmaltech/collab-cli.git}
 INSTALL_BASE=${COLLAB_HOME:-$HOME/.collab}
 CLI_DIR="$INSTALL_BASE/cli"
 LOCAL_BIN_DIR="$HOME/.local/bin"
+HOMEBREW_BIN_DIR="/opt/homebrew/bin"
 SYSTEM_BIN_DIR="/usr/local/bin"
 MIN_NODE_MAJOR=20
 MODE=install
@@ -94,18 +95,58 @@ ensure_clean_checkout() {
   fi
 }
 
+path_contains_dir() {
+  dir=$1
+  case ":$PATH:" in
+    *":$dir:"*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+is_writable_directory() {
+  dir=$1
+  [ -d "$dir" ] && [ -w "$dir" ]
+}
+
 resolve_bin_dir() {
-  if mkdir -p "$LOCAL_BIN_DIR" 2>/dev/null; then
+  local_bin_ready=0
+  if [ -d "$LOCAL_BIN_DIR" ] && [ -w "$LOCAL_BIN_DIR" ]; then
+    local_bin_ready=1
+  elif mkdir -p "$LOCAL_BIN_DIR" 2>/dev/null; then
+    local_bin_ready=1
+  fi
+
+  if [ "$local_bin_ready" -eq 1 ] && path_contains_dir "$LOCAL_BIN_DIR"; then
     BIN_DIR=$LOCAL_BIN_DIR
     return
   fi
 
-  if [ -d "$SYSTEM_BIN_DIR" ] && [ -w "$SYSTEM_BIN_DIR" ]; then
+  if is_writable_directory "$HOMEBREW_BIN_DIR" && path_contains_dir "$HOMEBREW_BIN_DIR"; then
+    BIN_DIR=$HOMEBREW_BIN_DIR
+    return
+  fi
+
+  if is_writable_directory "$SYSTEM_BIN_DIR" && path_contains_dir "$SYSTEM_BIN_DIR"; then
     BIN_DIR=$SYSTEM_BIN_DIR
     return
   fi
 
-  die "Cannot create '$LOCAL_BIN_DIR' and '$SYSTEM_BIN_DIR' is not writable."
+  if [ "$local_bin_ready" -eq 1 ]; then
+    BIN_DIR=$LOCAL_BIN_DIR
+    return
+  fi
+
+  if is_writable_directory "$HOMEBREW_BIN_DIR"; then
+    BIN_DIR=$HOMEBREW_BIN_DIR
+    return
+  fi
+
+  if is_writable_directory "$SYSTEM_BIN_DIR"; then
+    BIN_DIR=$SYSTEM_BIN_DIR
+    return
+  fi
+
+  die "Cannot create '$LOCAL_BIN_DIR', and '$HOMEBREW_BIN_DIR'/'$SYSTEM_BIN_DIR' are not writable."
 }
 
 sync_repo() {
@@ -297,6 +338,28 @@ read_prompt_reply() {
   fi
 }
 
+refresh_path_for_installer_process() {
+  shell_name=$1
+  rc_file=$2
+
+  case "$shell_name" in
+    zsh|bash)
+      if [ -r "$rc_file" ]; then
+        # shellcheck disable=SC1090
+        if . "$rc_file" >/dev/null 2>&1; then
+          hash -r 2>/dev/null || true
+          return 0
+        fi
+      fi
+      ;;
+  esac
+
+  PATH="$BIN_DIR:$PATH"
+  export PATH
+  hash -r 2>/dev/null || true
+  return 0
+}
+
 maybe_offer_path_update() {
   shell_name=$(detect_shell_name)
   rc_file=$(resolve_shell_rc_file "$shell_name")
@@ -323,7 +386,8 @@ maybe_offer_path_update() {
     y|Y|yes|YES|Yes)
       if append_path_block_if_missing "$shell_name" "$rc_file"; then
         say "PATH configuration updated in $rc_file"
-        say "Run 'source $rc_file' or open a new terminal, then run 'collab --help'."
+        refresh_path_for_installer_process "$shell_name" "$rc_file" || true
+        say "Run 'source $rc_file' in your current terminal (or open a new one), then run 'collab --help'."
       else
         say "Could not update $rc_file automatically (permission or write error)."
         print_manual_path_snippet "$shell_name"
