@@ -222,27 +222,51 @@ append_path_block_if_missing() {
     zsh|bash)
       marker='# collab-cli PATH configuration'
       entry="export PATH=\"$BIN_DIR:\$PATH\""
-      if [ -f "$rc_file" ] && (grep -F "$marker" "$rc_file" >/dev/null 2>&1 || grep -F "$entry" "$rc_file" >/dev/null 2>&1); then
-        return
+      if [ -f "$rc_file" ] && grep -F "$entry" "$rc_file" >/dev/null 2>&1; then
+        return 0
       fi
 
-      {
+      if ! {
         printf '\n%s\n' "$marker"
         printf '%s\n' "$entry"
-      } >> "$rc_file"
+      } >> "$rc_file"; then
+        return 1
+      fi
+      return 0
       ;;
     fish)
       if [ -f "$rc_file" ] && grep -F "set -gx PATH \"$BIN_DIR\" \$PATH" "$rc_file" >/dev/null 2>&1; then
-        return
+        return 0
       fi
 
-      mkdir -p "$(dirname "$rc_file")"
-      {
+      if ! mkdir -p "$(dirname "$rc_file")"; then
+        return 1
+      fi
+
+      if ! {
         printf '\n# collab-cli PATH configuration\n'
         printf 'if not contains "%s" $PATH\n' "$BIN_DIR"
         printf '  set -gx PATH "%s" $PATH\n' "$BIN_DIR"
         printf 'end\n'
-      } >> "$rc_file"
+      } >> "$rc_file"; then
+        return 1
+      fi
+      return 0
+      ;;
+  esac
+
+  return 1
+}
+
+print_manual_path_snippet() {
+  shell_name=$1
+
+  case "$shell_name" in
+    fish)
+      say "Manual PATH snippet: set -gx PATH \"$BIN_DIR\" \$PATH"
+      ;;
+    *)
+      say "Manual PATH snippet: export PATH=\"$BIN_DIR:\$PATH\""
       ;;
   esac
 }
@@ -297,9 +321,13 @@ maybe_offer_path_update() {
 
   case "$reply" in
     y|Y|yes|YES|Yes)
-      append_path_block_if_missing "$shell_name" "$rc_file"
-      say "PATH configuration updated in $rc_file"
-      say "Run 'source $rc_file' or open a new terminal, then run 'collab --help'."
+      if append_path_block_if_missing "$shell_name" "$rc_file"; then
+        say "PATH configuration updated in $rc_file"
+        say "Run 'source $rc_file' or open a new terminal, then run 'collab --help'."
+      else
+        say "Could not update $rc_file automatically (permission or write error)."
+        print_manual_path_snippet "$shell_name"
+      fi
       ;;
     *)
       say "Skipped PATH update. Add '$BIN_DIR' to your PATH to call 'collab' globally."
