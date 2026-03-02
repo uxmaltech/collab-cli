@@ -18,8 +18,8 @@ export interface CommandExecutionErrorDetails {
 export class CommandExecutionError extends CliError {
   readonly details: CommandExecutionErrorDetails;
 
-  constructor(message: string, details: CommandExecutionErrorDetails, exitCode = 1) {
-    super(message, exitCode);
+  constructor(message: string, details: CommandExecutionErrorDetails) {
+    super(message, details.exitCode ?? 1);
     this.name = 'CommandExecutionError';
     this.details = details;
   }

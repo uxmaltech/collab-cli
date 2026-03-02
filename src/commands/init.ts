@@ -177,6 +177,7 @@ Examples:
     .action(async (options: InitOptions, command: Command) => {
       const context = createCommandContext(command);
       ensureWritableDirectory(context.config.workspaceDir);
+      const configExistedBefore = fs.existsSync(context.config.configFile);
 
       if (options.force) {
         context.logger.warn('Force mode enabled: configuration will be overwritten with wizard selections.');
@@ -224,6 +225,13 @@ Examples:
               'Run collab init --resume once permissions are fixed.',
             ],
             run: () => {
+              if (configExistedBefore && !options.force) {
+                context.logger.info(
+                  'Existing configuration detected; preserving it. Use --force to overwrite.',
+                );
+                return;
+              }
+
               context.executor.ensureDirectory(effectiveConfig.collabDir);
               context.executor.writeFile(
                 effectiveConfig.configFile,
@@ -376,8 +384,8 @@ Examples:
         }
       }
 
-      if (!options.force && fs.existsSync(context.config.configFile)) {
-        context.logger.debug('Existing configuration was reused and updated by wizard selection.');
+      if (!options.force && configExistedBefore) {
+        context.logger.debug('Existing configuration was reused.');
       }
     });
 }

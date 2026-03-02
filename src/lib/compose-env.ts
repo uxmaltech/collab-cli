@@ -9,9 +9,15 @@ export function ensureComposeEnvFile(envFilePath: string, logger: Logger, execut
   writeEnvFile(envFilePath, merged, COMPOSE_ENV_ORDER, executor);
 
   if (Object.keys(existing).length === 0) {
-    logger.info(`Created env file: ${envFilePath}`);
+    logger.info(
+      executor?.dryRun ? `[dry-run] Would create env file: ${envFilePath}` : `Created env file: ${envFilePath}`,
+    );
   } else {
-    logger.debug(`Updated env file while preserving overrides: ${envFilePath}`);
+    logger.debug(
+      executor?.dryRun
+        ? `[dry-run] Would update env file while preserving overrides: ${envFilePath}`
+        : `Updated env file while preserving overrides: ${envFilePath}`,
+    );
   }
 
   return merged;

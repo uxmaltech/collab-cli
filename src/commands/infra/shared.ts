@@ -54,7 +54,9 @@ export async function runInfraCompose(
   options: InfraRunOptions = {},
 ): Promise<void> {
   ensureCommandAvailable('docker', { dryRun: executor.dryRun });
-  ensureFileExists(selection.filePath, 'Compose file');
+  if (!executor.dryRun) {
+    ensureFileExists(selection.filePath, 'Compose file');
+  }
 
   const args = action === 'up' ? ['up', '-d'] : action === 'stop' ? ['stop'] : ['ps'];
   const services = selection.source === 'consolidated' ? [...INFRA_SERVICES] : [];

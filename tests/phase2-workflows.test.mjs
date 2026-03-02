@@ -37,6 +37,30 @@ exit 0
   };
 }
 
+function writeExistingConfig(workspace, mode = 'indexed') {
+  const collabDir = path.join(workspace, '.collab');
+  const configPath = path.join(collabDir, 'config.json');
+  fs.mkdirSync(collabDir, { recursive: true });
+  fs.writeFileSync(
+    configPath,
+    JSON.stringify(
+      {
+        mode,
+        compose: {
+          consolidatedFile: 'docker-compose.yml',
+          infraFile: 'docker-compose.infra.yml',
+          mcpFile: 'docker-compose.mcp.yml',
+        },
+        envFile: '.env',
+      },
+      null,
+      2,
+    ),
+    'utf8',
+  );
+  return configPath;
+}
+
 test('init --yes defaults to file-only mode and stores it in config', () => {
   const workspace = makeTempWorkspace();
   const env = fakeDockerEnv();
@@ -50,6 +74,39 @@ test('init --yes defaults to file-only mode and stores it in config', () => {
 
   const configPath = path.join(workspace, '.collab', 'config.json');
   assert.equal(fs.existsSync(configPath), true);
+
+  const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+  assert.equal(config.mode, 'file-only');
+});
+
+test('init preserves existing config without --force', () => {
+  const workspace = makeTempWorkspace();
+  const env = fakeDockerEnv();
+  const configPath = writeExistingConfig(workspace, 'indexed');
+
+  const result = runCli(['--cwd', workspace, 'init', '--yes', '--mode', 'file-only'], {
+    cwd: workspace,
+    env,
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+
+  const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+  assert.equal(config.mode, 'indexed');
+  assert.match(result.stdout, /preserving it\. use --force to overwrite/i);
+});
+
+test('init overwrites existing config with --force', () => {
+  const workspace = makeTempWorkspace();
+  const env = fakeDockerEnv();
+  const configPath = writeExistingConfig(workspace, 'indexed');
+
+  const result = runCli(['--cwd', workspace, 'init', '--yes', '--mode', 'file-only', '--force'], {
+    cwd: workspace,
+    env,
+  });
+
+  assert.equal(result.status, 0, result.stderr);
 
   const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
   assert.equal(config.mode, 'file-only');

@@ -26,11 +26,13 @@ function commandCheck(
   }
 
   const version = executor.run(commandName, ['--version'], { check: false, verboseOnly: true });
+  const detail = version.stdout.trim() || version.stderr.trim();
+  const ok = version.status === 0;
 
   return {
     id: commandName,
-    ok: true,
-    detail: version.stdout.trim() || version.stderr.trim() || `found at ${resolved}`,
+    ok,
+    detail: detail || (ok ? `found at ${resolved}` : `${commandName} --version exited with code ${version.status}`),
     fix,
   };
 }

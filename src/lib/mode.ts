@@ -11,7 +11,7 @@ export function isCollabMode(value: string): value is CollabMode {
 }
 
 export function parseMode(value: string | undefined, fallback: CollabMode = DEFAULT_MODE): CollabMode {
-  if (!value) {
+  if (value === undefined) {
     return fallback;
   }
 

@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import path from 'node:path';
 
 import type { Executor } from './executor';
 
@@ -91,5 +92,6 @@ export function writeEnvFile(
     return;
   }
 
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, rendered, 'utf8');
 }

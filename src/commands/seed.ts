@@ -10,7 +10,6 @@ import { ensureCommandAvailable, ensureFileExists } from '../lib/preconditions';
 interface SeedOptions {
   file?: string;
   outputDir?: string;
-  dryRun?: boolean;
 }
 
 export function registerSeedCommand(program: Command): void {
@@ -38,15 +37,19 @@ Examples:
         ? path.resolve(context.config.workspaceDir, options.file)
         : selected.file;
 
-      ensureFileExists(composeFile, 'Compose file');
+      const isDryRun = context.executor.dryRun;
 
-      if (options.dryRun) {
+      if (!isDryRun) {
+        ensureFileExists(composeFile, 'Compose file');
+      }
+
+      if (isDryRun) {
         context.logger.command(['docker', 'compose', '-f', composeFile, 'ps']);
         context.logger.result('Seed preflight command rendered (dry-run).');
         return;
       }
 
-      ensureCommandAvailable('docker', { dryRun: context.executor.dryRun });
+      ensureCommandAvailable('docker', { dryRun: isDryRun });
       runDockerCompose({
         executor: context.executor,
         files: [composeFile],

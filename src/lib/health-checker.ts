@@ -136,21 +136,32 @@ export async function checkTcpHealth(
 ): Promise<HealthCheckResult> {
   return retryCheck(name, options ?? {}, async (timeoutMs) => {
     const connection = await new Promise<{ ok: boolean; error?: string }>((resolve) => {
+      let resolved = false;
       const socket = net.createConnection({ host, port });
+
+      const settle = (result: { ok: boolean; error?: string }) => {
+        if (resolved) {
+          return;
+        }
+
+        resolved = true;
+        clearTimeout(timeout);
+        resolve(result);
+      };
+
       const timeout = setTimeout(() => {
         socket.destroy();
-        resolve({ ok: false, error: `timeout after ${timeoutMs}ms` });
+        settle({ ok: false, error: `timeout after ${timeoutMs}ms` });
       }, timeoutMs);
 
       socket.once('connect', () => {
-        clearTimeout(timeout);
         socket.end();
-        resolve({ ok: true });
+        settle({ ok: true });
       });
 
       socket.once('error', (error) => {
-        clearTimeout(timeout);
-        resolve({ ok: false, error: error.message });
+        socket.destroy();
+        settle({ ok: false, error: error.message });
       });
     });
 
