@@ -1,18 +1,32 @@
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
-import path from 'node:path';
 import test from 'node:test';
-import { fileURLToPath } from 'node:url';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const binary = path.resolve(__dirname, '../bin/collab');
+import { runCli } from './helpers/cli.mjs';
 
-test('collab --help exposes version and available commands', () => {
-  const result = spawnSync(binary, ['--help'], { encoding: 'utf8' });
+test('collab --help exposes top-level commands', () => {
+  const result = runCli(['--help']);
 
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /Usage: collab/);
   assert.match(result.stdout, /--version/);
-  assert.match(result.stdout, /Commands:/);
+  assert.match(result.stdout, /init/);
+  assert.match(result.stdout, /compose/);
+  assert.match(result.stdout, /infra/);
+  assert.match(result.stdout, /mcp/);
+  assert.match(result.stdout, /seed/);
   assert.match(result.stdout, /doctor/);
+});
+
+test('compose, infra, and mcp commands expose help examples', () => {
+  const compose = runCli(['compose', '--help']);
+  assert.equal(compose.status, 0, compose.stderr);
+  assert.match(compose.stdout, /compose generate --mode consolidated/);
+
+  const infra = runCli(['infra', '--help']);
+  assert.equal(infra.status, 0, infra.stderr);
+  assert.match(infra.stdout, /collab infra up/);
+
+  const mcp = runCli(['mcp', '--help']);
+  assert.equal(mcp.status, 0, mcp.stderr);
+  assert.match(mcp.stdout, /collab mcp start/);
 });
