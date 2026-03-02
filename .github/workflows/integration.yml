@@ -23,3 +23,14 @@ jobs:
 
       - name: Run integration suite (no containers)
         run: npm test
+
+      - name: Verify package tarball can be installed
+        run: |
+          set -eu
+          package_tgz="$(npm pack | tail -n 1)"
+          temp_dir="$(mktemp -d)"
+          cp "$package_tgz" "$temp_dir/"
+          cd "$temp_dir"
+          npm init -y >/dev/null 2>&1
+          npm install "./$package_tgz"
+          npx collab --version

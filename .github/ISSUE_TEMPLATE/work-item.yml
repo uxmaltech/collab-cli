@@ -1,0 +1,54 @@
+name: Work item
+description: Standard template for new features, changes, and governance updates.
+title: "type: short summary"
+labels:
+  - triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please write this issue in English.
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Background and current state.
+      placeholder: Describe the environment, current behavior, and relevant history.
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What is broken, missing, or unclear?
+      placeholder: Describe the specific problem this issue addresses.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: Explicit in-scope changes and boundaries.
+      placeholder: List concrete implementation items.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Objective criteria for done.
+      placeholder: |
+        - [ ] criterion 1
+        - [ ] criterion 2
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies
+      description: Cross-repo dependencies or related issues (write None if not applicable).
+      placeholder: |
+        - uxmaltech/collab-architecture#123
+        - uxmaltech/collab-architecture-mcp#456
+    validations:
+      required: true
