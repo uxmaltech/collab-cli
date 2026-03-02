@@ -1,0 +1,42 @@
+{
+  "name": "@uxmaltech/collab-cli",
+  "version": "0.1.0",
+  "description": "CLI for collaborative architecture and delivery workflows.",
+  "private": true,
+  "license": "MIT",
+  "bin": {
+    "collab": "bin/collab"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "files": [
+    "bin",
+    "dist",
+    "README.md",
+    "LICENSE",
+    "install.sh"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "rm -rf dist",
+    "lint": "eslint \"src/**/*.ts\"",
+    "format": "prettier --check .",
+    "format:write": "prettier --write .",
+    "start": "node dist/index.js",
+    "test": "npm run build && node --test tests/**/*.test.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "commander": "^14.0.2"
+  },
+  "devDependencies": {
+    "@types/node": "^24.6.0",
+    "@typescript-eslint/eslint-plugin": "^8.44.1",
+    "@typescript-eslint/parser": "^8.44.1",
+    "eslint": "^8.57.1",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.6.2",
+    "typescript": "^5.9.3"
+  }
+}
