@@ -8,6 +8,7 @@ LOCAL_BIN_DIR="$HOME/.local/bin"
 SYSTEM_BIN_DIR="/usr/local/bin"
 MIN_NODE_MAJOR=20
 MODE=install
+PATH_PROMPT_MODE=${COLLAB_INSTALL_PATH_PROMPT:-auto}
 
 say() {
   printf '%s\n' "$*"
@@ -161,7 +162,175 @@ print_path_hint() {
       say "PATH already includes $BIN_DIR"
       ;;
     *)
-      say "Add '$BIN_DIR' to your PATH to call 'collab' globally."
+      maybe_offer_path_update
+      ;;
+  esac
+}
+
+detect_shell_name() {
+  if [ -n "${COLLAB_SHELL:-}" ]; then
+    shell_path=$COLLAB_SHELL
+  elif [ -n "${SHELL:-}" ]; then
+    shell_path=$SHELL
+  else
+    shell_path=sh
+  fi
+
+  shell_name=$(basename "$shell_path")
+  case "$shell_name" in
+    zsh|bash|fish)
+      printf '%s' "$shell_name"
+      ;;
+    *)
+      printf 'unknown'
+      ;;
+  esac
+}
+
+resolve_shell_rc_file() {
+  shell_name=$1
+
+  case "$shell_name" in
+    zsh)
+      printf '%s/.zshrc' "$HOME"
+      ;;
+    bash)
+      if [ -f "$HOME/.bashrc" ]; then
+        printf '%s/.bashrc' "$HOME"
+      elif [ -f "$HOME/.bash_profile" ]; then
+        printf '%s/.bash_profile' "$HOME"
+      elif [ "${os_name:-}" = "Darwin" ]; then
+        printf '%s/.bash_profile' "$HOME"
+      else
+        printf '%s/.bashrc' "$HOME"
+      fi
+      ;;
+    fish)
+      printf '%s/.config/fish/config.fish' "$HOME"
+      ;;
+    *)
+      printf ''
+      ;;
+  esac
+}
+
+append_path_block_if_missing() {
+  shell_name=$1
+  rc_file=$2
+
+  case "$shell_name" in
+    zsh|bash)
+      marker='# collab-cli PATH configuration'
+      entry="export PATH=\"$BIN_DIR:\$PATH\""
+      if [ -f "$rc_file" ] && grep -F "$entry" "$rc_file" >/dev/null 2>&1; then
+        return 0
+      fi
+
+      if ! {
+        printf '\n%s\n' "$marker"
+        printf '%s\n' "$entry"
+      } >> "$rc_file"; then
+        return 1
+      fi
+      return 0
+      ;;
+    fish)
+      if [ -f "$rc_file" ] && grep -F "set -gx PATH \"$BIN_DIR\" \$PATH" "$rc_file" >/dev/null 2>&1; then
+        return 0
+      fi
+
+      if ! mkdir -p "$(dirname "$rc_file")"; then
+        return 1
+      fi
+
+      if ! {
+        printf '\n# collab-cli PATH configuration\n'
+        printf 'if not contains "%s" $PATH\n' "$BIN_DIR"
+        printf '  set -gx PATH "%s" $PATH\n' "$BIN_DIR"
+        printf 'end\n'
+      } >> "$rc_file"; then
+        return 1
+      fi
+      return 0
+      ;;
+  esac
+
+  return 1
+}
+
+print_manual_path_snippet() {
+  shell_name=$1
+
+  case "$shell_name" in
+    fish)
+      say "Manual PATH snippet: set -gx PATH \"$BIN_DIR\" \$PATH"
+      ;;
+    *)
+      say "Manual PATH snippet: export PATH=\"$BIN_DIR:\$PATH\""
+      ;;
+  esac
+}
+
+path_prompt_enabled() {
+  case "$PATH_PROMPT_MODE" in
+    always)
+      return 0
+      ;;
+    never)
+      return 1
+      ;;
+    auto|'')
+      [ -t 1 ] && [ -r /dev/tty ]
+      return $?
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+read_prompt_reply() {
+  if [ -r /dev/tty ]; then
+    IFS= read -r reply < /dev/tty || reply=''
+  else
+    reply=''
+  fi
+}
+
+maybe_offer_path_update() {
+  shell_name=$(detect_shell_name)
+  rc_file=$(resolve_shell_rc_file "$shell_name")
+
+  if [ -z "$rc_file" ]; then
+    say "Add '$BIN_DIR' to your PATH to call 'collab' globally."
+    return
+  fi
+
+  if ! path_prompt_enabled; then
+    say "Add '$BIN_DIR' to your PATH to call 'collab' globally."
+    return
+  fi
+
+  if [ ! -r /dev/tty ]; then
+    say "Add '$BIN_DIR' to your PATH to call 'collab' globally."
+    return
+  fi
+
+  printf "Add '%s' to your PATH in %s now? [y/N] " "$BIN_DIR" "$rc_file" > /dev/tty
+  read_prompt_reply
+
+  case "$reply" in
+    y|Y|yes|YES|Yes)
+      if append_path_block_if_missing "$shell_name" "$rc_file"; then
+        say "PATH configuration updated in $rc_file"
+        say "Run 'source $rc_file' or open a new terminal, then run 'collab --help'."
+      else
+        say "Could not update $rc_file automatically (permission or write error)."
+        print_manual_path_snippet "$shell_name"
+      fi
+      ;;
+    *)
+      say "Skipped PATH update. Add '$BIN_DIR' to your PATH to call 'collab' globally."
       ;;
   esac
 }
