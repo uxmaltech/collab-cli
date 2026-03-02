@@ -36,13 +36,16 @@ jobs:
           docker --version
           docker compose version
 
+      - name: Build local MCP mock image fallback
+        run: docker build -t collab-architecture-mcp:mock-e2e ./tests/e2e/mock-mcp-image
+
       - name: Resolve MCP image for E2E
         id: resolve_mcp_image
         env:
           MCP_CHECKOUT_OUTCOME: ${{ steps.checkout_mcp.outcome }}
         run: |
           set -eu
-          image="ghcr.io/uxmaltech/collab-architecture-mcp:latest"
+          image="collab-architecture-mcp:mock-e2e"
 
           if [ "$MCP_CHECKOUT_OUTCOME" = "success" ] && [ -d "./mcp-source" ]; then
             echo "Using checked-out MCP source for local E2E image build."
@@ -50,8 +53,7 @@ jobs:
             docker build -t collab-architecture-mcp:e2e ./mcp-source
             image="collab-architecture-mcp:e2e"
           else
-            echo "MCP source checkout unavailable; falling back to published image: $image"
-            docker pull "$image"
+            echo "MCP source checkout unavailable; falling back to local mock image: $image"
           fi
 
           echo "image=$image" >> "$GITHUB_OUTPUT"
