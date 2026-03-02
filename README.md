@@ -6,8 +6,36 @@ Command-line interface for collaborative architecture and delivery workflows at 
 
 - Node.js 20+
 - npm 10+
+- git (for latest-main install script)
 
-## Install (local development)
+## Install
+
+Versioned install from npm:
+
+```bash
+npm install -g @uxmaltech/collab-cli
+collab --version
+```
+
+Ephemeral execution without global install:
+
+```bash
+npx @uxmaltech/collab-cli --help
+```
+
+Latest-main installer script:
+
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/uxmaltech/collab-cli/main/install.sh)"
+```
+
+Update an existing latest-main installation:
+
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/uxmaltech/collab-cli/main/install.sh)" -- --update
+```
+
+## Local development install
 
 ```bash
 npm install
@@ -79,6 +107,12 @@ Generation creates/updates:
 - `npm test` - build and run test suite.
 - `npm run test:e2e` - run Docker-backed end-to-end flow (`init --mode indexed` to MCP tool call).
 - `npm run typecheck` - run TypeScript without emitting files.
+- `npm run pack:dry-run` - verify npm package contents and publish readiness.
+
+## Governance and release docs
+
+- [CONTRIBUTING](CONTRIBUTING.md) - contribution rules and issue language policy (English-only issues).
+- [Release strategy](docs/release.md) - distribution, versioning, CI pinning, upgrade, and rollback process.
 
 ## Project structure
 

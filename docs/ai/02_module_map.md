@@ -42,6 +42,13 @@
 - `src/templates/mcp.ts`: MCP-only topology template with external shared network.
 - `ecosystem.manifest.json`: compatibility ranges for CLI/canon/MCP.
 
+## Governance and Delivery
+- `CONTRIBUTING.md`: contribution and issue-language policy.
+- `.github/ISSUE_TEMPLATE/work-item.yml`: standard issue intake for context/problem/scope/acceptance/dependencies.
+- `install.sh`: latest-main installer/update entrypoint with user-local symlink flow.
+- `docs/release.md`: distribution channels, semver policy, release/pinning/rollback guidance.
+- `.github/workflows/release.yml`: tag-triggered validate/package/publish/release workflow.
+
 ## Tests
 - `tests/compose/*`: template snapshots + parameter coverage + override/edge scenarios.
 - `tests/commands/*`: wizard flow and subcommand parsing/validation tests.
