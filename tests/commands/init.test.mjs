@@ -8,7 +8,7 @@ import { makeTempWorkspace } from '../helpers/workspace.mjs';
 test('init interactive flow prompts in expected order', () => {
   const workspace = makeTempWorkspace();
   const env = createFakeDockerEnv();
-  const input = '2\n\n\nn\n';
+  const input = '2\n\nn\n';
 
   const result = runCli(['--cwd', workspace, '--dry-run', 'init'], {
     cwd: workspace,
@@ -40,7 +40,7 @@ test('init --yes accepts explicit flags in non-interactive mode', () => {
       'indexed',
       '--compose-mode',
       'split',
-      '--skip-codex-config',
+      '--skip-mcp-snippets',
       '--ingest',
     ],
     {
@@ -52,5 +52,5 @@ test('init --yes accepts explicit flags in non-interactive mode', () => {
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /- mode: indexed/);
   assert.match(result.stdout, /- compose mode: split/);
-  assert.match(result.stdout, /Skipping Codex config stage by user choice/i);
+  assert.match(result.stdout, /Skipping MCP snippet generation by user choice/i);
 });
