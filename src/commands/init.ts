@@ -19,6 +19,8 @@ import { resolveInfraComposeFile, runInfraCompose } from './infra/shared';
 import { resolveMcpComposeFile, runMcpCompose } from './mcp/shared';
 import type { ComposeMode } from '../lib/compose-paths';
 import { assistantSetupStage } from '../stages/assistant-setup';
+import { canonScaffoldStage } from '../stages/canon-scaffold';
+import { canonIngestStage } from '../stages/canon-ingest';
 import { getEnabledProviders, PROVIDER_DEFAULTS, type ProviderKey } from '../lib/providers';
 
 interface InitOptions {
@@ -252,6 +254,7 @@ Examples:
           stageOptions: {
             yes: options.yes,
             providers: options.providers,
+            outputDir: options.outputDir,
           },
         },
         [
@@ -291,6 +294,7 @@ Examples:
             },
           },
           assistantSetupStage,
+          canonScaffoldStage,
           {
             id: 'compose-generation',
             title: 'Generate and validate compose files',
@@ -408,6 +412,7 @@ Examples:
               );
             },
           },
+          canonIngestStage,
           {
             id: 'ingest-bootstrap',
             title: 'Optional ingest bootstrap',

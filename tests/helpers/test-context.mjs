@@ -14,6 +14,7 @@ export function createTestConfig(workspace, overrides = {}) {
       infraFile: 'docker-compose.infra.yml',
       mcpFile: 'docker-compose.mcp.yml',
     },
+    architectureDir: path.join(workspace, 'docs', 'architecture'),
   };
 
   return {

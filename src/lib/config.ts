@@ -18,6 +18,7 @@ export interface CollabConfig {
   envFile: string;
   mode: CollabMode;
   compose: ComposePathConfig;
+  architectureDir: string;
   assistants?: AssistantsConfig;
 }
 
@@ -25,6 +26,7 @@ interface RawCollabConfig {
   compose?: Partial<ComposePathConfig>;
   envFile?: string;
   mode?: string;
+  architectureDir?: string;
   assistants?: AssistantsConfig;
 }
 
@@ -46,6 +48,7 @@ export function defaultCollabConfig(cwd = process.cwd()): CollabConfig {
     envFile: path.join(workspaceDir, '.env'),
     mode: DEFAULT_MODE,
     compose: { ...DEFAULT_COMPOSE_PATHS },
+    architectureDir: path.join(workspaceDir, 'docs', 'architecture'),
   };
 }
 
@@ -72,6 +75,9 @@ export function loadCollabConfig(cwd = process.cwd()): CollabConfig {
       infraFile: raw.compose?.infraFile ?? defaults.compose.infraFile,
       mcpFile: raw.compose?.mcpFile ?? defaults.compose.mcpFile,
     },
+    architectureDir: raw.architectureDir
+      ? path.resolve(defaults.workspaceDir, raw.architectureDir)
+      : defaults.architectureDir,
     assistants: raw.assistants,
   };
 }
