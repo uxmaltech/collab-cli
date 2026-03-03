@@ -134,7 +134,7 @@ test('config persists assistants after setup', () => {
 
   // Run with actual file writes (no --dry-run) but use file-only mode to skip docker
   const result = runCli(
-    ['--cwd', workspace, 'init', '--yes', '--providers', 'codex', '--mode', 'file-only'],
+    ['--cwd', workspace, 'init', '--yes', '--providers', 'codex', '--mode', 'file-only', '--skip-analysis'],
     { cwd: workspace, env },
   );
 
@@ -162,14 +162,14 @@ test('resume skips assistant-setup when already completed', () => {
 
   // First run
   const first = runCli(
-    ['--cwd', workspace, 'init', '--yes', '--providers', 'codex', '--mode', 'file-only'],
+    ['--cwd', workspace, 'init', '--yes', '--providers', 'codex', '--mode', 'file-only', '--skip-analysis'],
     { cwd: workspace, env },
   );
   assert.equal(first.status, 0, `initial CLI failed: ${first.stderr}`);
 
   // Second run with --resume
   const result = runCli(
-    ['--cwd', workspace, 'init', '--yes', '--resume', '--mode', 'file-only'],
+    ['--cwd', workspace, 'init', '--yes', '--resume', '--mode', 'file-only', '--skip-analysis'],
     { cwd: workspace, env },
   );
 

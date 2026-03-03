@@ -21,6 +21,7 @@ import type { ComposeMode } from '../lib/compose-paths';
 import { assistantSetupStage } from '../stages/assistant-setup';
 import { canonScaffoldStage } from '../stages/canon-scaffold';
 import { canonIngestStage } from '../stages/canon-ingest';
+import { repoAnalysisStage } from '../stages/repo-analysis';
 import { getEnabledProviders, PROVIDER_DEFAULTS, type ProviderKey } from '../lib/providers';
 
 interface InitOptions {
@@ -31,6 +32,7 @@ interface InitOptions {
   composeMode?: string;
   outputDir?: string;
   skipMcpSnippets?: boolean;
+  skipAnalysis?: boolean;
   ingest?: boolean;
   timeoutMs?: string;
   retries?: string;
@@ -207,6 +209,7 @@ export function registerInitCommand(program: Command): void {
     .option('--compose-mode <mode>', 'Compose mode: consolidated|split')
     .option('--output-dir <directory>', 'Directory used to write compose outputs')
     .option('--skip-mcp-snippets', 'Skip MCP client config snippet generation')
+    .option('--skip-analysis', 'Skip AI-powered repository analysis stage')
     .option('--ingest', 'Run optional ingest bootstrap stage (indexed mode only)')
     .option('--providers <list>', 'Comma-separated AI provider list (codex,claude,gemini)')
     .option('--timeout-ms <ms>', 'Per-check timeout in milliseconds', '5000')
@@ -255,6 +258,7 @@ Examples:
             yes: options.yes,
             providers: options.providers,
             outputDir: options.outputDir,
+            skipAnalysis: options.skipAnalysis,
           },
         },
         [
@@ -295,6 +299,7 @@ Examples:
           },
           assistantSetupStage,
           canonScaffoldStage,
+          repoAnalysisStage,
           {
             id: 'compose-generation',
             title: 'Generate and validate compose files',
