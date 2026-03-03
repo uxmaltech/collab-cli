@@ -104,8 +104,8 @@ async function resolveWizardSelection(
         defaults.mode,
       );
 
-  // Skip compose-mode prompt when mode is file-only (compose files are still
-  // generated for future use, but the choice is irrelevant to the user).
+  // Skip compose-mode prompt when mode is file-only — no Docker/MCP
+  // infrastructure is used, so compose configuration is irrelevant.
   const composeMode =
     mode === 'file-only'
       ? parseComposeMode(options.composeMode, 'consolidated')
@@ -299,6 +299,11 @@ Examples:
               'Run collab init --resume after fixing compose inputs.',
             ],
             run: () => {
+              if (selections.mode === 'file-only') {
+                context.logger.info('Mode file-only selected; skipping compose generation stage.');
+                return;
+              }
+
               const generation = generateComposeFiles({
                 config: effectiveConfig,
                 mode: selections.composeMode,
@@ -374,6 +379,11 @@ Examples:
               'Run collab init --resume to regenerate MCP config snippets.',
             ],
             run: () => {
+              if (selections.mode === 'file-only') {
+                context.logger.info('Mode file-only selected; skipping MCP snippet generation.');
+                return;
+              }
+
               if (options.skipMcpSnippets) {
                 context.logger.info('Skipping MCP snippet generation by user choice.');
                 return;

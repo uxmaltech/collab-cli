@@ -54,3 +54,28 @@ test('init --yes accepts explicit flags in non-interactive mode', () => {
   assert.match(result.stdout, /- compose mode: split/);
   assert.match(result.stdout, /Skipping MCP snippet generation by user choice/i);
 });
+
+test('init --yes --mode file-only skips compose and MCP snippet generation', () => {
+  const workspace = makeTempWorkspace();
+  const env = createFakeDockerEnv();
+
+  const result = runCli(
+    ['--cwd', workspace, '--dry-run', 'init', '--yes', '--mode', 'file-only'],
+    {
+      cwd: workspace,
+      env,
+    },
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /- mode: file-only/);
+  assert.match(result.stdout, /skipping compose generation stage/i);
+  assert.match(result.stdout, /skipping MCP snippet generation/i);
+
+  // Should NOT mention docker-compose or MCP config files
+  assert.ok(
+    !result.stdout.includes('Generate and validate compose files') ||
+      result.stdout.includes('skipping compose generation'),
+    'file-only should skip compose generation',
+  );
+});
