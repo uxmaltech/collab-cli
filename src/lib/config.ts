@@ -19,6 +19,9 @@ export interface CollabConfig {
   mode: CollabMode;
   compose: ComposePathConfig;
   architectureDir: string;
+  uxmaltechDir: string;
+  repoDir: string;
+  aiDir: string;
   assistants?: AssistantsConfig;
 }
 
@@ -39,6 +42,7 @@ const DEFAULT_COMPOSE_PATHS: ComposePathConfig = {
 export function defaultCollabConfig(cwd = process.cwd()): CollabConfig {
   const workspaceDir = path.resolve(cwd);
   const collabDir = path.join(workspaceDir, '.collab');
+  const architectureDir = path.join(workspaceDir, 'docs', 'architecture');
 
   return {
     workspaceDir,
@@ -48,7 +52,10 @@ export function defaultCollabConfig(cwd = process.cwd()): CollabConfig {
     envFile: path.join(workspaceDir, '.env'),
     mode: DEFAULT_MODE,
     compose: { ...DEFAULT_COMPOSE_PATHS },
-    architectureDir: path.join(workspaceDir, 'docs', 'architecture'),
+    architectureDir,
+    uxmaltechDir: path.join(architectureDir, 'uxmaltech'),
+    repoDir: path.join(architectureDir, 'repo'),
+    aiDir: path.join(workspaceDir, 'docs', 'ai'),
   };
 }
 
@@ -66,6 +73,10 @@ export function loadCollabConfig(cwd = process.cwd()): CollabConfig {
   const defaults = defaultCollabConfig(cwd);
   const raw = readRawConfig(defaults.configFile);
 
+  const architectureDir = raw.architectureDir
+    ? path.resolve(defaults.workspaceDir, raw.architectureDir)
+    : defaults.architectureDir;
+
   return {
     ...defaults,
     mode: parseMode(raw.mode, defaults.mode),
@@ -75,9 +86,10 @@ export function loadCollabConfig(cwd = process.cwd()): CollabConfig {
       infraFile: raw.compose?.infraFile ?? defaults.compose.infraFile,
       mcpFile: raw.compose?.mcpFile ?? defaults.compose.mcpFile,
     },
-    architectureDir: raw.architectureDir
-      ? path.resolve(defaults.workspaceDir, raw.architectureDir)
-      : defaults.architectureDir,
+    architectureDir,
+    uxmaltechDir: path.join(architectureDir, 'uxmaltech'),
+    repoDir: path.join(architectureDir, 'repo'),
+    aiDir: path.join(defaults.workspaceDir, 'docs', 'ai'),
     assistants: raw.assistants,
   };
 }

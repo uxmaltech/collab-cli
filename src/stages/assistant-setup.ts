@@ -1,5 +1,8 @@
+import { checkGhAuth, detectProviderCli, type CliInfo } from '../lib/cli-detection';
+import { loadApiKey, saveApiKey } from '../lib/credentials';
 import { CliError } from '../lib/errors';
-import { runOAuthFlow, saveTokens, getTokenFilePath } from '../lib/oauth';
+import { listModels, type ModelInfo } from '../lib/model-listing';
+import { saveProviderModels } from '../lib/model-registry';
 import type { OrchestrationStage, StageContext } from '../lib/orchestrator';
 import { promptChoice, promptMultiSelect, promptText } from '../lib/prompt';
 import {
@@ -9,12 +12,23 @@ import {
   parseProviderList,
   type AssistantsConfig,
   type AuthMethod,
-  type OAuthProviderConfig,
   type ProviderAuthConfig,
   type ProviderConfig,
   type ProviderKey,
 } from '../lib/providers';
 import { serializeUserConfig } from '../lib/config';
+
+/**
+ * Resolves the effective API key for a provider from env var or stored credentials.
+ */
+function resolveEffectiveKey(provider: ProviderKey, ctx: StageContext): string | null {
+  const envKey = process.env[PROVIDER_DEFAULTS[provider].envVar];
+  if (envKey) {
+    return envKey;
+  }
+
+  return loadApiKey(ctx.config, provider);
+}
 
 async function configureApiKey(
   provider: ProviderKey,
@@ -22,131 +36,214 @@ async function configureApiKey(
 ): Promise<ProviderAuthConfig> {
   const defaults = PROVIDER_DEFAULTS[provider];
   const isNonInteractive = Boolean(ctx.options?.yes);
-
-  const envVar = isNonInteractive
-    ? defaults.envVar
-    : await promptText(`Environment variable for ${defaults.label} API key`, defaults.envVar);
+  const envVar = defaults.envVar;
 
   if (process.env[envVar]) {
-    ctx.logger.info(`  ✓ ${envVar} detected in environment`);
+    ctx.logger.info(`  \u2713 ${envVar} detected in environment`);
+
+    return { method: 'api-key', envVar };
+  }
+
+  // Env var is not set — prompt for API key or let user set it later
+  if (isNonInteractive) {
+    ctx.logger.warn(
+      `${envVar} is not set in current environment. Set it before running collab commands, ` +
+        `or run collab init interactively to enter it directly.`,
+    );
+
+    return { method: 'api-key', envVar };
+  }
+
+  ctx.logger.info(`  ${envVar} is not set in current environment.`);
+
+  const apiKey = await promptText(
+    `Enter API key for ${defaults.label} (or leave empty to use ${envVar} env var later)`,
+  );
+
+  if (apiKey) {
+    // Save the key securely to .collab/credentials.json
+    if (!ctx.executor.dryRun) {
+      saveApiKey(ctx.config, provider, apiKey);
+      ctx.logger.info(`  \u2713 API key saved to .collab/credentials.json`);
+    } else {
+      ctx.logger.info(`  [dry-run] Would save API key to .collab/credentials.json`);
+    }
   } else {
     ctx.logger.warn(
-      `${envVar} is not set in current environment. Set it before running collab commands.`,
+      `No API key provided. Set ${envVar} before running collab commands.`,
     );
   }
 
-  return {
-    method: 'api-key',
-    envVar,
-  };
+  return { method: 'api-key', envVar };
 }
 
 /**
- * Validates that a client_id looks like an OAuth application ID, not an email
- * or other obviously invalid value. OAuth client IDs are assigned by providers
- * when you register an application — they are NOT user emails or API keys.
+ * Queries the provider API for available models, prints a summary,
+ * and persists results to the model registry.
+ * Returns the model list, or null if the query fails or is skipped.
  */
-function validateClientId(clientId: string, providerLabel: string): void {
-  // Check for email-like values
-  if (clientId.includes('@')) {
-    throw new CliError(
-      `Invalid OAuth Client ID for ${providerLabel}: "${clientId}" looks like an email address.\n` +
-        `A Client ID is an application identifier assigned by the provider when you register an OAuth application.\n` +
-        `It is NOT your email, username, or API key.\n\n` +
-        `Note: Most providers (OpenAI, Anthropic, Google) require you to register an OAuth application\n` +
-        `in their developer portal to obtain a Client ID. For standard API access, use "api-key" auth instead.`,
-    );
-  }
+async function fetchAndShowModels(
+  provider: ProviderKey,
+  apiKey: string,
+  ctx: StageContext,
+): Promise<ModelInfo[] | null> {
+  try {
+    const models = await listModels(provider, apiKey);
 
-  // Check for API key-like values (sk-..., anthropic-..., etc.)
-  if (/^(sk-|anthropic-|AIza)/.test(clientId)) {
-    throw new CliError(
-      `Invalid OAuth Client ID for ${providerLabel}: "${clientId.slice(0, 8)}..." looks like an API key.\n` +
-        `A Client ID is an application identifier, not a secret key.\n` +
-        `If you have an API key, use "api-key" authentication method instead.`,
-    );
+    if (models.length === 0) {
+      ctx.logger.warn(`  API key accepted but no generative models found.`);
+      return null;
+    }
+
+    ctx.logger.info(`  \u2713 API key validated \u2014 ${models.length} model(s) available:`);
+
+    for (const m of models) {
+      const label = m.name ? `${m.id}  (${m.name})` : m.id;
+      ctx.logger.info(`      ${label}`);
+    }
+
+    // Persist to model registry for future features
+    if (!ctx.executor.dryRun) {
+      saveProviderModels(ctx.config, provider, models);
+    }
+
+    return models;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    ctx.logger.warn(`  Could not query models: ${message}`);
+    ctx.logger.info(`  Falling back to default model list.`);
+
+    return null;
   }
 }
 
-async function configureOAuth(
+/**
+ * Selects a model — from the live API list when available, otherwise from hardcoded defaults.
+ */
+async function selectModel(
   provider: ProviderKey,
-  ctx: StageContext,
-): Promise<ProviderAuthConfig> {
+  availableModels: ModelInfo[] | null,
+  isNonInteractive: boolean,
+  cliConfiguredModel?: string,
+): Promise<string> {
   const defaults = PROVIDER_DEFAULTS[provider];
-  const isNonInteractive = Boolean(ctx.options?.yes);
-  const isDryRun = ctx.executor.dryRun;
-
-  ctx.logger.warn(
-    `OAuth for ${defaults.label} requires a registered OAuth application.\n` +
-      `  You must register an app in the provider's developer portal to get a Client ID.\n` +
-      `  For standard API usage, "api-key" authentication is simpler and recommended.`,
-  );
-
-  // Get client ID
-  let clientId: string;
-  const clientIdFromEnv = process.env[defaults.oauth.clientIdEnvVar];
 
   if (isNonInteractive) {
-    if (!clientIdFromEnv) {
-      throw new CliError(
-        `OAuth non-interactive mode requires ${defaults.oauth.clientIdEnvVar} environment variable for ${defaults.label}.\n` +
-          `This must be a registered OAuth application Client ID, not an email or API key.`,
+    // Prefer CLI-configured model, then first hardcoded default
+    return cliConfiguredModel ?? defaults.models[0];
+  }
+
+  if (availableModels && availableModels.length > 0) {
+    const defaultSet = new Set(defaults.models);
+    const apiIds = new Set(availableModels.map((m) => m.id));
+    const byId = new Map(availableModels.map((m) => [m.id, m]));
+
+    const choices: { value: string; label: string }[] = [];
+
+    // If CLI has a configured model not in defaults, add it first
+    if (cliConfiguredModel && !defaultSet.has(cliConfiguredModel) && !apiIds.has(cliConfiguredModel)) {
+      choices.push({ value: cliConfiguredModel, label: `${cliConfiguredModel} (CLI configured)` });
+    }
+
+    // Defaults that are available in the API
+    for (const d of defaults.models) {
+      if (apiIds.has(d)) {
+        const m = byId.get(d)!;
+        choices.push({ value: m.id, label: m.name ? `${m.id} \u2014 ${m.name}` : m.id });
+      }
+    }
+
+    // CLI-configured model from the API list (move to front if found)
+    if (cliConfiguredModel && apiIds.has(cliConfiguredModel) && !defaultSet.has(cliConfiguredModel)) {
+      const m = byId.get(cliConfiguredModel)!;
+      const label = m.name ? `${m.id} \u2014 ${m.name} (CLI configured)` : `${m.id} (CLI configured)`;
+      // Insert at beginning
+      choices.unshift({ value: m.id, label });
+    }
+
+    // Remaining models from the API
+    const others = availableModels.filter(
+      (m) => !defaultSet.has(m.id) && m.id !== cliConfiguredModel,
+    );
+    for (const m of others) {
+      choices.push({ value: m.id, label: m.name ? `${m.id} \u2014 ${m.name}` : m.id });
+    }
+
+    if (choices.length > 0) {
+      const defaultChoice = cliConfiguredModel
+        ? choices.find((c) => c.value === cliConfiguredModel)?.value ?? choices[0].value
+        : choices[0].value;
+      return promptChoice(
+        `Default model for ${defaults.label}:`,
+        choices,
+        defaultChoice,
       );
     }
 
-    clientId = clientIdFromEnv;
-  } else {
-    const clientIdDefault = clientIdFromEnv ?? '';
-    const hint = clientIdFromEnv
-      ? `from ${defaults.oauth.clientIdEnvVar}`
-      : `or set ${defaults.oauth.clientIdEnvVar}`;
-    clientId = await promptText(
-      `OAuth Client ID for ${defaults.label} (registered app ID, ${hint})`,
-      clientIdDefault,
-    );
+    return availableModels[0].id;
+  }
 
-    if (!clientId) {
-      throw new CliError(`OAuth Client ID is required for ${defaults.label}.`);
+  // Hardcoded fallback — include CLI-configured model if not already in defaults
+  const fallbackChoices = [...defaults.models];
+  if (cliConfiguredModel && !fallbackChoices.includes(cliConfiguredModel)) {
+    fallbackChoices.unshift(cliConfiguredModel);
+  }
+
+  const defaultValue = cliConfiguredModel ?? fallbackChoices[0];
+  return promptChoice(
+    `Default model for ${defaults.label}:`,
+    fallbackChoices.map((m) => ({
+      value: m,
+      label: m === cliConfiguredModel ? `${m} (CLI configured)` : m,
+    })),
+    defaultValue,
+  );
+}
+
+/**
+ * Configures the Copilot (GitHub) provider.
+ * Copilot doesn't use API keys or models — it works via `gh` CLI and GitHub issues.
+ * Validates that `gh` is installed and authenticated.
+ */
+async function configureCopilotProvider(ctx: StageContext): Promise<ProviderConfig> {
+  ctx.logger.info(`\nConfiguring ${PROVIDER_DEFAULTS.copilot.label}...`);
+
+  const cli = detectProviderCli('copilot');
+
+  if (!cli.available) {
+    // gh not installed or not authenticated
+    const ghExists = (() => {
+      try {
+        const whichCmd = process.platform === 'win32' ? 'where' : 'which';
+        require('node:child_process').execSync(`${whichCmd} gh`, {
+          encoding: 'utf8',
+          timeout: 3_000,
+          stdio: ['ignore', 'pipe', 'ignore'],
+        });
+        return true;
+      } catch {
+        return false;
+      }
+    })();
+
+    if (!ghExists) {
+      ctx.logger.warn('  gh CLI not found. Install it from https://cli.github.com/');
+      return { enabled: false, auth: { method: 'cli' } };
     }
+
+    // gh exists but not authenticated
+    ctx.logger.warn('  gh CLI found but not authenticated. Run: gh auth login');
+    return { enabled: false, auth: { method: 'cli' } };
   }
 
-  validateClientId(clientId, defaults.label);
-
-  const oauthConfig: OAuthProviderConfig = {
-    clientId,
-    clientIdEnvVar: clientIdFromEnv ? defaults.oauth.clientIdEnvVar : undefined,
-    authorizationUrl: defaults.oauth.authorizationUrl,
-    tokenUrl: defaults.oauth.tokenUrl,
-    scopes: defaults.oauth.scopes,
-    tokenFile: `tokens/${provider}.json`,
-  };
-
-  // Run the OAuth flow (skip in dry-run mode)
-  if (isDryRun) {
-    ctx.logger.info(`  [dry-run] Would run OAuth flow for ${defaults.label}`);
-    ctx.logger.info(`    Authorization URL: ${oauthConfig.authorizationUrl}`);
-    ctx.logger.info(`    Token URL: ${oauthConfig.tokenUrl}`);
-    ctx.logger.info(`    Scopes: ${oauthConfig.scopes.join(', ')}`);
-  } else {
-    const tokens = await runOAuthFlow(
-      {
-        provider,
-        clientId,
-        authorizationUrl: oauthConfig.authorizationUrl,
-        tokenUrl: oauthConfig.tokenUrl,
-        scopes: oauthConfig.scopes,
-      },
-      ctx.logger,
-    );
-
-    // Save tokens securely
-    saveTokens(ctx.config, provider, tokens);
-    ctx.logger.info(`  ✓ OAuth tokens saved to ${getTokenFilePath(ctx.config, provider)}`);
-  }
+  const ver = cli.version ? ` (${cli.version})` : '';
+  ctx.logger.info(`  \u2713 gh CLI detected${ver}`);
+  ctx.logger.info(`  \u2713 GitHub authentication verified`);
 
   return {
-    method: 'oauth',
-    oauth: oauthConfig,
+    enabled: true,
+    auth: { method: 'cli' },
+    cli: cli,
   };
 }
 
@@ -159,50 +256,83 @@ async function configureProvider(
 
   ctx.logger.info(`\nConfiguring ${defaults.label}...`);
 
-  // Select auth method
+  // Detect official CLI
+  const cli = detectProviderCli(provider);
+
+  if (cli.available) {
+    const ver = cli.version ? ` (${cli.version})` : '';
+    ctx.logger.info(`  \u2713 ${cli.command} CLI detected${ver}`);
+  }
+
+  // Determine auth method
   let authMethod: AuthMethod;
+  const hasEnvKey = Boolean(process.env[defaults.envVar]);
 
-  if (isNonInteractive) {
-    // In non-interactive mode, always use api-key. OAuth requires a registered
-    // application and is not available self-service for most providers.
+  if (cli.available && !hasEnvKey) {
+    // CLI is available and no env var — offer CLI vs API key choice
+    if (isNonInteractive) {
+      // Non-interactive: default to CLI when detected and no env var
+      authMethod = 'cli';
+      ctx.logger.info(`  Using ${cli.command} CLI (no ${defaults.envVar} set).`);
+    } else {
+      authMethod = await promptChoice<AuthMethod>(
+        `Authentication for ${defaults.label}:`,
+        [
+          { value: 'cli', label: `Use ${cli.command} CLI directly (no API key needed)` },
+          { value: 'api-key', label: `Enter API key (${defaults.envVar})` },
+        ],
+        'cli',
+      );
+    }
+  } else if (cli.available && hasEnvKey) {
+    // Both CLI and env var available — let user pick
+    if (isNonInteractive) {
+      authMethod = 'api-key';
+    } else {
+      authMethod = await promptChoice<AuthMethod>(
+        `Authentication for ${defaults.label}:`,
+        [
+          { value: 'cli', label: `Use ${cli.command} CLI directly (no API key needed)` },
+          { value: 'api-key', label: `API key via ${defaults.envVar} (detected)` },
+        ],
+        'api-key',
+      );
+    }
+  } else {
+    // No CLI — API key is the only option
     authMethod = 'api-key';
-  } else {
-    // Default to api-key — OAuth is an advanced option that requires registering
-    // an application with the provider. Most providers (OpenAI, Anthropic) do not
-    // offer self-service OAuth app registration for API access.
-    authMethod = await promptChoice<AuthMethod>(
-      `Authentication method for ${defaults.label}:`,
-      [
-        { value: 'api-key', label: 'API Key (recommended — set env var)' },
-        { value: 'oauth', label: 'OAuth (advanced — requires registered OAuth app)' },
-      ],
-      'api-key',
-    );
   }
 
-  // Configure auth
-  const auth =
-    authMethod === 'oauth'
-      ? await configureOAuth(provider, ctx)
-      : await configureApiKey(provider, ctx);
+  // Configure based on chosen method
+  let auth: ProviderAuthConfig;
+  let availableModels: ModelInfo[] | null = null;
 
-  // Select default model
-  let model: string;
+  if (authMethod === 'cli') {
+    auth = { method: 'cli' };
+    ctx.logger.info(`  \u2713 Will use ${cli.command} CLI for ${defaults.label}.`);
 
-  if (isNonInteractive) {
-    model = defaults.models[0];
+    if (cli.configuredModel) {
+      ctx.logger.info(`  \u2713 CLI configured model: ${cli.configuredModel}`);
+    }
   } else {
-    model = await promptChoice(
-      `Default model for ${defaults.label}:`,
-      defaults.models.map((m) => ({ value: m, label: m })),
-      defaults.models[0],
-    );
+    auth = await configureApiKey(provider, ctx);
+
+    // Fetch and show models when we have an API key
+    const effectiveKey = resolveEffectiveKey(provider, ctx);
+    if (effectiveKey && !ctx.executor.dryRun) {
+      availableModels = await fetchAndShowModels(provider, effectiveKey, ctx);
+    }
   }
+
+  // Model selection — prefer CLI-configured model when using CLI auth
+  const cliModel = authMethod === 'cli' ? cli.configuredModel : undefined;
+  const model = await selectModel(provider, availableModels, isNonInteractive, cliModel);
 
   return {
     enabled: true,
     auth,
     model,
+    cli: cli.available ? cli : undefined,
   };
 }
 
@@ -211,7 +341,7 @@ export const assistantSetupStage: OrchestrationStage = {
   title: 'Configure AI assistant providers',
   recovery: [
     'Re-run collab init --resume to reconfigure providers.',
-    'Ensure required environment variables are set for your chosen providers.',
+    'Ensure required API keys are set (env var or collab init interactive).',
   ],
   run: async (ctx: StageContext) => {
     const isNonInteractive = Boolean(ctx.options?.yes);
@@ -272,10 +402,13 @@ export const assistantSetupStage: OrchestrationStage = {
     const providerConfigs: Partial<Record<ProviderKey, ProviderConfig>> = {};
 
     for (const provider of selectedProviders) {
-      providerConfigs[provider] = await configureProvider(provider, ctx);
+      providerConfigs[provider] =
+        provider === 'copilot'
+          ? await configureCopilotProvider(ctx)
+          : await configureProvider(provider, ctx);
     }
 
-    // Mark unselected providers as disabled (preserve any previous config)
+    // Mark unselected providers as disabled
     for (const key of PROVIDER_KEYS) {
       if (!selectedProviders.includes(key)) {
         providerConfigs[key] = { enabled: false, auth: { method: 'api-key' } };
@@ -296,8 +429,8 @@ export const assistantSetupStage: OrchestrationStage = {
     // Summary
     const enabledNames = selectedProviders.map((k) => {
       const cfg = providerConfigs[k]!;
-      const authLabel = cfg.auth.method === 'oauth' ? 'OAuth' : 'API key';
-      return `${PROVIDER_DEFAULTS[k].label} (${authLabel}, model: ${cfg.model})`;
+      const authTag = cfg.auth.method === 'cli' ? `${cfg.cli?.command ?? 'cli'} CLI` : `API key`;
+      return `${PROVIDER_DEFAULTS[k].label} (${authTag}, model: ${cfg.model})`;
     });
 
     ctx.logger.result(`Configured providers: ${enabledNames.join(', ')}`);

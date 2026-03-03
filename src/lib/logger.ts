@@ -1,9 +1,15 @@
+import { bold, cyan, dim, green, red, yellow, CHECK, CROSS } from './ansi';
 import { toShellCommand } from './shell';
 
 export type Verbosity = 'quiet' | 'normal' | 'verbose';
 
 export interface CommandLogOptions {
   verboseOnly?: boolean;
+}
+
+export interface SummaryEntry {
+  label: string;
+  value: string;
 }
 
 export interface Logger {
@@ -14,6 +20,10 @@ export interface Logger {
   error(message: string): void;
   result(message: string): void;
   command(parts: readonly string[], options?: CommandLogOptions): void;
+  stageHeader(index: number, total: number, title: string): void;
+  step(ok: boolean, message: string): void;
+  workflowHeader(workflow: string, mode: string): void;
+  summaryFooter(entries: readonly SummaryEntry[]): void;
 }
 
 class ConsoleLogger implements Logger {
@@ -28,7 +38,7 @@ class ConsoleLogger implements Logger {
       return;
     }
 
-    process.stdout.write(`${message}\n`);
+    process.stdout.write(`        ${message}\n`);
   }
 
   debug(message: string): void {
@@ -36,15 +46,15 @@ class ConsoleLogger implements Logger {
       return;
     }
 
-    process.stdout.write(`${message}\n`);
+    process.stdout.write(`        ${dim(message)}\n`);
   }
 
   warn(message: string): void {
-    process.stderr.write(`Warning: ${message}\n`);
+    process.stderr.write(`        ${yellow('Warning:')} ${message}\n`);
   }
 
   error(message: string): void {
-    process.stderr.write(`Error: ${message}\n`);
+    process.stderr.write(`        ${red('Error:')} ${message}\n`);
   }
 
   result(message: string): void {
@@ -60,7 +70,40 @@ class ConsoleLogger implements Logger {
       return;
     }
 
-    process.stdout.write(`$ ${toShellCommand(parts)}\n`);
+    process.stdout.write(`        ${dim('$')} ${dim(toShellCommand(parts))}\n`);
+  }
+
+  stageHeader(index: number, total: number, title: string): void {
+    if (this.verbosity === 'quiet') {
+      return;
+    }
+
+    const tag = bold(cyan(`[${index}/${total}]`));
+    process.stdout.write(`\n  ${tag} ${bold(title)}\n`);
+  }
+
+  step(ok: boolean, message: string): void {
+    if (this.verbosity === 'quiet') {
+      return;
+    }
+
+    const marker = ok ? green(CHECK) : red(CROSS);
+    process.stdout.write(`        ${marker} ${message}\n`);
+  }
+
+  workflowHeader(workflow: string, mode: string): void {
+    process.stdout.write(`\n  ${bold(workflow)} ${dim(`\u2014 ${mode}`)}\n`);
+  }
+
+  summaryFooter(entries: readonly SummaryEntry[]): void {
+    process.stdout.write(`\n  ${dim('\u2500'.repeat(40))}\n`);
+    process.stdout.write(`  ${bold(green(CHECK))} ${bold('Init complete')}\n\n`);
+
+    for (const entry of entries) {
+      process.stdout.write(`  ${dim(entry.label + ':')} ${entry.value}\n`);
+    }
+
+    process.stdout.write('\n');
   }
 }
 

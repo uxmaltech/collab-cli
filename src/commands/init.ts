@@ -10,7 +10,7 @@ import { checkEcosystemCompatibility } from '../lib/ecosystem';
 import { generateComposeFiles } from '../lib/compose-renderer';
 import { CliError } from '../lib/errors';
 import { parseMode, type CollabMode } from '../lib/mode';
-import { runOrchestration } from '../lib/orchestrator';
+import { runOrchestration, type OrchestrationStage } from '../lib/orchestrator';
 import { promptBoolean, promptChoice } from '../lib/prompt';
 import { assertPreflightChecks, runPreflightChecks } from '../lib/preflight';
 import { ensureWritableDirectory } from '../lib/preconditions';
@@ -20,10 +20,16 @@ import { resolveMcpComposeFile, runMcpCompose } from './mcp/shared';
 import type { ComposeMode } from '../lib/compose-paths';
 import { assistantSetupStage } from '../stages/assistant-setup';
 import { canonScaffoldStage } from '../stages/canon-scaffold';
+import { canonSyncStage } from '../stages/canon-sync';
 import { canonIngestStage } from '../stages/canon-ingest';
+import { repoScaffoldStage } from '../stages/repo-scaffold';
 import { repoAnalysisStage } from '../stages/repo-analysis';
+import { repoAnalysisFileOnlyStage } from '../stages/repo-analysis-fileonly';
+import { agentSkillsSetupStage } from '../stages/agent-skills-setup';
 import { ciSetupStage } from '../stages/ci-setup';
 import { getEnabledProviders, PROVIDER_DEFAULTS, type ProviderKey } from '../lib/providers';
+import type { Executor } from '../lib/executor';
+import type { Logger } from '../lib/logger';
 
 interface InitOptions {
   force?: boolean;
@@ -140,7 +146,7 @@ async function resolveWizardSelection(
   };
 }
 
-function renderMcpSnippet(provider: ProviderKey, config: CollabConfig): { filename: string; content: string } {
+function renderMcpSnippet(provider: ProviderKey, config: CollabConfig): { filename: string; content: string } | null {
   const workspace = config.workspaceDir;
   const mcpUrl = 'http://127.0.0.1:7337/mcp';
 
@@ -197,8 +203,227 @@ function renderMcpSnippet(provider: ProviderKey, config: CollabConfig): { filena
           2,
         ) + '\n',
       };
+
+    case 'copilot':
+      // Copilot doesn't use MCP config snippets
+      return null;
   }
 }
+
+// ────────────────────────────────────────────────────────────────
+// Shared inline stages used by both pipelines
+// ────────────────────────────────────────────────────────────────
+
+function buildPreflightStage(executor: Executor, logger: Logger): OrchestrationStage {
+  return {
+    id: 'preflight',
+    title: 'Run preflight checks',
+    recovery: [
+      'Install missing dependencies reported by preflight.',
+      'Run collab init --resume after fixing prerequisites.',
+    ],
+    run: () => {
+      const checks = runPreflightChecks(executor);
+      assertPreflightChecks(checks, logger);
+    },
+  };
+}
+
+function buildConfigStage(
+  effectiveConfig: CollabConfig,
+  executor: Executor,
+  logger: Logger,
+  configExistedBefore: boolean,
+  force?: boolean,
+): OrchestrationStage {
+  return {
+    id: 'environment-setup',
+    title: 'Write local collab configuration',
+    recovery: [
+      'Verify write permissions for .collab and workspace directory.',
+      'Run collab init --resume once permissions are fixed.',
+    ],
+    run: () => {
+      if (configExistedBefore && !force) {
+        logger.info('Existing configuration detected; preserving it. Use --force to overwrite.');
+        return;
+      }
+
+      executor.ensureDirectory(effectiveConfig.collabDir);
+      executor.writeFile(
+        effectiveConfig.configFile,
+        `${serializeUserConfig(effectiveConfig)}\n`,
+        { description: 'write collab config' },
+      );
+    },
+  };
+}
+
+// ────────────────────────────────────────────────────────────────
+// File-only pipeline (8 stages)
+// ────────────────────────────────────────────────────────────────
+
+function buildFileOnlyPipeline(
+  effectiveConfig: CollabConfig,
+  executor: Executor,
+  logger: Logger,
+  configExistedBefore: boolean,
+  options: InitOptions,
+): OrchestrationStage[] {
+  return [
+    buildPreflightStage(executor, logger),                     // 1
+    buildConfigStage(effectiveConfig, executor, logger,
+      configExistedBefore, options.force),                     // 2
+    assistantSetupStage,                                       // 3
+    canonSyncStage,                                            // 4
+    repoScaffoldStage,                                         // 5
+    repoAnalysisFileOnlyStage,                                 // 6
+    ciSetupStage,                                              // 7
+    agentSkillsSetupStage,                                     // 8
+  ];
+}
+
+// ────────────────────────────────────────────────────────────────
+// Indexed pipeline (12 stages)
+// ────────────────────────────────────────────────────────────────
+
+function buildIndexedPipeline(
+  effectiveConfig: CollabConfig,
+  executor: Executor,
+  logger: Logger,
+  configExistedBefore: boolean,
+  options: InitOptions,
+  selections: WizardSelection,
+): OrchestrationStage[] {
+  const health = {
+    timeoutMs: toNumber(options.timeoutMs, 5_000),
+    retries: toNumber(options.retries, 15),
+    retryDelayMs: toNumber(options.retryDelayMs, 2_000),
+  };
+
+  return [
+    buildPreflightStage(executor, logger),                     // 1
+    buildConfigStage(effectiveConfig, executor, logger,
+      configExistedBefore, options.force),                     // 2
+    assistantSetupStage,                                       // 3
+    canonScaffoldStage,                                        // 4
+    repoAnalysisStage,                                         // 5
+    ciSetupStage,                                              // 6
+    {                                                          // 7
+      id: 'compose-generation',
+      title: 'Generate and validate compose files',
+      recovery: [
+        'Run collab compose validate to inspect configuration errors.',
+        'Run collab init --resume after fixing compose inputs.',
+      ],
+      run: () => {
+        const generation = generateComposeFiles({
+          config: effectiveConfig,
+          mode: selections.composeMode,
+          outputDirectory: options.outputDir,
+          logger,
+          executor,
+        });
+
+        for (const warning of generation.driftWarnings) {
+          logger.warn(warning);
+        }
+
+        assertComposeFilesValid(
+          generation.files.map((file) => file.filePath),
+          effectiveConfig.workspaceDir,
+          executor,
+        );
+      },
+    },
+    {                                                          // 8
+      id: 'infra-start',
+      title: 'Start infrastructure services',
+      recovery: [
+        'Run collab infra status to inspect Qdrant and Nebula.',
+        'Run collab init --resume after infra services are healthy.',
+      ],
+      run: async () => {
+        const selection = resolveInfraComposeFile(effectiveConfig, options.outputDir, undefined);
+        await runInfraCompose(logger, executor, effectiveConfig, selection, 'up', { health });
+      },
+    },
+    {                                                          // 9
+      id: 'mcp-start',
+      title: 'Start MCP service',
+      recovery: [
+        'Run collab mcp status to inspect MCP runtime.',
+        'Run collab init --resume after MCP health endpoint responds.',
+      ],
+      run: async () => {
+        const selection = resolveMcpComposeFile(effectiveConfig, options.outputDir, undefined);
+        await runMcpCompose(logger, executor, effectiveConfig, selection, 'up', { health });
+      },
+    },
+    {                                                          // 10
+      id: 'mcp-client-config',
+      title: 'Generate MCP client config snippets',
+      recovery: [
+        'Verify permissions in .collab directory.',
+        'Run collab init --resume to regenerate MCP config snippets.',
+      ],
+      run: () => {
+        if (options.skipMcpSnippets) {
+          logger.info('Skipping MCP snippet generation by user choice.');
+          return;
+        }
+
+        const enabled = getEnabledProviders(effectiveConfig);
+        if (enabled.length === 0) {
+          logger.info('No providers configured; skipping MCP snippet generation.');
+          return;
+        }
+
+        for (const provider of enabled) {
+          const snippet = renderMcpSnippet(provider, effectiveConfig);
+          if (!snippet) {
+            continue;
+          }
+          const target = path.join(effectiveConfig.collabDir, snippet.filename);
+          executor.writeFile(target, snippet.content, {
+            description: `write ${PROVIDER_DEFAULTS[provider].label} MCP config snippet`,
+          });
+        }
+
+        logger.info(
+          `Generated MCP snippets for: ${enabled.map((k) => PROVIDER_DEFAULTS[k].label).join(', ')}`,
+        );
+      },
+    },
+    canonIngestStage,                                          // 11
+    {                                                          // 12
+      id: 'ingest-bootstrap',
+      title: 'Optional ingest bootstrap',
+      recovery: [
+        'Ensure MCP container is running before ingestion.',
+        'Run collab init --resume to retry ingest bootstrap.',
+      ],
+      run: () => {
+        if (!selections.runIngestBootstrap) {
+          logger.info('Skipping ingest bootstrap stage by user choice.');
+          return;
+        }
+
+        const selection = resolveMcpComposeFile(effectiveConfig, options.outputDir, undefined);
+        runDockerCompose({
+          executor,
+          files: [selection.filePath],
+          arguments: ['exec', 'mcp', 'npm', 'run', 'ingest:v2'],
+          cwd: effectiveConfig.workspaceDir,
+        });
+      },
+    },
+  ];
+}
+
+// ────────────────────────────────────────────────────────────────
+// Command registration
+// ────────────────────────────────────────────────────────────────
 
 export function registerInitCommand(program: Command): void {
   program
@@ -214,7 +439,7 @@ export function registerInitCommand(program: Command): void {
     .option('--skip-analysis', 'Skip AI-powered repository analysis stage')
     .option('--skip-ci', 'Skip CI workflow generation')
     .option('--ingest', 'Run optional ingest bootstrap stage (indexed mode only)')
-    .option('--providers <list>', 'Comma-separated AI provider list (codex,claude,gemini)')
+    .option('--providers <list>', 'Comma-separated AI provider list (codex,claude,gemini,copilot)')
     .option('--timeout-ms <ms>', 'Per-check timeout in milliseconds', '5000')
     .option('--retries <count>', 'Health check retries', '15')
     .option('--retry-delay-ms <ms>', 'Delay between retries in milliseconds', '2000')
@@ -225,6 +450,7 @@ Examples:
   collab init
   collab init --yes
   collab init --yes --mode file-only
+  collab init --yes --mode indexed
   collab init --resume
 `,
     )
@@ -238,17 +464,18 @@ Examples:
       }
 
       const selections = await resolveWizardSelection(options, context.config);
-      const health = {
-        timeoutMs: toNumber(options.timeoutMs, 5_000),
-        retries: toNumber(options.retries, 15),
-        retryDelayMs: toNumber(options.retryDelayMs, 2_000),
-      };
+      const preserveExisting = configExistedBefore && !options.force;
 
       const effectiveConfig: CollabConfig = {
         ...defaultCollabConfig(context.config.workspaceDir),
         ...context.config,
-        mode: selections.mode,
+        mode: preserveExisting ? context.config.mode : selections.mode,
       };
+
+      // Two completely separate pipelines — no mode branching inside stages
+      const stages = selections.mode === 'file-only'
+        ? buildFileOnlyPipeline(effectiveConfig, context.executor, context.logger, configExistedBefore, options)
+        : buildIndexedPipeline(effectiveConfig, context.executor, context.logger, configExistedBefore, options, selections);
 
       await runOrchestration(
         {
@@ -257,6 +484,7 @@ Examples:
           executor: context.executor,
           logger: context.logger,
           resume: options.resume,
+          mode: selections.mode,
           stageOptions: {
             yes: options.yes,
             providers: options.providers,
@@ -265,213 +493,32 @@ Examples:
             skipCi: options.skipCi,
           },
         },
-        [
-          {
-            id: 'preflight',
-            title: 'Run preflight checks',
-            recovery: [
-              'Install missing dependencies reported by preflight.',
-              'Run collab init --resume after fixing prerequisites.',
-            ],
-            run: () => {
-              const checks = runPreflightChecks(context.executor);
-              assertPreflightChecks(checks, context.logger);
-            },
-          },
-          {
-            id: 'environment-setup',
-            title: 'Write local collab configuration',
-            recovery: [
-              'Verify write permissions for .collab and workspace directory.',
-              'Run collab init --resume once permissions are fixed.',
-            ],
-            run: () => {
-              if (configExistedBefore && !options.force) {
-                context.logger.info(
-                  'Existing configuration detected; preserving it. Use --force to overwrite.',
-                );
-                return;
-              }
-
-              context.executor.ensureDirectory(effectiveConfig.collabDir);
-              context.executor.writeFile(
-                effectiveConfig.configFile,
-                `${serializeUserConfig(effectiveConfig)}\n`,
-                { description: 'write collab config' },
-              );
-            },
-          },
-          assistantSetupStage,
-          canonScaffoldStage,
-          repoAnalysisStage,
-          ciSetupStage,
-          {
-            id: 'compose-generation',
-            title: 'Generate and validate compose files',
-            recovery: [
-              'Run collab compose validate to inspect configuration errors.',
-              'Run collab init --resume after fixing compose inputs.',
-            ],
-            run: () => {
-              if (selections.mode === 'file-only') {
-                context.logger.info('Mode file-only selected; skipping compose generation stage.');
-                return;
-              }
-
-              const generation = generateComposeFiles({
-                config: effectiveConfig,
-                mode: selections.composeMode,
-                outputDirectory: options.outputDir,
-                logger: context.logger,
-                executor: context.executor,
-              });
-
-              for (const warning of generation.driftWarnings) {
-                context.logger.warn(warning);
-              }
-
-              assertComposeFilesValid(
-                generation.files.map((file) => file.filePath),
-                effectiveConfig.workspaceDir,
-                context.executor,
-              );
-            },
-          },
-          {
-            id: 'infra-start',
-            title: 'Start infrastructure services',
-            recovery: [
-              'Run collab infra status to inspect Qdrant and Nebula.',
-              'Run collab init --resume after infra services are healthy.',
-            ],
-            run: async () => {
-              if (selections.mode === 'file-only') {
-                context.logger.info('Mode file-only selected; skipping infra startup stage.');
-                return;
-              }
-
-              const selection = resolveInfraComposeFile(effectiveConfig, options.outputDir, undefined);
-              await runInfraCompose(
-                context.logger,
-                context.executor,
-                effectiveConfig,
-                selection,
-                'up',
-                { health },
-              );
-            },
-          },
-          {
-            id: 'mcp-start',
-            title: 'Start MCP service',
-            recovery: [
-              'Run collab mcp status to inspect MCP runtime.',
-              'Run collab init --resume after MCP health endpoint responds.',
-            ],
-            run: async () => {
-              if (selections.mode === 'file-only') {
-                context.logger.info('Mode file-only selected; skipping MCP startup stage.');
-                return;
-              }
-
-              const selection = resolveMcpComposeFile(effectiveConfig, options.outputDir, undefined);
-              await runMcpCompose(
-                context.logger,
-                context.executor,
-                effectiveConfig,
-                selection,
-                'up',
-                { health },
-              );
-            },
-          },
-          {
-            id: 'mcp-client-config',
-            title: 'Generate MCP client config snippets',
-            recovery: [
-              'Verify permissions in .collab directory.',
-              'Run collab init --resume to regenerate MCP config snippets.',
-            ],
-            run: () => {
-              if (selections.mode === 'file-only') {
-                context.logger.info('Mode file-only selected; skipping MCP snippet generation.');
-                return;
-              }
-
-              if (options.skipMcpSnippets) {
-                context.logger.info('Skipping MCP snippet generation by user choice.');
-                return;
-              }
-
-              const enabled = getEnabledProviders(effectiveConfig);
-              if (enabled.length === 0) {
-                context.logger.info('No providers configured; skipping MCP snippet generation.');
-                return;
-              }
-
-              for (const provider of enabled) {
-                const snippet = renderMcpSnippet(provider, effectiveConfig);
-                const target = path.join(effectiveConfig.collabDir, snippet.filename);
-                context.executor.writeFile(target, snippet.content, {
-                  description: `write ${PROVIDER_DEFAULTS[provider].label} MCP config snippet`,
-                });
-              }
-
-              context.logger.info(
-                `Generated MCP snippets for: ${enabled.map((k) => PROVIDER_DEFAULTS[k].label).join(', ')}`,
-              );
-            },
-          },
-          canonIngestStage,
-          {
-            id: 'ingest-bootstrap',
-            title: 'Optional ingest bootstrap',
-            recovery: [
-              'Ensure MCP container is running before ingestion.',
-              'Run collab init --resume to retry ingest bootstrap.',
-            ],
-            run: () => {
-              if (selections.mode === 'file-only') {
-                context.logger.info('Mode file-only selected; skipping ingest bootstrap stage.');
-                return;
-              }
-
-              if (!selections.runIngestBootstrap) {
-                context.logger.info('Skipping ingest bootstrap stage by user choice.');
-                return;
-              }
-
-              const selection = resolveMcpComposeFile(effectiveConfig, options.outputDir, undefined);
-              runDockerCompose({
-                executor: context.executor,
-                files: [selection.filePath],
-                arguments: ['exec', 'mcp', 'npm', 'run', 'ingest:v2'],
-                cwd: effectiveConfig.workspaceDir,
-              });
-            },
-          },
-        ],
+        stages,
       );
 
+      // Summary footer
+      const enabledProviders = getEnabledProviders(effectiveConfig);
+      const providerLabel = enabledProviders.length > 0
+        ? enabledProviders.map((k) => PROVIDER_DEFAULTS[k].label).join(', ')
+        : '(none configured)';
+
+      const summaryEntries = [
+        { label: 'Mode', value: selections.mode },
+        { label: 'Dry-run', value: context.executor.dryRun ? 'yes' : 'no' },
+        { label: 'Config', value: effectiveConfig.configFile },
+        { label: 'Providers', value: providerLabel },
+      ];
+
+      if (selections.mode === 'indexed') {
+        summaryEntries.splice(1, 0, { label: 'Compose mode', value: selections.composeMode });
+      }
+
+      context.logger.summaryFooter(summaryEntries);
+
+      // Ecosystem compatibility checks
       const compatibility = await checkEcosystemCompatibility(effectiveConfig, {
         dryRun: context.executor.dryRun,
       });
-
-      context.logger.result('');
-      context.logger.result('Wizard summary');
-      context.logger.result(`- mode: ${selections.mode}`);
-      context.logger.result(`- compose mode: ${selections.composeMode}`);
-      context.logger.result(`- dry-run: ${context.executor.dryRun ? 'yes' : 'no'}`);
-      context.logger.result(`- config: ${effectiveConfig.configFile}`);
-      context.logger.result(`- env: ${effectiveConfig.envFile}`);
-
-      const enabledProviders = getEnabledProviders(effectiveConfig);
-      if (enabledProviders.length > 0) {
-        const providerLabels = enabledProviders.map((k) => PROVIDER_DEFAULTS[k].label);
-        context.logger.result(`- providers: ${providerLabels.join(', ')}`);
-      } else {
-        context.logger.result('- providers: (none configured)');
-      }
 
       for (const check of compatibility) {
         const prefix = check.ok ? '[PASS]' : '[WARN]';

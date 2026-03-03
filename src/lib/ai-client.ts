@@ -1,9 +1,13 @@
+import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
 import https from 'node:https';
+import os from 'node:os';
+import path from 'node:path';
 import { URL } from 'node:url';
 
 import type { CollabConfig } from './config';
+import { loadApiKey } from './credentials';
 import type { Logger } from './logger';
-import { loadTokens, isTokenExpired, refreshOAuthToken } from './oauth';
 import { PROVIDER_DEFAULTS, type ProviderKey } from './providers';
 
 export interface AiMessage {
@@ -68,13 +72,17 @@ function httpsPost(
 }
 
 /**
- * Resolves the API key for a provider — from env var or OAuth tokens.
+ * Resolves the API key for a provider.
+ *
+ * Resolution order:
+ *   1. Environment variable (e.g. OPENAI_API_KEY)
+ *   2. Stored credential from .collab/credentials.json
  */
-async function resolveApiKey(
+function resolveApiKey(
   provider: ProviderKey,
   config: CollabConfig,
-  logger: Logger,
-): Promise<string | null> {
+  _logger: Logger,
+): string | null {
   const defaults = PROVIDER_DEFAULTS[provider];
 
   // 1. Check environment variable
@@ -83,34 +91,13 @@ async function resolveApiKey(
     return envKey;
   }
 
-  // 2. Check OAuth tokens
-  const tokens = loadTokens(config, provider);
-  if (!tokens) {
-    return null;
+  // 2. Check stored credentials
+  const storedKey = loadApiKey(config, provider);
+  if (storedKey) {
+    return storedKey;
   }
 
-  if (isTokenExpired(tokens)) {
-    if (!tokens.refreshToken) {
-      logger.warn(`OAuth token for ${defaults.label} is expired and no refresh token available.`);
-      return null;
-    }
-
-    try {
-      const oauthConfig = config.assistants?.providers?.[provider]?.auth?.oauth;
-      if (!oauthConfig) {
-        return null;
-      }
-
-      const clientId = process.env[oauthConfig.clientIdEnvVar ?? ''] ?? oauthConfig.clientId;
-      const refreshed = await refreshOAuthToken(oauthConfig.tokenUrl, clientId, tokens.refreshToken);
-      return refreshed.accessToken;
-    } catch (err) {
-      logger.warn(`Failed to refresh OAuth token for ${defaults.label}: ${err}`);
-      return null;
-    }
-  }
-
-  return tokens.accessToken;
+  return null;
 }
 
 // ---------- OpenAI ----------
@@ -228,9 +215,142 @@ function createGeminiClient(apiKey: string): AiClient {
   };
 }
 
+// ---------- CLI-based clients ----------
+
+/**
+ * Combines system and user messages into a single prompt string
+ * for CLI tools that don't support separate message roles.
+ */
+function buildCombinedPrompt(messages: AiMessage[]): string {
+  const parts: string[] = [];
+
+  for (const msg of messages) {
+    if (msg.role === 'system') {
+      parts.push(msg.content);
+    } else if (msg.role === 'user') {
+      parts.push('---\n\n' + msg.content);
+    } else if (msg.role === 'assistant') {
+      parts.push('Assistant: ' + msg.content);
+    }
+  }
+
+  return parts.join('\n\n');
+}
+
+/**
+ * Executes codex CLI for completion using `codex exec`.
+ */
+function execCodexCli(prompt: string, model?: string): string {
+  const tmpFile = path.join(os.tmpdir(), `collab-analysis-${Date.now()}.txt`);
+
+  try {
+    const args = [
+      'exec',
+      '--ephemeral',
+      '--sandbox', 'read-only',
+      '--skip-git-repo-check',
+      '-o', tmpFile,
+    ];
+
+    if (model) {
+      args.push('-m', model);
+    }
+
+    args.push(prompt);
+
+    execFileSync('codex', args, {
+      encoding: 'utf8',
+      timeout: 300_000,
+      stdio: ['ignore', 'inherit', 'inherit'],
+    });
+
+    if (fs.existsSync(tmpFile)) {
+      return fs.readFileSync(tmpFile, 'utf8').trim();
+    }
+
+    return '';
+  } finally {
+    try {
+      if (fs.existsSync(tmpFile)) {
+        fs.unlinkSync(tmpFile);
+      }
+    } catch {
+      // Ignore cleanup errors
+    }
+  }
+}
+
+/**
+ * Executes claude CLI for completion using `claude -p`.
+ */
+function execClaudeCli(prompt: string, model?: string): string {
+  const args = ['-p'];
+
+  if (model) {
+    args.push('--model', model);
+  }
+
+  args.push(prompt);
+
+  const output = execFileSync('claude', args, {
+    encoding: 'utf8',
+    timeout: 300_000,
+    stdio: ['ignore', 'pipe', 'inherit'],
+  });
+
+  return output.trim();
+}
+
+/**
+ * Executes gemini CLI for completion.
+ */
+function execGeminiCli(prompt: string, model?: string): string {
+  const args: string[] = [];
+
+  if (model) {
+    args.push('--model', model);
+  }
+
+  args.push(prompt);
+
+  const output = execFileSync('gemini', args, {
+    encoding: 'utf8',
+    timeout: 300_000,
+    stdio: ['ignore', 'pipe', 'inherit'],
+  });
+
+  return output.trim();
+}
+
+const CLI_EXECUTORS: Partial<Record<ProviderKey, (prompt: string, model?: string) => string>> = {
+  codex: execCodexCli,
+  claude: execClaudeCli,
+  gemini: execGeminiCli,
+};
+
+/**
+ * Creates an AI client that uses the provider's official CLI for completion.
+ * This allows repo analysis to work without API keys.
+ */
+function createCliClient(provider: ProviderKey, model?: string): AiClient {
+  return {
+    provider,
+    async complete(messages, options = {}) {
+      const effectiveModel = options.model ?? model;
+      const prompt = buildCombinedPrompt(messages);
+      const executor = CLI_EXECUTORS[provider];
+      if (!executor) {
+        throw new Error(`No CLI executor available for provider '${provider}'.`);
+      }
+
+      return executor(prompt, effectiveModel);
+    },
+  };
+}
+
 // ---------- Factory ----------
 
-const CLIENT_FACTORIES: Record<ProviderKey, (apiKey: string) => AiClient> = {
+const CLIENT_FACTORIES: Partial<Record<ProviderKey, (apiKey: string) => AiClient>> = {
   codex: createOpenAiClient,
   claude: createAnthropicClient,
   gemini: createGeminiClient,
@@ -238,32 +358,51 @@ const CLIENT_FACTORIES: Record<ProviderKey, (apiKey: string) => AiClient> = {
 
 /**
  * Creates an AI client for the given provider, resolving auth automatically.
- * Returns null if no credentials are available.
+ *
+ * Resolution order:
+ *   1. API key (env var or stored credentials) → use HTTP API
+ *   2. CLI auth configured with CLI available → use CLI executable
+ *   3. null if neither available
  */
-export async function createAiClient(
+export function createAiClient(
   provider: ProviderKey,
   config: CollabConfig,
   logger: Logger,
-): Promise<AiClient | null> {
-  const apiKey = await resolveApiKey(provider, config, logger);
-  if (!apiKey) {
+): AiClient | null {
+  // Copilot doesn't support AI completion — it works via GitHub issues
+  if (provider === 'copilot') {
     return null;
   }
 
-  return CLIENT_FACTORIES[provider](apiKey);
+  // 1. Try API key first
+  const factory = CLIENT_FACTORIES[provider];
+  const apiKey = resolveApiKey(provider, config, logger);
+  if (apiKey && factory) {
+    return factory(apiKey);
+  }
+
+  // 2. Try CLI auth if configured
+  const providerConfig = config.assistants?.providers?.[provider];
+  if (providerConfig?.auth?.method === 'cli' && providerConfig?.cli?.available) {
+    const model = providerConfig.model ?? providerConfig.cli.configuredModel;
+    logger.debug(`Using ${providerConfig.cli.command} CLI for ${PROVIDER_DEFAULTS[provider].label} completion.`);
+    return createCliClient(provider, model);
+  }
+
+  return null;
 }
 
 /**
  * Creates an AI client for the first available provider.
  * Tries providers in order: codex, claude, gemini.
  */
-export async function createFirstAvailableClient(
+export function createFirstAvailableClient(
   providers: ProviderKey[],
   config: CollabConfig,
   logger: Logger,
-): Promise<AiClient | null> {
+): AiClient | null {
   for (const provider of providers) {
-    const client = await createAiClient(provider, config, logger);
+    const client = createAiClient(provider, config, logger);
     if (client) {
       logger.info(`Using ${PROVIDER_DEFAULTS[provider].label} for repository analysis.`);
       return client;

@@ -50,12 +50,11 @@ test('init --yes accepts explicit flags in non-interactive mode', () => {
   );
 
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /- mode: indexed/);
-  assert.match(result.stdout, /- compose mode: split/);
+  assert.ok(result.stdout.includes('indexed'), 'summary should show indexed mode');
   assert.match(result.stdout, /Skipping MCP snippet generation by user choice/i);
 });
 
-test('init --yes --mode file-only skips compose and MCP snippet generation', () => {
+test('init --yes --mode file-only has no compose or MCP stages', () => {
   const workspace = makeTempWorkspace();
   const env = createFakeDockerEnv();
 
@@ -68,14 +67,15 @@ test('init --yes --mode file-only skips compose and MCP snippet generation', () 
   );
 
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /- mode: file-only/);
-  assert.match(result.stdout, /skipping compose generation stage/i);
-  assert.match(result.stdout, /skipping MCP snippet generation/i);
+  assert.ok(result.stdout.includes('file-only'), 'summary should show file-only mode');
 
-  // Should NOT mention docker-compose or MCP config files
+  // File-only pipeline should NOT contain compose or MCP stages at all
   assert.ok(
-    !result.stdout.includes('Generate and validate compose files') ||
-      result.stdout.includes('skipping compose generation'),
-    'file-only should skip compose generation',
+    !result.stdout.includes('Generate and validate compose files'),
+    'file-only should not have compose stage',
+  );
+  assert.ok(
+    !result.stdout.includes('Generate MCP client config snippets'),
+    'file-only should not have MCP config stage',
   );
 });

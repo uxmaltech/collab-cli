@@ -4,19 +4,18 @@ import test from 'node:test';
 const { parseProviderList, isProviderKey, autoDetectProviders, getEnabledProviders, PROVIDER_KEYS, PROVIDER_DEFAULTS } = await import('../../dist/lib/providers.js');
 
 test('PROVIDER_KEYS contains expected providers', () => {
-  assert.deepEqual([...PROVIDER_KEYS], ['codex', 'claude', 'gemini']);
+  assert.deepEqual([...PROVIDER_KEYS], ['codex', 'claude', 'gemini', 'copilot']);
 });
 
 test('PROVIDER_DEFAULTS has entries for all providers', () => {
   for (const key of PROVIDER_KEYS) {
     assert.ok(PROVIDER_DEFAULTS[key], `defaults missing for ${key}`);
     assert.ok(PROVIDER_DEFAULTS[key].label, `label missing for ${key}`);
-    assert.ok(PROVIDER_DEFAULTS[key].envVar, `envVar missing for ${key}`);
-    assert.ok(PROVIDER_DEFAULTS[key].models.length > 0, `models empty for ${key}`);
-    assert.ok(PROVIDER_DEFAULTS[key].authMethods.length > 0, `authMethods empty for ${key}`);
-    assert.ok(PROVIDER_DEFAULTS[key].oauth, `oauth config missing for ${key}`);
-    assert.ok(PROVIDER_DEFAULTS[key].oauth.authorizationUrl, `oauth authorizationUrl missing for ${key}`);
-    assert.ok(PROVIDER_DEFAULTS[key].oauth.tokenUrl, `oauth tokenUrl missing for ${key}`);
+    // copilot has no envVar or models — it uses gh CLI
+    if (key !== 'copilot') {
+      assert.ok(PROVIDER_DEFAULTS[key].envVar, `envVar missing for ${key}`);
+      assert.ok(PROVIDER_DEFAULTS[key].models.length > 0, `models empty for ${key}`);
+    }
   }
 });
 
@@ -59,7 +58,7 @@ test('getEnabledProviders returns enabled providers from config', () => {
       providers: {
         codex: { enabled: true, auth: { method: 'api-key' } },
         claude: { enabled: false, auth: { method: 'api-key' } },
-        gemini: { enabled: true, auth: { method: 'oauth' } },
+        gemini: { enabled: true, auth: { method: 'api-key' } },
       },
     },
   };
@@ -74,7 +73,7 @@ test('getEnabledProviders returns empty array when no assistants configured', ()
   assert.deepEqual(getEnabledProviders({ assistants: { providers: {} } }), []);
 });
 
-test('autoDetectProviders detects from environment', () => {
+test('autoDetectProviders detects from environment and CLIs', () => {
   const originalEnv = { ...process.env };
 
   try {
@@ -82,60 +81,26 @@ test('autoDetectProviders detects from environment', () => {
     delete process.env.OPENAI_API_KEY;
     delete process.env.ANTHROPIC_API_KEY;
     delete process.env.GOOGLE_AI_API_KEY;
-    delete process.env.OPENAI_CLIENT_ID;
-    delete process.env.ANTHROPIC_CLIENT_ID;
-    delete process.env.GOOGLE_CLIENT_ID;
 
-    assert.deepEqual(autoDetectProviders(), []);
+    // Without env vars, autoDetectProviders may still detect installed CLIs on PATH
+    const baseline = autoDetectProviders();
 
+    // Setting an env var should ensure that provider is detected
     process.env.ANTHROPIC_API_KEY = 'test-key';
-    assert.deepEqual(autoDetectProviders(), ['claude']);
+    const withAnthropic = autoDetectProviders();
+    assert.ok(withAnthropic.includes('claude'), 'should detect claude via ANTHROPIC_API_KEY');
 
     process.env.OPENAI_API_KEY = 'test-key';
-    assert.deepEqual(autoDetectProviders(), ['codex', 'claude']);
+    const withBoth = autoDetectProviders();
+    assert.ok(withBoth.includes('codex'), 'should detect codex via OPENAI_API_KEY');
+    assert.ok(withBoth.includes('claude'), 'should detect claude via ANTHROPIC_API_KEY');
+
+    // Env var detection should add to CLI-detected providers, not replace
+    assert.ok(withBoth.length >= baseline.length, 'env vars should only add providers');
   } finally {
     // Restore original env
     process.env.OPENAI_API_KEY = originalEnv.OPENAI_API_KEY;
     process.env.ANTHROPIC_API_KEY = originalEnv.ANTHROPIC_API_KEY;
     process.env.GOOGLE_AI_API_KEY = originalEnv.GOOGLE_AI_API_KEY;
-    process.env.OPENAI_CLIENT_ID = originalEnv.OPENAI_CLIENT_ID;
-    process.env.ANTHROPIC_CLIENT_ID = originalEnv.ANTHROPIC_CLIENT_ID;
-    process.env.GOOGLE_CLIENT_ID = originalEnv.GOOGLE_CLIENT_ID;
-  }
-});
-
-test('autoDetectProviders detects OAuth client IDs', () => {
-  const originalEnv = { ...process.env };
-
-  try {
-    // Clear all keys
-    delete process.env.OPENAI_API_KEY;
-    delete process.env.ANTHROPIC_API_KEY;
-    delete process.env.GOOGLE_AI_API_KEY;
-    delete process.env.OPENAI_CLIENT_ID;
-    delete process.env.ANTHROPIC_CLIENT_ID;
-    delete process.env.GOOGLE_CLIENT_ID;
-
-    // Only OAuth client ID set (no API key)
-    process.env.GOOGLE_CLIENT_ID = 'test-client-id';
-    assert.deepEqual(autoDetectProviders(), ['gemini']);
-
-    process.env.OPENAI_CLIENT_ID = 'test-client-id';
-    assert.deepEqual(autoDetectProviders(), ['codex', 'gemini']);
-  } finally {
-    process.env.OPENAI_API_KEY = originalEnv.OPENAI_API_KEY;
-    process.env.ANTHROPIC_API_KEY = originalEnv.ANTHROPIC_API_KEY;
-    process.env.GOOGLE_AI_API_KEY = originalEnv.GOOGLE_AI_API_KEY;
-    process.env.OPENAI_CLIENT_ID = originalEnv.OPENAI_CLIENT_ID;
-    process.env.ANTHROPIC_CLIENT_ID = originalEnv.ANTHROPIC_CLIENT_ID;
-    process.env.GOOGLE_CLIENT_ID = originalEnv.GOOGLE_CLIENT_ID;
-  }
-});
-
-test('OAuth URLs are valid HTTPS URLs', () => {
-  for (const key of PROVIDER_KEYS) {
-    const oauth = PROVIDER_DEFAULTS[key].oauth;
-    assert.ok(oauth.authorizationUrl.startsWith('https://'), `${key} authorizationUrl should be HTTPS`);
-    assert.ok(oauth.tokenUrl.startsWith('https://'), `${key} tokenUrl should be HTTPS`);
   }
 });

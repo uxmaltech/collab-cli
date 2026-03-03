@@ -24,6 +24,7 @@ export interface OrchestratorOptions {
   executor: Executor;
   logger: Logger;
   resume?: boolean;
+  mode?: string;
   stageOptions?: Record<string, unknown>;
 }
 
@@ -70,19 +71,28 @@ export async function runOrchestration(
   const previous = currentWorkflowState(state.workflows[options.workflowId]);
   const completed = new Set(options.resume ? previous.completedStages : []);
 
+  if (options.mode) {
+    options.logger.workflowHeader(options.workflowId, options.mode);
+  }
+
   if (options.resume && completed.size > 0) {
     options.logger.info(
       `Resuming workflow '${options.workflowId}' with ${completed.size} completed stage(s).`,
     );
   }
 
+  const total = stages.length;
+  let stageIndex = 0;
+
   for (const stage of stages) {
+    stageIndex++;
+
     if (options.resume && completed.has(stage.id)) {
       options.logger.info(`Skipping completed stage '${stage.title}'`);
       continue;
     }
 
-    options.logger.info(`Running stage: ${stage.title}`);
+    options.logger.stageHeader(stageIndex, total, stage.title);
 
     try {
       await stage.run({
@@ -98,7 +108,7 @@ export async function runOrchestration(
         updatedAt: new Date().toISOString(),
       };
       saveState(options.config, state, options.executor);
-      options.logger.result(`Stage succeeded: ${stage.title}`);
+      options.logger.step(true, stage.title);
     } catch (error: unknown) {
       const failure: WorkflowFailureState = {
         stage: stage.id,
