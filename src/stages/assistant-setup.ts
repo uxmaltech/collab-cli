@@ -163,14 +163,18 @@ async function configureProvider(
   let authMethod: AuthMethod;
 
   if (isNonInteractive) {
-    // In non-interactive mode, use api-key if env var is set, otherwise check for OAuth client ID
-    authMethod = process.env[defaults.envVar] ? 'api-key' : 'oauth';
+    // In non-interactive mode, always use api-key. OAuth requires a registered
+    // application and is not available self-service for most providers.
+    authMethod = 'api-key';
   } else {
+    // Default to api-key — OAuth is an advanced option that requires registering
+    // an application with the provider. Most providers (OpenAI, Anthropic) do not
+    // offer self-service OAuth app registration for API access.
     authMethod = await promptChoice<AuthMethod>(
       `Authentication method for ${defaults.label}:`,
       [
-        { value: 'api-key', label: 'API Key (environment variable reference)' },
-        { value: 'oauth', label: 'OAuth HTTPS (browser-based authorization)' },
+        { value: 'api-key', label: 'API Key (recommended — set env var)' },
+        { value: 'oauth', label: 'OAuth (advanced — requires registered OAuth app)' },
       ],
       'api-key',
     );
