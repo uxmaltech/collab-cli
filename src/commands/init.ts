@@ -18,6 +18,8 @@ import { runDockerCompose } from '../lib/docker-compose';
 import { resolveInfraComposeFile, runInfraCompose } from './infra/shared';
 import { resolveMcpComposeFile, runMcpCompose } from './mcp/shared';
 import type { ComposeMode } from '../lib/compose-paths';
+import { assistantSetupStage } from '../stages/assistant-setup';
+import { getEnabledProviders, PROVIDER_DEFAULTS } from '../lib/providers';
 
 interface InitOptions {
   force?: boolean;
@@ -31,6 +33,7 @@ interface InitOptions {
   timeoutMs?: string;
   retries?: string;
   retryDelayMs?: string;
+  providers?: string;
 }
 
 interface WizardSelection {
@@ -161,6 +164,7 @@ export function registerInitCommand(program: Command): void {
     .option('--output-dir <directory>', 'Directory used to write compose outputs')
     .option('--skip-codex-config', 'Skip Codex MCP snippet generation stage')
     .option('--ingest', 'Run optional ingest bootstrap stage (indexed mode only)')
+    .option('--providers <list>', 'Comma-separated AI provider list (codex,claude,gemini)')
     .option('--timeout-ms <ms>', 'Per-check timeout in milliseconds', '5000')
     .option('--retries <count>', 'Health check retries', '15')
     .option('--retry-delay-ms <ms>', 'Delay between retries in milliseconds', '2000')
@@ -203,6 +207,10 @@ Examples:
           executor: context.executor,
           logger: context.logger,
           resume: options.resume,
+          stageOptions: {
+            yes: options.yes,
+            providers: options.providers,
+          },
         },
         [
           {
@@ -240,6 +248,7 @@ Examples:
               );
             },
           },
+          assistantSetupStage,
           {
             id: 'compose-generation',
             title: 'Generate and validate compose files',
@@ -375,6 +384,14 @@ Examples:
       context.logger.result(`- dry-run: ${context.executor.dryRun ? 'yes' : 'no'}`);
       context.logger.result(`- config: ${effectiveConfig.configFile}`);
       context.logger.result(`- env: ${effectiveConfig.envFile}`);
+
+      const enabledProviders = getEnabledProviders(effectiveConfig);
+      if (enabledProviders.length > 0) {
+        const providerLabels = enabledProviders.map((k) => PROVIDER_DEFAULTS[k].label);
+        context.logger.result(`- providers: ${providerLabels.join(', ')}`);
+      } else {
+        context.logger.result('- providers: (none configured)');
+      }
 
       for (const check of compatibility) {
         const prefix = check.ok ? '[PASS]' : '[WARN]';

@@ -8,6 +8,7 @@ export interface StageContext {
   config: CollabConfig;
   executor: Executor;
   logger: Logger;
+  options?: Record<string, unknown>;
 }
 
 export interface OrchestrationStage {
@@ -23,6 +24,7 @@ export interface OrchestratorOptions {
   executor: Executor;
   logger: Logger;
   resume?: boolean;
+  stageOptions?: Record<string, unknown>;
 }
 
 function formatFailure(failure: WorkflowFailureState): string {
@@ -87,6 +89,7 @@ export async function runOrchestration(
         config: options.config,
         executor: options.executor,
         logger: options.logger,
+        options: options.stageOptions,
       });
 
       completed.add(stage.id);

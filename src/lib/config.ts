@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { DEFAULT_MODE, type CollabMode, parseMode } from './mode';
+import type { AssistantsConfig } from './providers';
 
 export interface ComposePathConfig {
   consolidatedFile: string;
@@ -17,12 +18,14 @@ export interface CollabConfig {
   envFile: string;
   mode: CollabMode;
   compose: ComposePathConfig;
+  assistants?: AssistantsConfig;
 }
 
 interface RawCollabConfig {
   compose?: Partial<ComposePathConfig>;
   envFile?: string;
   mode?: string;
+  assistants?: AssistantsConfig;
 }
 
 const DEFAULT_COMPOSE_PATHS: ComposePathConfig = {
@@ -69,6 +72,7 @@ export function loadCollabConfig(cwd = process.cwd()): CollabConfig {
       infraFile: raw.compose?.infraFile ?? defaults.compose.infraFile,
       mcpFile: raw.compose?.mcpFile ?? defaults.compose.mcpFile,
     },
+    assistants: raw.assistants,
   };
 }
 
@@ -77,13 +81,15 @@ export function ensureCollabDirectory(config: CollabConfig): void {
 }
 
 export function serializeUserConfig(config: CollabConfig): string {
-  return JSON.stringify(
-    {
-      mode: config.mode,
-      compose: config.compose,
-      envFile: path.relative(config.workspaceDir, config.envFile),
-    },
-    null,
-    2,
-  );
+  const data: Record<string, unknown> = {
+    mode: config.mode,
+    compose: config.compose,
+    envFile: path.relative(config.workspaceDir, config.envFile),
+  };
+
+  if (config.assistants) {
+    data.assistants = config.assistants;
+  }
+
+  return JSON.stringify(data, null, 2);
 }
