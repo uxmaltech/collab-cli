@@ -292,3 +292,116 @@ export function writeAnalysisResults(ctx: StageContext, baseDir: string, result:
 
   ctx.logger.info(`Repository analysis: ${written} architecture file(s) written.`);
 }
+
+/**
+ * Generates docs/ai/ helper files for fast agent reference.
+ * These are lightweight summaries that prevent agents from scanning the full architecture tree.
+ * Used by both file-only and indexed pipelines.
+ */
+export function generateAiHelpers(ctx: StageContext, repoCtx: RepoContext, analysis: AnalysisResult): void {
+  const aiDir = ctx.config.aiDir;
+  ctx.executor.ensureDirectory(aiDir);
+
+  // 00_brief.md — one-paragraph project summary
+  const briefContent = [
+    '# Project Brief',
+    '',
+    `**Name:** ${repoCtx.name}`,
+    `**Language:** ${repoCtx.language}`,
+    repoCtx.framework ? `**Framework:** ${repoCtx.framework}` : null,
+    `**Source files:** ${repoCtx.totalSourceFiles}`,
+    '',
+    '## Summary',
+    '',
+    `This is a ${repoCtx.language}${repoCtx.framework ? ` / ${repoCtx.framework}` : ''} project` +
+      ` with ${repoCtx.totalSourceFiles} source files.`,
+    '',
+    '<!-- AI-GENERATED -->',
+    '',
+  ].filter((l) => l !== null).join('\n');
+
+  ctx.executor.writeFile(path.join(aiDir, '00_brief.md'), briefContent, {
+    description: 'write AI helper: project brief',
+  });
+
+  // 01_domain_map.md — domain index
+  const domainLines: string[] = ['# Domain Map', ''];
+
+  if (analysis.domains && analysis.domains.length > 0) {
+    for (const d of analysis.domains) {
+      domainLines.push(`## ${d.name}`);
+      domainLines.push('');
+      if (d.responsibilities) {
+        domainLines.push(`**Responsibilities:** ${d.responsibilities}`);
+      }
+      if (d.boundaries) {
+        domainLines.push(`**Boundaries:** ${d.boundaries}`);
+      }
+      domainLines.push('');
+    }
+  } else {
+    domainLines.push('_No domains detected yet. Run repository analysis with an AI provider._');
+    domainLines.push('');
+  }
+
+  domainLines.push('<!-- AI-GENERATED -->');
+  domainLines.push('');
+  ctx.executor.writeFile(path.join(aiDir, '01_domain_map.md'), domainLines.join('\n'), {
+    description: 'write AI helper: domain map',
+  });
+
+  // 02_module_map.md — key files and structure
+  const moduleLines: string[] = [
+    '# Module Map',
+    '',
+    '## Key Files',
+    '',
+    ...repoCtx.keyFiles.map((f) => `- \`${f}\``),
+    '',
+    '## Directory Structure',
+    '',
+    '```',
+    repoCtx.structure,
+    '```',
+    '',
+    '## Dependencies',
+    '',
+    ...(repoCtx.dependencies.length > 0
+      ? repoCtx.dependencies.map((d) => `- ${d}`)
+      : ['_No dependencies detected._']),
+    '',
+    '<!-- AI-GENERATED -->',
+    '',
+  ];
+
+  ctx.executor.writeFile(path.join(aiDir, '02_module_map.md'), moduleLines.join('\n'), {
+    description: 'write AI helper: module map',
+  });
+
+  // _snapshot.md — quick-reference index linking to the other files
+  const snapshotLines = [
+    '# Architecture Snapshot',
+    '',
+    `Generated: ${new Date().toISOString().split('T')[0]}`,
+    '',
+    '## Quick Links',
+    '',
+    '- [Project Brief](./00_brief.md)',
+    '- [Domain Map](./01_domain_map.md)',
+    '- [Module Map](./02_module_map.md)',
+    '',
+    '## Architecture Sources',
+    '',
+    '- `docs/architecture/uxmaltech/` — Institutional canon (collab-architecture copy)',
+    '- `docs/architecture/repo/` — Project-specific canons',
+    '',
+    '<!-- AI-GENERATED -->',
+    '',
+  ];
+
+  ctx.executor.writeFile(path.join(aiDir, '_snapshot.md'), snapshotLines.join('\n'), {
+    description: 'write AI helper: snapshot index',
+  });
+
+  ctx.logger.info(`AI helpers: 4 file(s) written to docs/ai/.`);
+}

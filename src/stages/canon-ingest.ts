@@ -58,8 +58,8 @@ export const canonIngestStage: OrchestrationStage = {
     'Run collab init --resume to retry canon ingestion.',
   ],
   run: (ctx) => {
-    if (ctx.config.mode === 'file-only') {
-      ctx.logger.info('Mode file-only selected; skipping canon ingestion.');
+    if (ctx.executor.dryRun) {
+      ctx.logger.info('[dry-run] Would ingest architecture files into MCP.');
       return;
     }
 

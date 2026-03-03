@@ -2,8 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { resolveCanonFile } from '../lib/canon-resolver';
+import type { CollabMode } from '../lib/mode';
 import type { OrchestrationStage, StageContext } from '../lib/orchestrator';
-import { getEnabledProviders, type ProviderKey } from '../lib/providers';
+import { getEnabledProviders } from '../lib/providers';
 
 /**
  * Agent prompt files from collab-architecture/prompts/agents/.
@@ -52,12 +53,50 @@ const AGENT_PROMPTS: { name: string; description: string; canonPath: string }[] 
   },
 ];
 
+// ────────────────────────────────────────────────────────────────
+// Mode-aware architecture access preambles
+// ────────────────────────────────────────────────────────────────
+
+function buildArchitectureAccessBlock(mode: CollabMode): string {
+  if (mode === 'indexed') {
+    return [
+      '## Architecture Access (MCP)',
+      '',
+      'This project uses an MCP server for architecture retrieval.',
+      '',
+      '**MCP Tools (collab-architecture server):**',
+      '- `context.scopes.list.v2` — List available scopes and collections',
+      '- `context.vector.search.v2` — Semantic search across architecture docs',
+      '- `context.graph.degree.search.v2` — Graph traversal for related concepts',
+      '',
+      '**Also consult local files:**',
+      '- `docs/ai/` — Quick reference helpers (start here for fast context)',
+      '- `docs/architecture/repo/` — Project-specific canons and decisions',
+      '- `.agents/skills/` — Governance phase guidance',
+    ].join('\n');
+  }
+
+  return [
+    '## Architecture Access',
+    '',
+    'Read architecture context from local files:',
+    '- `docs/architecture/uxmaltech/` — Institutional canon (collab-architecture)',
+    '- `docs/architecture/repo/` — Project-specific canons and decisions',
+    '- `docs/ai/` — Quick reference helpers (start here for fast context)',
+  ].join('\n');
+}
+
+// ────────────────────────────────────────────────────────────────
+// Generator functions
+// ────────────────────────────────────────────────────────────────
+
 /**
  * Generates Agent Skills Spec SKILL.md files for Claude, Codex, and Gemini.
  * Format: .agents/skills/<name>/SKILL.md with YAML frontmatter.
  */
-function generateAgentSkillsSpec(ctx: StageContext): number {
+function generateAgentSkillsSpec(ctx: StageContext, mode: CollabMode): number {
   const skillsBaseDir = path.join(ctx.config.workspaceDir, '.agents', 'skills');
+  const preamble = buildArchitectureAccessBlock(mode);
   let written = 0;
 
   for (const agent of AGENT_PROMPTS) {
@@ -82,6 +121,8 @@ function generateAgentSkillsSpec(ctx: StageContext): number {
       `description: "${agent.description}"`,
       '---',
       '',
+      preamble,
+      '',
       content,
     ].join('\n');
 
@@ -97,12 +138,13 @@ function generateAgentSkillsSpec(ctx: StageContext): number {
 
 /**
  * Generates GitHub Copilot instruction files.
- * - .github/copilot-instructions.md — global instructions
+ * - .github/copilot-instructions.md — global instructions (mode-aware)
  * - .github/instructions/<name>.instructions.md — per-agent instructions
  */
-function generateCopilotInstructions(ctx: StageContext): number {
+function generateCopilotInstructions(ctx: StageContext, mode: CollabMode): number {
   const githubDir = path.join(ctx.config.workspaceDir, '.github');
   const instructionsDir = path.join(githubDir, 'instructions');
+  const preamble = buildArchitectureAccessBlock(mode);
   let written = 0;
 
   // Global instructions file
@@ -122,11 +164,7 @@ function generateCopilotInstructions(ctx: StageContext): number {
       '4. Repo Hygiene — Tests, lint, docs, dead code',
       '5. Canon Sync — Update canonical architecture',
       '',
-      '## Architecture Sources',
-      '',
-      '- `docs/architecture/uxmaltech/` — Institutional canon',
-      '- `docs/architecture/repo/` — Project-specific canons',
-      '- `docs/ai/` — Quick reference helpers',
+      preamble,
       '',
     ].join('\n');
 
@@ -155,6 +193,8 @@ function generateCopilotInstructions(ctx: StageContext): number {
       'applyTo: "**"',
       '---',
       '',
+      preamble,
+      '',
       content,
     ].join('\n');
 
@@ -169,9 +209,9 @@ function generateCopilotInstructions(ctx: StageContext): number {
 }
 
 /**
- * Generates a CLAUDE.md file at repo root with architecture context.
+ * Generates a CLAUDE.md file at repo root with mode-aware architecture context.
  */
-function generateClaudeMd(ctx: StageContext): boolean {
+function generateClaudeMd(ctx: StageContext, mode: CollabMode): boolean {
   const claudeFile = path.join(ctx.config.workspaceDir, 'CLAUDE.md');
 
   if (fs.existsSync(claudeFile)) {
@@ -179,17 +219,26 @@ function generateClaudeMd(ctx: StageContext): boolean {
     return false;
   }
 
+  const accessBlock = buildArchitectureAccessBlock(mode);
+
+  const mcpConfigNote = mode === 'indexed'
+    ? [
+        '',
+        '## MCP Configuration',
+        '',
+        'MCP client config: `.collab/claude-mcp-config.json`',
+        'Merge this into your Claude Code MCP settings to enable architecture retrieval.',
+        '',
+      ].join('\n')
+    : '';
+
   const content = [
     '# Claude Code — Architecture Context',
     '',
     'This project follows the Collab architectural governance process (GOV-R-001).',
     '',
-    '## Architecture Sources',
-    '',
-    '- `docs/architecture/uxmaltech/` — Institutional canon (collab-architecture)',
-    '- `docs/architecture/repo/` — Project-specific canons and decisions',
-    '- `docs/ai/` — Quick reference helpers (brief, domain map, module map)',
-    '',
+    accessBlock,
+    mcpConfigNote,
     '## Agent Skills',
     '',
     'Agent skills are defined in `.agents/skills/` following the Agent Skills Spec.',
@@ -220,6 +269,10 @@ function generateClaudeMd(ctx: StageContext): boolean {
   return true;
 }
 
+// ────────────────────────────────────────────────────────────────
+// Stage export
+// ────────────────────────────────────────────────────────────────
+
 export const agentSkillsSetupStage: OrchestrationStage = {
   id: 'agent-skills-setup',
   title: 'Generate agent skill files',
@@ -234,6 +287,7 @@ export const agentSkillsSetupStage: OrchestrationStage = {
       return;
     }
 
+    const mode = ctx.config.mode;
     const hasSkillsProvider = enabledProviders.some((p) => p !== 'copilot');
     const hasCopilot = enabledProviders.includes('copilot');
     const hasClaude = enabledProviders.includes('claude');
@@ -242,7 +296,7 @@ export const agentSkillsSetupStage: OrchestrationStage = {
 
     // Agent Skills Spec for Claude, Codex, and Gemini
     if (hasSkillsProvider) {
-      const count = generateAgentSkillsSpec(ctx);
+      const count = generateAgentSkillsSpec(ctx, mode);
       totalWritten += count;
       if (count > 0) {
         ctx.logger.info(`Agent Skills Spec: ${count} SKILL.md file(s) written to .agents/skills/.`);
@@ -251,7 +305,7 @@ export const agentSkillsSetupStage: OrchestrationStage = {
 
     // Copilot instructions
     if (hasCopilot) {
-      const count = generateCopilotInstructions(ctx);
+      const count = generateCopilotInstructions(ctx, mode);
       totalWritten += count;
       if (count > 0) {
         ctx.logger.info(`Copilot instructions: ${count} file(s) written to .github/.`);
@@ -260,7 +314,7 @@ export const agentSkillsSetupStage: OrchestrationStage = {
 
     // CLAUDE.md for Claude provider
     if (hasClaude) {
-      const wrote = generateClaudeMd(ctx);
+      const wrote = generateClaudeMd(ctx, mode);
       if (wrote) {
         totalWritten++;
         ctx.logger.info('CLAUDE.md written at repo root.');

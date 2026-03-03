@@ -11,17 +11,16 @@ import { generateComposeFiles } from '../lib/compose-renderer';
 import { CliError } from '../lib/errors';
 import { parseMode, type CollabMode } from '../lib/mode';
 import { runOrchestration, type OrchestrationStage } from '../lib/orchestrator';
-import { promptBoolean, promptChoice } from '../lib/prompt';
+import { promptChoice } from '../lib/prompt';
 import { assertPreflightChecks, runPreflightChecks } from '../lib/preflight';
 import { ensureWritableDirectory } from '../lib/preconditions';
-import { runDockerCompose } from '../lib/docker-compose';
 import { resolveInfraComposeFile, runInfraCompose } from './infra/shared';
 import { resolveMcpComposeFile, runMcpCompose } from './mcp/shared';
 import type { ComposeMode } from '../lib/compose-paths';
 import { assistantSetupStage } from '../stages/assistant-setup';
-import { canonScaffoldStage } from '../stages/canon-scaffold';
 import { canonSyncStage } from '../stages/canon-sync';
 import { canonIngestStage } from '../stages/canon-ingest';
+import { graphSeedStage } from '../stages/graph-seed';
 import { repoScaffoldStage } from '../stages/repo-scaffold';
 import { repoAnalysisStage } from '../stages/repo-analysis';
 import { repoAnalysisFileOnlyStage } from '../stages/repo-analysis-fileonly';
@@ -41,7 +40,6 @@ interface InitOptions {
   skipMcpSnippets?: boolean;
   skipAnalysis?: boolean;
   skipCi?: boolean;
-  ingest?: boolean;
   timeoutMs?: string;
   retries?: string;
   retryDelayMs?: string;
@@ -51,7 +49,6 @@ interface InitOptions {
 interface WizardSelection {
   mode: CollabMode;
   composeMode: ComposeMode;
-  runIngestBootstrap: boolean;
 }
 
 function parseComposeMode(value: string | undefined, fallback: ComposeMode = 'consolidated'): ComposeMode {
@@ -93,7 +90,6 @@ async function resolveWizardSelection(
   const defaults: WizardSelection = {
     mode: parseMode(options.mode, config.mode),
     composeMode: parseComposeMode(options.composeMode, inferComposeMode(config)),
-    runIngestBootstrap: Boolean(options.ingest),
   };
 
   if (options.yes) {
@@ -101,7 +97,6 @@ async function resolveWizardSelection(
       ...defaults,
       mode: options.mode ? parseMode(options.mode) : 'file-only',
       composeMode: options.composeMode ? parseComposeMode(options.composeMode) : 'consolidated',
-      runIngestBootstrap: Boolean(options.ingest),
     };
   }
 
@@ -132,17 +127,9 @@ async function resolveWizardSelection(
             defaults.composeMode,
           );
 
-  const runIngestBootstrap =
-    mode === 'indexed'
-      ? options.ingest
-        ? true
-        : await promptBoolean('Run ingest bootstrap command after startup?', defaults.runIngestBootstrap)
-      : false;
-
   return {
     mode,
     composeMode,
-    runIngestBootstrap,
   };
 }
 
@@ -284,7 +271,7 @@ function buildFileOnlyPipeline(
 }
 
 // ────────────────────────────────────────────────────────────────
-// Indexed pipeline (12 stages)
+// Indexed pipeline (14 stages)
 // ────────────────────────────────────────────────────────────────
 
 function buildIndexedPipeline(
@@ -293,7 +280,7 @@ function buildIndexedPipeline(
   logger: Logger,
   configExistedBefore: boolean,
   options: InitOptions,
-  selections: WizardSelection,
+  composeMode: ComposeMode,
 ): OrchestrationStage[] {
   const health = {
     timeoutMs: toNumber(options.timeoutMs, 5_000),
@@ -302,14 +289,19 @@ function buildIndexedPipeline(
   };
 
   return [
+    // Phase A — Local setup (shared with file-only)
     buildPreflightStage(executor, logger),                     // 1
     buildConfigStage(effectiveConfig, executor, logger,
       configExistedBefore, options.force),                     // 2
     assistantSetupStage,                                       // 3
-    canonScaffoldStage,                                        // 4
-    repoAnalysisStage,                                         // 5
-    ciSetupStage,                                              // 6
-    {                                                          // 7
+    canonSyncStage,                                            // 4
+    repoScaffoldStage,                                         // 5
+    repoAnalysisStage,                                         // 6
+    ciSetupStage,                                              // 7
+    agentSkillsSetupStage,                                     // 8
+
+    // Phase B — Infrastructure
+    {                                                          // 9
       id: 'compose-generation',
       title: 'Generate and validate compose files',
       recovery: [
@@ -319,7 +311,7 @@ function buildIndexedPipeline(
       run: () => {
         const generation = generateComposeFiles({
           config: effectiveConfig,
-          mode: selections.composeMode,
+          mode: composeMode,
           outputDirectory: options.outputDir,
           logger,
           executor,
@@ -336,7 +328,7 @@ function buildIndexedPipeline(
         );
       },
     },
-    {                                                          // 8
+    {                                                          // 10
       id: 'infra-start',
       title: 'Start infrastructure services',
       recovery: [
@@ -348,7 +340,7 @@ function buildIndexedPipeline(
         await runInfraCompose(logger, executor, effectiveConfig, selection, 'up', { health });
       },
     },
-    {                                                          // 9
+    {                                                          // 11
       id: 'mcp-start',
       title: 'Start MCP service',
       recovery: [
@@ -360,7 +352,7 @@ function buildIndexedPipeline(
         await runMcpCompose(logger, executor, effectiveConfig, selection, 'up', { health });
       },
     },
-    {                                                          // 10
+    {                                                          // 12
       id: 'mcp-client-config',
       title: 'Generate MCP client config snippets',
       recovery: [
@@ -395,29 +387,10 @@ function buildIndexedPipeline(
         );
       },
     },
-    canonIngestStage,                                          // 11
-    {                                                          // 12
-      id: 'ingest-bootstrap',
-      title: 'Optional ingest bootstrap',
-      recovery: [
-        'Ensure MCP container is running before ingestion.',
-        'Run collab init --resume to retry ingest bootstrap.',
-      ],
-      run: () => {
-        if (!selections.runIngestBootstrap) {
-          logger.info('Skipping ingest bootstrap stage by user choice.');
-          return;
-        }
 
-        const selection = resolveMcpComposeFile(effectiveConfig, options.outputDir, undefined);
-        runDockerCompose({
-          executor,
-          files: [selection.filePath],
-          arguments: ['exec', 'mcp', 'npm', 'run', 'ingest:v2'],
-          cwd: effectiveConfig.workspaceDir,
-        });
-      },
-    },
+    // Phase C — Ingestion
+    graphSeedStage,                                            // 13
+    canonIngestStage,                                          // 14
   ];
 }
 
@@ -438,7 +411,6 @@ export function registerInitCommand(program: Command): void {
     .option('--skip-mcp-snippets', 'Skip MCP client config snippet generation')
     .option('--skip-analysis', 'Skip AI-powered repository analysis stage')
     .option('--skip-ci', 'Skip CI workflow generation')
-    .option('--ingest', 'Run optional ingest bootstrap stage (indexed mode only)')
     .option('--providers <list>', 'Comma-separated AI provider list (codex,claude,gemini,copilot)')
     .option('--timeout-ms <ms>', 'Per-check timeout in milliseconds', '5000')
     .option('--retries <count>', 'Health check retries', '15')
@@ -475,7 +447,7 @@ Examples:
       // Two completely separate pipelines — no mode branching inside stages
       const stages = selections.mode === 'file-only'
         ? buildFileOnlyPipeline(effectiveConfig, context.executor, context.logger, configExistedBefore, options)
-        : buildIndexedPipeline(effectiveConfig, context.executor, context.logger, configExistedBefore, options, selections);
+        : buildIndexedPipeline(effectiveConfig, context.executor, context.logger, configExistedBefore, options, selections.composeMode);
 
       await runOrchestration(
         {

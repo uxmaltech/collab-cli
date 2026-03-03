@@ -7,7 +7,7 @@ import { runCli } from '../helpers/cli.mjs';
 import { createFakeDockerEnv } from '../helpers/fake-docker.mjs';
 import { makeTempWorkspace } from '../helpers/workspace.mjs';
 
-test('canon-scaffold stage runs in indexed mode (dry-run)', () => {
+test('indexed mode runs canon-sync instead of canon-scaffold (dry-run)', () => {
   const workspace = makeTempWorkspace();
   const env = createFakeDockerEnv();
 
@@ -18,9 +18,40 @@ test('canon-scaffold stage runs in indexed mode (dry-run)', () => {
 
   assert.equal(result.status, 0, `CLI failed: ${result.stderr}`);
   assert.ok(
-    result.stdout.includes('Generate canonical architecture scaffold') ||
-      result.stdout.includes('scaffold governance'),
-    'canon-scaffold should run in indexed mode',
+    result.stdout.includes('Sync canonical architecture'),
+    'canon-sync should run in indexed mode',
+  );
+  assert.ok(
+    !result.stdout.includes('Generate canonical architecture scaffold'),
+    'canon-scaffold should NOT run in indexed mode',
+  );
+});
+
+test('indexed mode has repo-scaffold, agent-skills-setup, and graph-seed (dry-run)', () => {
+  const workspace = makeTempWorkspace();
+  const env = createFakeDockerEnv();
+
+  const result = runCli(
+    ['--cwd', workspace, '--dry-run', 'init', '--yes', '--mode', 'indexed'],
+    { cwd: workspace, env },
+  );
+
+  assert.equal(result.status, 0, `CLI failed: ${result.stderr}`);
+  assert.ok(
+    result.stdout.includes('Generate project architecture scaffold'),
+    'repo-scaffold should appear in indexed pipeline',
+  );
+  assert.ok(
+    result.stdout.includes('Generate agent skill files'),
+    'agent-skills-setup should appear in indexed pipeline',
+  );
+  assert.ok(
+    result.stdout.includes('Seed NebulaGraph knowledge graph'),
+    'graph-seed should appear in indexed pipeline',
+  );
+  assert.ok(
+    !result.stdout.includes('Optional ingest bootstrap'),
+    'ingest-bootstrap should NOT appear in indexed pipeline',
   );
 });
 

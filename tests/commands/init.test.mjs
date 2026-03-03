@@ -41,7 +41,6 @@ test('init --yes accepts explicit flags in non-interactive mode', () => {
       '--compose-mode',
       'split',
       '--skip-mcp-snippets',
-      '--ingest',
     ],
     {
       cwd: workspace,

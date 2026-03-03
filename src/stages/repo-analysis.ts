@@ -3,9 +3,16 @@ import path from 'node:path';
 import { createFirstAvailableClient, type AiMessage } from '../lib/ai-client';
 import { isCanonsAvailable, resolveCanonFile, syncCanons } from '../lib/canon-resolver';
 import type { OrchestrationStage } from '../lib/orchestrator';
-import { getEnabledProviders } from '../lib/providers';
-import { buildUserMessage, extractJson, writeAnalysisResults, type AnalysisResult } from '../lib/repo-analysis-helpers';
+import { getEnabledProviders, type ProviderKey } from '../lib/providers';
+import { buildUserMessage, extractJson, generateAiHelpers, writeAnalysisResults, type AnalysisResult } from '../lib/repo-analysis-helpers';
 import { scanRepository } from '../lib/repo-scanner';
+
+/**
+ * Checks if copilot is the only enabled provider.
+ */
+function onlyCopilotEnabled(providers: ProviderKey[]): boolean {
+  return providers.length === 1 && providers[0] === 'copilot';
+}
 
 export const repoAnalysisStage: OrchestrationStage = {
   id: 'repo-analysis',
@@ -21,8 +28,12 @@ export const repoAnalysisStage: OrchestrationStage = {
     }
 
     const enabledProviders = getEnabledProviders(ctx.config);
-    if (enabledProviders.length === 0) {
-      ctx.logger.info('No providers enabled; skipping repository analysis.');
+    if (enabledProviders.length === 0 || onlyCopilotEnabled(enabledProviders)) {
+      ctx.logger.info('No AI-capable providers enabled; skipping repository analysis.');
+
+      // Still generate basic AI helper files
+      const repoCtx = scanRepository(ctx.config.workspaceDir);
+      generateAiHelpers(ctx, repoCtx, {});
       return;
     }
 
@@ -35,9 +46,10 @@ export const repoAnalysisStage: OrchestrationStage = {
     const client = createFirstAvailableClient(enabledProviders, ctx.config, ctx.logger);
     if (!client) {
       ctx.logger.warn(
-        'No AI provider credentials or CLI available; skipping repository analysis. ' +
-          'Set an API key or configure a CLI provider to enable analysis.',
+        'No AI provider credentials or CLI available; generating basic AI helpers only.',
       );
+      const repoCtx = scanRepository(ctx.config.workspaceDir);
+      generateAiHelpers(ctx, repoCtx, {});
       return;
     }
 
@@ -106,10 +118,15 @@ export const repoAnalysisStage: OrchestrationStage = {
     } catch (err) {
       ctx.logger.warn(`Failed to parse AI analysis response: ${err}`);
       ctx.logger.debug(`Raw response (first 500 chars): ${response.slice(0, 500)}`);
+      // Still generate AI helpers with empty analysis
+      generateAiHelpers(ctx, repoCtx, {});
       return;
     }
 
-    // Indexed mode writes to architectureDir
-    writeAnalysisResults(ctx, ctx.config.architectureDir, analysis);
+    // Indexed mode writes to repoDir (docs/architecture/repo/)
+    writeAnalysisResults(ctx, ctx.config.repoDir, analysis);
+
+    // Generate docs/ai/ helper files
+    generateAiHelpers(ctx, repoCtx, analysis);
   },
 };
