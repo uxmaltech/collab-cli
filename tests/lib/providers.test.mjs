@@ -82,6 +82,9 @@ test('autoDetectProviders detects from environment', () => {
     delete process.env.OPENAI_API_KEY;
     delete process.env.ANTHROPIC_API_KEY;
     delete process.env.GOOGLE_AI_API_KEY;
+    delete process.env.OPENAI_CLIENT_ID;
+    delete process.env.ANTHROPIC_CLIENT_ID;
+    delete process.env.GOOGLE_CLIENT_ID;
 
     assert.deepEqual(autoDetectProviders(), []);
 
@@ -95,6 +98,37 @@ test('autoDetectProviders detects from environment', () => {
     process.env.OPENAI_API_KEY = originalEnv.OPENAI_API_KEY;
     process.env.ANTHROPIC_API_KEY = originalEnv.ANTHROPIC_API_KEY;
     process.env.GOOGLE_AI_API_KEY = originalEnv.GOOGLE_AI_API_KEY;
+    process.env.OPENAI_CLIENT_ID = originalEnv.OPENAI_CLIENT_ID;
+    process.env.ANTHROPIC_CLIENT_ID = originalEnv.ANTHROPIC_CLIENT_ID;
+    process.env.GOOGLE_CLIENT_ID = originalEnv.GOOGLE_CLIENT_ID;
+  }
+});
+
+test('autoDetectProviders detects OAuth client IDs', () => {
+  const originalEnv = { ...process.env };
+
+  try {
+    // Clear all keys
+    delete process.env.OPENAI_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
+    delete process.env.GOOGLE_AI_API_KEY;
+    delete process.env.OPENAI_CLIENT_ID;
+    delete process.env.ANTHROPIC_CLIENT_ID;
+    delete process.env.GOOGLE_CLIENT_ID;
+
+    // Only OAuth client ID set (no API key)
+    process.env.GOOGLE_CLIENT_ID = 'test-client-id';
+    assert.deepEqual(autoDetectProviders(), ['gemini']);
+
+    process.env.OPENAI_CLIENT_ID = 'test-client-id';
+    assert.deepEqual(autoDetectProviders(), ['codex', 'gemini']);
+  } finally {
+    process.env.OPENAI_API_KEY = originalEnv.OPENAI_API_KEY;
+    process.env.ANTHROPIC_API_KEY = originalEnv.ANTHROPIC_API_KEY;
+    process.env.GOOGLE_AI_API_KEY = originalEnv.GOOGLE_AI_API_KEY;
+    process.env.OPENAI_CLIENT_ID = originalEnv.OPENAI_CLIENT_ID;
+    process.env.ANTHROPIC_CLIENT_ID = originalEnv.ANTHROPIC_CLIENT_ID;
+    process.env.GOOGLE_CLIENT_ID = originalEnv.GOOGLE_CLIENT_ID;
   }
 });
 

@@ -7,7 +7,7 @@ import path from 'node:path';
 import { makeTempWorkspace } from '../helpers/workspace.mjs';
 
 // Import from compiled dist
-const { generatePKCE, findAvailablePort, saveTokens, loadTokens, isTokenExpired, getTokenFilePath } = await import('../../dist/lib/oauth.js');
+const { generatePKCE, startCallbackServer, saveTokens, loadTokens, isTokenExpired, getTokenFilePath } = await import('../../dist/lib/oauth.js');
 
 test('generatePKCE produces valid code_verifier and code_challenge', () => {
   const { codeVerifier, codeChallenge } = generatePKCE();
@@ -32,21 +32,26 @@ test('generatePKCE produces unique pairs', () => {
   assert.notEqual(pair1.codeChallenge, pair2.codeChallenge);
 });
 
-test('findAvailablePort returns a valid port number', async () => {
-  const port = await findAvailablePort();
+test('startCallbackServer returns a live server with a valid port', async () => {
+  const { server, port } = await startCallbackServer();
 
   assert.ok(typeof port === 'number');
   assert.ok(port > 0);
   assert.ok(port < 65536);
+  assert.ok(server.listening, 'server should be listening');
+
+  server.close();
 });
 
-test('findAvailablePort returns different ports on consecutive calls', async () => {
-  const port1 = await findAvailablePort();
-  const port2 = await findAvailablePort();
+test('startCallbackServer returns different ports on consecutive calls', async () => {
+  const result1 = await startCallbackServer();
+  const result2 = await startCallbackServer();
 
-  // They might be the same in theory, but very unlikely
-  assert.ok(typeof port1 === 'number');
-  assert.ok(typeof port2 === 'number');
+  assert.ok(typeof result1.port === 'number');
+  assert.ok(typeof result2.port === 'number');
+
+  result1.server.close();
+  result2.server.close();
 });
 
 test('saveTokens and loadTokens round-trip', () => {
@@ -107,7 +112,7 @@ test('loadTokens returns null for non-existent provider', () => {
     },
   };
 
-  const loaded = loadTokens(config, 'nonexistent');
+  const loaded = loadTokens(config, 'gemini');
   assert.equal(loaded, null);
 });
 

@@ -161,10 +161,11 @@ test('resume skips assistant-setup when already completed', () => {
   };
 
   // First run
-  runCli(
+  const first = runCli(
     ['--cwd', workspace, 'init', '--yes', '--providers', 'codex', '--mode', 'file-only'],
     { cwd: workspace, env },
   );
+  assert.equal(first.status, 0, `initial CLI failed: ${first.stderr}`);
 
   // Second run with --resume
   const result = runCli(

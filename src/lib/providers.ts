@@ -128,7 +128,7 @@ export function autoDetectProviders(): ProviderKey[] {
 
   for (const key of PROVIDER_KEYS) {
     const defaults = PROVIDER_DEFAULTS[key];
-    if (process.env[defaults.envVar]) {
+    if (process.env[defaults.envVar] || process.env[defaults.oauth.clientIdEnvVar]) {
       detected.push(key);
     }
   }

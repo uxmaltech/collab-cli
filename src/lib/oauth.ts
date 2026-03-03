@@ -8,6 +8,7 @@ import { execSync } from 'node:child_process';
 
 import type { CollabConfig } from './config';
 import type { Logger } from './logger';
+import type { ProviderKey } from './providers';
 
 export interface OAuthFlowConfig {
   provider: string;
@@ -59,11 +60,23 @@ function openBrowser(url: string, logger: Logger): void {
 }
 
 function waitForAuthCode(
-  port: number,
+  server: http.Server,
   timeoutMs: number,
 ): Promise<{ code: string; state: string }> {
   return new Promise((resolve, reject) => {
-    const server = http.createServer((req, res) => {
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(new Error(`OAuth authorization timed out after ${timeoutMs / 1000} seconds.`));
+    }, timeoutMs);
+
+    function cleanup(): void {
+      clearTimeout(timer);
+      server.close();
+    }
+
+    server.on('request', (req, res) => {
+      const address = server.address();
+      const port = address && typeof address !== 'string' ? address.port : 0;
       const url = new URL(req.url ?? '/', `http://localhost:${port}`);
 
       if (url.pathname !== '/callback') {
@@ -105,25 +118,6 @@ function waitForAuthCode(
       );
       cleanup();
       resolve({ code, state });
-    });
-
-    const timer = setTimeout(() => {
-      cleanup();
-      reject(new Error(`OAuth authorization timed out after ${timeoutMs / 1000} seconds.`));
-    }, timeoutMs);
-
-    function cleanup(): void {
-      clearTimeout(timer);
-      server.close();
-    }
-
-    server.listen(port, '127.0.0.1', () => {
-      // Server started, waiting for callback
-    });
-
-    server.on('error', (err) => {
-      cleanup();
-      reject(new Error(`Failed to start OAuth callback server: ${err.message}`));
     });
   });
 }
@@ -192,6 +186,10 @@ function exchangeCodeForTokens(
       },
     );
 
+    req.setTimeout(15_000, () => {
+      req.destroy(new Error('Token exchange request timed out'));
+    });
+
     req.on('error', (err) => {
       reject(new Error(`Token exchange request failed: ${err.message}`));
     });
@@ -201,14 +199,13 @@ function exchangeCodeForTokens(
   });
 }
 
-function findAvailablePort(): Promise<number> {
+function startCallbackServer(): Promise<{ server: http.Server; port: number }> {
   return new Promise((resolve, reject) => {
     const server = http.createServer();
     server.listen(0, '127.0.0.1', () => {
       const address = server.address();
       if (address && typeof address !== 'string') {
-        const port = address.port;
-        server.close(() => resolve(port));
+        resolve({ server, port: address.port });
       } else {
         server.close(() => reject(new Error('Could not determine available port')));
       }
@@ -233,8 +230,8 @@ export async function runOAuthFlow(
   const { codeVerifier, codeChallenge } = generatePKCE();
   const state = crypto.randomBytes(16).toString('hex');
 
-  // Find available port for callback server
-  const port = await findAvailablePort();
+  // Start callback server on a random available port (single bind eliminates TOCTOU race)
+  const { server, port } = await startCallbackServer();
   const redirectUri = `http://127.0.0.1:${port}/callback`;
 
   // Build authorization URL
@@ -250,8 +247,8 @@ export async function runOAuthFlow(
   logger.info('Opening browser for OAuth authorization...');
   logger.info(`  Authorization URL: ${authUrl.toString()}`);
 
-  // Start listening for callback before opening browser
-  const callbackPromise = waitForAuthCode(port, timeoutMs);
+  // Listen for callback on the already-running server
+  const callbackPromise = waitForAuthCode(server, timeoutMs);
 
   // Open browser
   openBrowser(authUrl.toString(), logger);
@@ -294,34 +291,39 @@ export async function refreshOAuthToken(
   });
 }
 
-export function getTokenFilePath(config: CollabConfig, provider: string): string {
+export function getTokenFilePath(config: CollabConfig, provider: ProviderKey): string {
   return path.join(config.collabDir, 'tokens', `${provider}.json`);
 }
 
-export function saveTokens(config: CollabConfig, provider: string, tokens: OAuthTokens): void {
+export function saveTokens(config: CollabConfig, provider: ProviderKey, tokens: OAuthTokens): void {
   const tokenFile = getTokenFilePath(config, provider);
   const tokenDir = path.dirname(tokenFile);
 
   fs.mkdirSync(tokenDir, { recursive: true });
   fs.writeFileSync(tokenFile, JSON.stringify(tokens, null, 2), { encoding: 'utf8', mode: 0o600 });
 
-  // Ensure tokens directory has restricted permissions
+  // Ensure tokens directory and file have restricted permissions
   try {
     fs.chmodSync(tokenDir, 0o700);
+    fs.chmodSync(tokenFile, 0o600);
   } catch {
     // Non-critical: permissions may not be applicable on all platforms
   }
 }
 
-export function loadTokens(config: CollabConfig, provider: string): OAuthTokens | null {
+export function loadTokens(config: CollabConfig, provider: ProviderKey): OAuthTokens | null {
   const tokenFile = getTokenFilePath(config, provider);
 
   if (!fs.existsSync(tokenFile)) {
     return null;
   }
 
-  const raw = fs.readFileSync(tokenFile, 'utf8');
-  return JSON.parse(raw) as OAuthTokens;
+  try {
+    const raw = fs.readFileSync(tokenFile, 'utf8');
+    return JSON.parse(raw) as OAuthTokens;
+  } catch {
+    return null;
+  }
 }
 
 export function isTokenExpired(tokens: OAuthTokens): boolean {
@@ -335,4 +337,4 @@ export function isTokenExpired(tokens: OAuthTokens): boolean {
 }
 
 // Exported for testing
-export { generatePKCE, findAvailablePort };
+export { generatePKCE, startCallbackServer };
