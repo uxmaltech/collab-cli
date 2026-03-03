@@ -41,6 +41,33 @@ async function configureApiKey(
   };
 }
 
+/**
+ * Validates that a client_id looks like an OAuth application ID, not an email
+ * or other obviously invalid value. OAuth client IDs are assigned by providers
+ * when you register an application — they are NOT user emails or API keys.
+ */
+function validateClientId(clientId: string, providerLabel: string): void {
+  // Check for email-like values
+  if (clientId.includes('@')) {
+    throw new CliError(
+      `Invalid OAuth Client ID for ${providerLabel}: "${clientId}" looks like an email address.\n` +
+        `A Client ID is an application identifier assigned by the provider when you register an OAuth application.\n` +
+        `It is NOT your email, username, or API key.\n\n` +
+        `Note: Most providers (OpenAI, Anthropic, Google) require you to register an OAuth application\n` +
+        `in their developer portal to obtain a Client ID. For standard API access, use "api-key" auth instead.`,
+    );
+  }
+
+  // Check for API key-like values (sk-..., anthropic-..., etc.)
+  if (/^(sk-|anthropic-|AIza)/.test(clientId)) {
+    throw new CliError(
+      `Invalid OAuth Client ID for ${providerLabel}: "${clientId.slice(0, 8)}..." looks like an API key.\n` +
+        `A Client ID is an application identifier, not a secret key.\n` +
+        `If you have an API key, use "api-key" authentication method instead.`,
+    );
+  }
+}
+
 async function configureOAuth(
   provider: ProviderKey,
   ctx: StageContext,
@@ -49,6 +76,12 @@ async function configureOAuth(
   const isNonInteractive = Boolean(ctx.options?.yes);
   const isDryRun = ctx.executor.dryRun;
 
+  ctx.logger.warn(
+    `OAuth for ${defaults.label} requires a registered OAuth application.\n` +
+      `  You must register an app in the provider's developer portal to get a Client ID.\n` +
+      `  For standard API usage, "api-key" authentication is simpler and recommended.`,
+  );
+
   // Get client ID
   let clientId: string;
   const clientIdFromEnv = process.env[defaults.oauth.clientIdEnvVar];
@@ -56,7 +89,8 @@ async function configureOAuth(
   if (isNonInteractive) {
     if (!clientIdFromEnv) {
       throw new CliError(
-        `OAuth non-interactive mode requires ${defaults.oauth.clientIdEnvVar} environment variable for ${defaults.label}.`,
+        `OAuth non-interactive mode requires ${defaults.oauth.clientIdEnvVar} environment variable for ${defaults.label}.\n` +
+          `This must be a registered OAuth application Client ID, not an email or API key.`,
       );
     }
 
@@ -66,12 +100,17 @@ async function configureOAuth(
     const hint = clientIdFromEnv
       ? `from ${defaults.oauth.clientIdEnvVar}`
       : `or set ${defaults.oauth.clientIdEnvVar}`;
-    clientId = await promptText(`OAuth Client ID for ${defaults.label} (${hint})`, clientIdDefault);
+    clientId = await promptText(
+      `OAuth Client ID for ${defaults.label} (registered app ID, ${hint})`,
+      clientIdDefault,
+    );
 
     if (!clientId) {
       throw new CliError(`OAuth Client ID is required for ${defaults.label}.`);
     }
   }
+
+  validateClientId(clientId, defaults.label);
 
   const oauthConfig: OAuthProviderConfig = {
     clientId,
