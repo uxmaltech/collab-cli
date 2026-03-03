@@ -107,16 +107,21 @@ async function resolveWizardSelection(
         defaults.mode,
       );
 
-  const composeMode = options.composeMode
-    ? parseComposeMode(options.composeMode)
-    : await promptChoice(
-        'Select compose generation mode:',
-        [
-          { value: 'consolidated', label: 'consolidated (single docker-compose.yml)' },
-          { value: 'split', label: 'split (infra + mcp compose files)' },
-        ],
-        defaults.composeMode,
-      );
+  // Skip compose-mode prompt when mode is file-only (compose files are still
+  // generated for future use, but the choice is irrelevant to the user).
+  const composeMode =
+    mode === 'file-only'
+      ? parseComposeMode(options.composeMode, 'consolidated')
+      : options.composeMode
+        ? parseComposeMode(options.composeMode)
+        : await promptChoice(
+            'Select compose generation mode:',
+            [
+              { value: 'consolidated', label: 'consolidated (single docker-compose.yml)' },
+              { value: 'split', label: 'split (infra + mcp compose files)' },
+            ],
+            defaults.composeMode,
+          );
 
   const setupCodexConfig = options.skipCodexConfig
     ? false
