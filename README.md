@@ -6,13 +6,21 @@ CLI de orquestación para workflows colaborativos con arquitectura canónica. Ge
 
 ```mermaid
 graph TD
-    DEV[Desarrollador] --> CLI[collab-cli<br><i>orquestador</i>]
-    CLI -- canon-sync --> CA[collab-architecture<br><i>fuente de verdad</i>]
-    CA -- canon-sync --> CLI
-    CLI -- docker compose up --> MCP[collab-architecture-mcp<br><i>servidor MCP</i>]
-    CA -- ".md / .yaml" --> SEED[graph/seed/]
-    SEED -- seed + ingest --> MCP
-    MCP --> AI[Agentes IA<br><i>Codex · Claude · Gemini · Copilot</i>]
+    DEV[Desarrollador] --> APP[collab-laravel-app<br><i>interfaz web</i>]
+    DEV --> CLI[collab-cli<br><i>infraestructura</i>]
+
+    APP --- CHAT[collab-chat-ai-pkg]
+    APP --- CORE[collab-core-pkg]
+    APP --- PM[collab-project-manager-pkg]
+
+    CLI -- canon-sync --> CA[collab-architecture<br><i>canon framework</i>]
+    CLI -- docker compose up --> MCP[collab-architecture-mcp<br><i>NebulaGraph · Qdrant</i>]
+    CA -- seed + ingest --> MCP
+
+    CORE -- MCP tools --> MCP
+    CORE -- "Epic + Stories" --> GH[GitHub Issues]
+    GH -- "GOV-R-001 → merge → Phase 5" --> BCA["{negocio}/collab-architecture<br><i>canon negocio</i>"]
+    BCA -- ingest --> MCP
 
     style CLI fill:#4a9eff,stroke:#2b7de9,color:#fff
 ```
