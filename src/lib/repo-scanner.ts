@@ -68,10 +68,13 @@ function detectStack(workspaceDir: string): { language: string; framework: strin
   const pkgPath = path.join(workspaceDir, 'package.json');
   if (fs.existsSync(pkgPath)) {
     try {
-      const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+      const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8')) as {
+        dependencies?: Record<string, string>;
+        devDependencies?: Record<string, string>;
+      };
       const deps = {
-        ...((pkg.dependencies as Record<string, string>) ?? {}),
-        ...((pkg.devDependencies as Record<string, string>) ?? {}),
+        ...(pkg.dependencies ?? {}),
+        ...(pkg.devDependencies ?? {}),
       };
 
       const depNames = Object.keys(deps);

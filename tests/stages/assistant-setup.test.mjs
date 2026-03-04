@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
@@ -135,6 +136,7 @@ test('config persists assistants after setup', () => {
   const env = {
     ...createFakeDockerEnv(),
     OPENAI_API_KEY: 'test-key',
+    COLLAB_HOME: fs.mkdtempSync(path.join(os.tmpdir(), 'collab-home-')),
   };
 
   // Run with actual file writes (no --dry-run) but use file-only mode to skip docker
@@ -163,6 +165,7 @@ test('resume skips assistant-setup when already completed', () => {
   const env = {
     ...createFakeDockerEnv(),
     OPENAI_API_KEY: 'test-key',
+    COLLAB_HOME: fs.mkdtempSync(path.join(os.tmpdir(), 'collab-home-')),
   };
 
   // First run

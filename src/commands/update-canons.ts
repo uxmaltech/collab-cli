@@ -8,7 +8,7 @@ export function registerUpdateCanonsCommand(program: Command): void {
   program
     .command('update-canons')
     .description('Download or update the collab-architecture canons from GitHub')
-    .action(async () => {
+    .action(() => {
       const ok = syncCanons();
       if (!ok) {
         process.exitCode = 1;

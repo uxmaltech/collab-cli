@@ -114,9 +114,9 @@ export const repoAnalysisStage: OrchestrationStage = {
     let analysis: AnalysisResult;
     try {
       const jsonStr = extractJson(response);
-      analysis = JSON.parse(jsonStr);
+      analysis = JSON.parse(jsonStr) as AnalysisResult;
     } catch (err) {
-      ctx.logger.warn(`Failed to parse AI analysis response: ${err}`);
+      ctx.logger.warn(`Failed to parse AI analysis response: ${String(err)}`);
       ctx.logger.debug(`Raw response (first 500 chars): ${response.slice(0, 500)}`);
       // Still generate AI helpers with empty analysis
       generateAiHelpers(ctx, repoCtx, {});

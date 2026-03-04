@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { getRepoBaseDir, type OrchestrationStage, type StageContext } from '../lib/orchestrator';
+import { getRepoBaseDir, type OrchestrationStage } from '../lib/orchestrator';
 import { architecturePrTemplate, architectureMergeTemplate } from '../templates/ci';
 
 export const ciSetupStage: OrchestrationStage = {

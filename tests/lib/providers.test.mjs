@@ -73,7 +73,7 @@ test('getEnabledProviders returns empty array when no assistants configured', ()
   assert.deepEqual(getEnabledProviders({ assistants: { providers: {} } }), []);
 });
 
-test('autoDetectProviders detects from environment and CLIs', () => {
+test('autoDetectProviders detects from environment and CLIs', async () => {
   const originalEnv = { ...process.env };
 
   try {
@@ -83,15 +83,15 @@ test('autoDetectProviders detects from environment and CLIs', () => {
     delete process.env.GOOGLE_AI_API_KEY;
 
     // Without env vars, autoDetectProviders may still detect installed CLIs on PATH
-    const baseline = autoDetectProviders();
+    const baseline = await autoDetectProviders();
 
     // Setting an env var should ensure that provider is detected
     process.env.ANTHROPIC_API_KEY = 'test-key';
-    const withAnthropic = autoDetectProviders();
+    const withAnthropic = await autoDetectProviders();
     assert.ok(withAnthropic.includes('claude'), 'should detect claude via ANTHROPIC_API_KEY');
 
     process.env.OPENAI_API_KEY = 'test-key';
-    const withBoth = autoDetectProviders();
+    const withBoth = await autoDetectProviders();
     assert.ok(withBoth.includes('codex'), 'should detect codex via OPENAI_API_KEY');
     assert.ok(withBoth.includes('claude'), 'should detect claude via ANTHROPIC_API_KEY');
 

@@ -59,7 +59,7 @@ export function syncCanons(log?: (msg: string) => void): boolean {
     }
     return true;
   } catch (err) {
-    print(`Failed to sync canons: ${err}`);
+    print(`Failed to sync canons: ${String(err)}`);
     return false;
   }
 }

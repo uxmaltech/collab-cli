@@ -91,7 +91,7 @@ function readCliConfigModel(provider: ProviderKey): string | null {
     }
 
     // JSON-based configs (claude, gemini)
-    const parsed = JSON.parse(content);
+    const parsed = JSON.parse(content) as { model?: string; defaultModel?: string };
     return parsed.model ?? parsed.defaultModel ?? null;
   } catch {
     return null;

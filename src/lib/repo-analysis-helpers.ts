@@ -98,6 +98,20 @@ export function sanitizeId(id: string): string {
   return id.replace(/[^a-zA-Z0-9-]/g, '-');
 }
 
+/**
+ * Safely coerces an unknown value to a string.
+ * Used for AI-generated JSON fields that may be objects instead of strings.
+ */
+function str(value: unknown): string {
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (value == null) {
+    return '';
+  }
+  return JSON.stringify(value);
+}
+
 export function renderAxiom(entry: AnalysisEntry): string {
   return [
     `# ${entry.id}: ${entry.title}`,
@@ -107,15 +121,15 @@ export function renderAxiom(entry: AnalysisEntry): string {
     '',
     '## Statement',
     '',
-    String(entry.statement ?? entry.title),
+    str(entry.statement ?? entry.title),
     '',
     '## Rationale',
     '',
-    String(entry.rationale ?? '_Not provided._'),
+    str(entry.rationale ?? '_Not provided._'),
     '',
     '## Verification',
     '',
-    String(entry.verification ?? '_Pending verification._'),
+    str(entry.verification ?? '_Pending verification._'),
     '',
     '<!-- AI-GENERATED -->',
     '',
@@ -126,21 +140,21 @@ export function renderDecision(entry: AnalysisEntry): string {
   return [
     `# ${entry.id}: ${entry.title}`,
     '',
-    `**Status:** ${entry.status ?? 'Accepted'}`,
+    `**Status:** ${str(entry.status ?? 'Accepted')}`,
     `**Date:** ${new Date().toISOString().split('T')[0]}`,
     `**Confidence:** ${entry.confidence ?? 'MEDIUM'}`,
     '',
     '## Context',
     '',
-    String(entry.context ?? '_Not provided._'),
+    str(entry.context ?? '_Not provided._'),
     '',
     '## Decision',
     '',
-    String(entry.decision ?? '_Not provided._'),
+    str(entry.decision ?? '_Not provided._'),
     '',
     '## Consequences',
     '',
-    String(entry.consequences ?? '_Not provided._'),
+    str(entry.consequences ?? '_Not provided._'),
     '',
     '<!-- AI-GENERATED -->',
     '',
@@ -152,19 +166,19 @@ export function renderConvention(entry: AnalysisEntry): string {
     `# ${entry.id}: ${entry.title}`,
     '',
     `**Confidence:** ${entry.confidence ?? 'MEDIUM'}`,
-    `**Scope:** ${entry.scope ?? 'project'}`,
+    `**Scope:** ${str(entry.scope ?? 'project')}`,
     '',
     '## Convention',
     '',
-    String(entry.convention ?? entry.title),
+    str(entry.convention ?? entry.title),
     '',
     '## Examples',
     '',
-    String(entry.examples ?? '_See codebase._'),
+    str(entry.examples ?? '_See codebase._'),
     '',
     '## Rationale',
     '',
-    String(entry.rationale ?? '_Not provided._'),
+    str(entry.rationale ?? '_Not provided._'),
     '',
     '<!-- AI-GENERATED -->',
     '',
@@ -176,19 +190,19 @@ export function renderAntiPattern(entry: AnalysisEntry): string {
     `# ${entry.id}: ${entry.title}`,
     '',
     `**Confidence:** ${entry.confidence ?? 'MEDIUM'}`,
-    `**Severity:** ${entry.severity ?? 'warning'}`,
+    `**Severity:** ${str(entry.severity ?? 'warning')}`,
     '',
     '## Problem',
     '',
-    String(entry.problem ?? entry.title),
+    str(entry.problem ?? entry.title),
     '',
     '## Why It\'s Harmful',
     '',
-    String(entry.harm ?? '_Not provided._'),
+    str(entry.harm ?? '_Not provided._'),
     '',
     '## Alternative',
     '',
-    String(entry.alternative ?? '_Not provided._'),
+    str(entry.alternative ?? '_Not provided._'),
     '',
     '<!-- AI-GENERATED -->',
     '',
