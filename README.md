@@ -6,12 +6,15 @@ CLI de orquestación para workflows colaborativos con arquitectura canónica. Ge
 
 ```mermaid
 graph TD
-    DEV[Desarrollador] --> APP[collab-laravel-app<br><i>interfaz web</i>]
-    DEV --> CLI[collab-cli<br><i>infraestructura</i>]
+    DEV[Desarrollador] --> CLI[collab-cli<br><i>infraestructura</i>]
 
-    APP --- CHAT[collab-chat-ai-pkg]
-    APP --- CORE[collab-core-pkg]
-    APP --- PM[collab-project-manager-pkg]
+    subgraph APP["collab-laravel-app"]
+        CHAT[collab-chat-ai-pkg]
+        CORE[collab-core-pkg]
+        PM[collab-project-manager-pkg]
+    end
+
+    DEV --> APP
 
     CLI -- canon-sync --> CA[collab-architecture<br><i>canon framework</i>]
     CLI -- docker compose up --> MCP[collab-architecture-mcp<br><i>NebulaGraph · Qdrant</i>]
@@ -23,6 +26,7 @@ graph TD
     BCA -- ingest --> MCP
 
     style CLI fill:#4a9eff,stroke:#2b7de9,color:#fff
+    style APP fill:#e8f4f8,stroke:#4a9eff
 ```
 
 | Repositorio | Rol | Relación con este repo |
