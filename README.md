@@ -2,31 +2,19 @@
 
 CLI de orquestación para workflows colaborativos con arquitectura canónica. Gestiona el ciclo completo: desde el setup inicial de un repositorio hasta la infraestructura Docker, configuración de proveedores IA, y sincronización del canon arquitectónico.
 
-## Ecosistema uxmaltech
+## Ecosistema Collab
 
-```
-┌─────────────┐
-│ Desarrollador│
-└──────┬──────┘
-       v
-┌──────────────┐     canon-sync      ┌─────────────────────┐
-│  collab-cli  │ ──────────────────> │  collab-architecture │
-│ (orquestador)│  ◄── ESTE REPO      │   (fuente de verdad) │
-└──────┬───────┘                     └──────────┬──────────┘
-       │ docker compose up                      │ .md / .yaml
-       v                                        v
-┌──────────────────────┐     seed + ingest     ┌──────────┐
-│ collab-architecture- │ <──────────────────── │ graph/   │
-│ mcp (servidor MCP)   │                       │ seed/    │
-├──────────────────────┤                       └──────────┘
-│ Qdrant (vectores)    │
-│ NebulaGraph (grafo)  │
-└──────────┬───────────┘
-           v
-┌──────────────────────────────────┐
-│ Agentes IA                       │
-│ (Codex, Claude, Gemini, Copilot) │
-└──────────────────────────────────┘
+```mermaid
+graph TD
+    DEV[Desarrollador] --> CLI[collab-cli<br><i>orquestador</i>]
+    CLI -- canon-sync --> CA[collab-architecture<br><i>fuente de verdad</i>]
+    CA -- canon-sync --> CLI
+    CLI -- docker compose up --> MCP[collab-architecture-mcp<br><i>servidor MCP</i>]
+    CA -- ".md / .yaml" --> SEED[graph/seed/]
+    SEED -- seed + ingest --> MCP
+    MCP --> AI[Agentes IA<br><i>Codex · Claude · Gemini · Copilot</i>]
+
+    style CLI fill:#4a9eff,stroke:#2b7de9,color:#fff
 ```
 
 | Repositorio | Rol | Relación con este repo |
