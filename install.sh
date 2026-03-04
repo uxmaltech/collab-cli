@@ -2,8 +2,10 @@
 set -eu
 
 REPO_URL=${COLLAB_REPO_URL:-https://github.com/uxmaltech/collab-cli.git}
+CANON_REPO_URL=${COLLAB_CANON_REPO_URL:-https://github.com/uxmaltech/collab-architecture.git}
 INSTALL_BASE=${COLLAB_HOME:-$HOME/.collab}
 CLI_DIR="$INSTALL_BASE/cli"
+CANONS_DIR="$INSTALL_BASE/canons/collab-architecture"
 LOCAL_BIN_DIR="$HOME/.local/bin"
 HOMEBREW_BIN_DIR="/opt/homebrew/bin"
 SYSTEM_BIN_DIR="/usr/local/bin"
@@ -184,6 +186,24 @@ build_cli() {
 
   say "Building project"
   (cd "$CLI_DIR" && npm run build)
+}
+
+sync_canons() {
+  if [ -d "$CANONS_DIR/.git" ]; then
+    say "Updating collab-architecture canons in $CANONS_DIR"
+    git -C "$CANONS_DIR" fetch origin main
+    git -C "$CANONS_DIR" checkout main
+    git -C "$CANONS_DIR" pull --ff-only origin main
+    return
+  fi
+
+  if [ -e "$CANONS_DIR" ]; then
+    die "Path exists but is not a git checkout: $CANONS_DIR"
+  fi
+
+  say "Cloning collab-architecture canons into $CANONS_DIR"
+  mkdir -p "$(dirname "$CANONS_DIR")"
+  git clone --branch main --single-branch "$CANON_REPO_URL" "$CANONS_DIR"
 }
 
 link_binary() {
@@ -424,6 +444,7 @@ main() {
 
   sync_repo
   build_cli
+  sync_canons
   link_binary
   verify_install
   print_path_hint

@@ -1,4 +1,4 @@
-import type { CollabConfig } from './config';
+import type { CollabConfig, RepoConfig } from './config';
 import type { Executor } from './executor';
 import { CliError, CommandExecutionError } from './errors';
 import type { Logger } from './logger';
@@ -8,6 +8,17 @@ export interface StageContext {
   config: CollabConfig;
   executor: Executor;
   logger: Logger;
+  options?: Record<string, unknown>;
+}
+
+/**
+ * Returns the effective base directory for stages that write per-repo files.
+ * In workspace mode (repoConfig present) this is the individual repo dir;
+ * in single-repo mode it falls back to workspaceDir.
+ */
+export function getRepoBaseDir(ctx: StageContext): string {
+  const rc = ctx.options?._repoConfig as RepoConfig | undefined;
+  return rc ? rc.repoDir : ctx.config.workspaceDir;
 }
 
 export interface OrchestrationStage {
@@ -23,6 +34,8 @@ export interface OrchestratorOptions {
   executor: Executor;
   logger: Logger;
   resume?: boolean;
+  mode?: string;
+  stageOptions?: Record<string, unknown>;
 }
 
 function formatFailure(failure: WorkflowFailureState): string {
@@ -68,25 +81,35 @@ export async function runOrchestration(
   const previous = currentWorkflowState(state.workflows[options.workflowId]);
   const completed = new Set(options.resume ? previous.completedStages : []);
 
+  if (options.mode) {
+    options.logger.workflowHeader(options.workflowId, options.mode);
+  }
+
   if (options.resume && completed.size > 0) {
     options.logger.info(
       `Resuming workflow '${options.workflowId}' with ${completed.size} completed stage(s).`,
     );
   }
 
+  const total = stages.length;
+  let stageIndex = 0;
+
   for (const stage of stages) {
+    stageIndex++;
+
     if (options.resume && completed.has(stage.id)) {
       options.logger.info(`Skipping completed stage '${stage.title}'`);
       continue;
     }
 
-    options.logger.info(`Running stage: ${stage.title}`);
+    options.logger.stageHeader(stageIndex, total, stage.title);
 
     try {
       await stage.run({
         config: options.config,
         executor: options.executor,
         logger: options.logger,
+        options: options.stageOptions,
       });
 
       completed.add(stage.id);
@@ -95,7 +118,7 @@ export async function runOrchestration(
         updatedAt: new Date().toISOString(),
       };
       saveState(options.config, state, options.executor);
-      options.logger.result(`Stage succeeded: ${stage.title}`);
+      options.logger.step(true, stage.title);
     } catch (error: unknown) {
       const failure: WorkflowFailureState = {
         stage: stage.id,
@@ -125,4 +148,41 @@ export async function runOrchestration(
     updatedAt: new Date().toISOString(),
   };
   saveState(options.config, state, options.executor);
+}
+
+/**
+ * Runs a set of stages scoped to a single repo inside a workspace.
+ *
+ * - Uses a namespaced workflow ID (`{baseId}:{repoName}`) for resume support.
+ * - Overrides `config.repoDir` and `config.aiDir` so existing stages write
+ *   into the repo instead of the workspace root.
+ * - Passes the `RepoConfig` via `stageOptions._repoConfig`.
+ */
+export async function runPerRepoOrchestration(
+  baseOptions: OrchestratorOptions,
+  repoConfig: RepoConfig,
+  stages: readonly OrchestrationStage[],
+): Promise<void> {
+  const repoWorkflowId = `${baseOptions.workflowId}:${repoConfig.name}`;
+
+  const repoAwareConfig: CollabConfig = {
+    ...baseOptions.config,
+    repoDir: repoConfig.architectureRepoDir,
+    aiDir: repoConfig.aiDir,
+  };
+
+  const stageOptions = {
+    ...baseOptions.stageOptions,
+    _repoConfig: repoConfig,
+  };
+
+  await runOrchestration(
+    {
+      ...baseOptions,
+      workflowId: repoWorkflowId,
+      config: repoAwareConfig,
+      stageOptions,
+    },
+    stages,
+  );
 }

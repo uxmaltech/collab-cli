@@ -9,6 +9,7 @@ import type { Executor } from './executor';
 import { sha256 } from './hash';
 import type { Logger } from './logger';
 import { loadState, saveState, toStateKey } from './state';
+import { COMPOSE_ENV_DEFAULTS } from './compose-defaults';
 import { consolidatedTemplate } from '../templates/consolidated';
 import { infraTemplate } from '../templates/infra';
 import { mcpTemplate } from '../templates/mcp';
@@ -139,10 +140,31 @@ export function generateComposeFiles(options: ComposeGenerationOptions): Compose
 
   saveState(options.config, state, options.executor);
 
+  // Pre-create external Docker resources (network + volumes) so that
+  // `docker compose up` succeeds even when run from a different project
+  // directory.  These are no-ops when the resources already exist.
+  ensureExternalDockerResources(env, options.executor);
+
   return {
     files,
     envFilePath,
     env,
     driftWarnings,
   };
+}
+
+function ensureExternalDockerResources(env: EnvMap, executor: Executor): void {
+  const network = env.COLLAB_NETWORK || COMPOSE_ENV_DEFAULTS.COLLAB_NETWORK;
+  const volumes = [
+    env.QDRANT_VOLUME || COMPOSE_ENV_DEFAULTS.QDRANT_VOLUME,
+    env.NEBULA_METAD_VOLUME || COMPOSE_ENV_DEFAULTS.NEBULA_METAD_VOLUME,
+    env.NEBULA_STORAGED_VOLUME || COMPOSE_ENV_DEFAULTS.NEBULA_STORAGED_VOLUME,
+    env.MCP_VOLUME || COMPOSE_ENV_DEFAULTS.MCP_VOLUME,
+  ];
+
+  // check: false — these are idempotent; "already exists" is not an error
+  executor.run('docker', ['network', 'create', network], { verboseOnly: true, check: false });
+  for (const vol of volumes) {
+    executor.run('docker', ['volume', 'create', vol], { verboseOnly: true, check: false });
+  }
 }
