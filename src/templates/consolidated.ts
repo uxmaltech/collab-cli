@@ -77,6 +77,7 @@ export const consolidatedTemplate = `services:
     ports:
       - "\${MCP_PORT}:\${MCP_CONTAINER_PORT}"
     environment:
+      MCP_HOST: "0.0.0.0"
       MCP_ENV: \${MCP_ENV}
       MCP_API_KEYS: \${MCP_API_KEYS}
       QDRANT_URL: http://qdrant:6333
