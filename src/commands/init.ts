@@ -585,26 +585,31 @@ async function runInfraOnly(
   context: { config: CollabConfig; executor: Executor; logger: Logger },
   options: InitOptions,
 ): Promise<void> {
-  // Config must already exist — full init should have been run before.
-  if (!fs.existsSync(context.config.configFile)) {
-    throw new CliError(
-      'No .collab/config.json found. Run "collab init" first to create the base configuration.',
+  // Build an indexed config — infra always implies indexed mode.
+  // If a config already exists we honour it; otherwise bootstrap one.
+  const effectiveConfig: CollabConfig = {
+    ...defaultCollabConfig(context.config.workspaceDir),
+    ...context.config,
+    mode: 'indexed',
+  };
+
+  // Persist config so subsequent commands (infra status, mcp status) work.
+  const configExists = fs.existsSync(effectiveConfig.configFile);
+  if (!configExists) {
+    context.executor.ensureDirectory(effectiveConfig.collabDir);
+    context.executor.writeFile(
+      effectiveConfig.configFile,
+      `${serializeUserConfig(effectiveConfig)}\n`,
+      { description: 'write collab config (infra bootstrap)' },
     );
   }
 
-  // Infrastructure stages only make sense in indexed mode.
-  if (context.config.mode !== 'indexed') {
-    throw new CliError(
-      `Infrastructure stages require indexed mode. Current mode: ${context.config.mode}`,
-    );
-  }
-
-  const composeMode = parseComposeMode(options.composeMode, inferComposeMode(context.config));
+  const composeMode = parseComposeMode(options.composeMode, inferComposeMode(effectiveConfig));
 
   context.logger.phaseHeader('Infrastructure', 'Docker + MCP services');
 
   const infraStages = buildInfraStages(
-    context.config,
+    effectiveConfig,
     context.executor,
     context.logger,
     options,
@@ -614,7 +619,7 @@ async function runInfraOnly(
   await runOrchestration(
     {
       workflowId: 'init:infra',
-      config: context.config,
+      config: effectiveConfig,
       executor: context.executor,
       logger: context.logger,
       resume: options.resume,
@@ -630,7 +635,7 @@ async function runInfraOnly(
     { label: 'Phase', value: 'infra only' },
     { label: 'Compose mode', value: composeMode },
     { label: 'Dry-run', value: context.executor.dryRun ? 'yes' : 'no' },
-    { label: 'Config', value: context.config.configFile },
+    { label: 'Config', value: effectiveConfig.configFile },
   ]);
 }
 

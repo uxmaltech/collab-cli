@@ -49,36 +49,40 @@ test('init infra runs only infrastructure stages (dry-run)', () => {
   assert.ok(result.stdout.includes('infra only'), 'summary should show infra-only phase');
 });
 
-test('init infra fails when no config exists', () => {
+test('init infra bootstraps config on fresh host (dry-run)', () => {
   const workspace = makeTempWorkspace();
   const env = createFakeDockerEnv();
 
+  // No .collab/config.json exists — init infra should bootstrap it
   const result = runCli(
     ['--cwd', workspace, '--dry-run', 'init', 'infra'],
     { cwd: workspace, env },
   );
 
-  assert.notEqual(result.status, 0, 'should fail without config');
-  assert.ok(
-    result.stderr.includes('No .collab/config.json found'),
-    'should report missing config',
-  );
+  assert.equal(result.status, 0, `stderr: ${result.stderr}`);
+
+  // Should still have all infra stages
+  assert.ok(result.stdout.includes('Generate and validate compose files'), 'should have compose-generation');
+  assert.ok(result.stdout.includes('Start infrastructure services'), 'should have infra-start');
+  assert.ok(result.stdout.includes('Start MCP service'), 'should have mcp-start');
+
+  // Summary indicates infra only
+  assert.ok(result.stdout.includes('infra only'), 'summary should show infra-only phase');
 });
 
-test('init infra fails in file-only mode', () => {
+test('init infra with existing file-only config overrides to indexed (dry-run)', () => {
   const workspace = makeWorkspaceWithConfig('file-only');
   const env = createFakeDockerEnv();
 
+  // Even if config says file-only, init infra forces indexed
   const result = runCli(
     ['--cwd', workspace, '--dry-run', 'init', 'infra'],
     { cwd: workspace, env },
   );
 
-  assert.notEqual(result.status, 0, 'should fail in file-only mode');
-  assert.ok(
-    result.stderr.includes('Infrastructure stages require indexed mode'),
-    'should report mode mismatch',
-  );
+  assert.equal(result.status, 0, `stderr: ${result.stderr}`);
+  assert.ok(result.stdout.includes('Start infrastructure services'), 'should run infra stages');
+  assert.ok(result.stdout.includes('infra only'), 'summary should show infra-only phase');
 });
 
 test('init with unknown phase fails with helpful error', () => {
