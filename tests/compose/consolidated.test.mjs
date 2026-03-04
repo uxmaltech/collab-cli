@@ -19,6 +19,7 @@ const expectedVariables = [
   'MCP_ENV',
   'MCP_IMAGE',
   'MCP_PORT',
+  'MCP_TECHNICAL_SCOPES',
   'MCP_VOLUME',
   'NEBULA_GRAPHD_HTTP_PORT',
   'NEBULA_GRAPHD_PORT',

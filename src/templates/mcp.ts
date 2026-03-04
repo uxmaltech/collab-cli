@@ -8,6 +8,7 @@ export const mcpTemplate = `services:
       MCP_HOST: "0.0.0.0"
       MCP_ENV: \${MCP_ENV}
       MCP_API_KEYS: \${MCP_API_KEYS}
+      MCP_TECHNICAL_SCOPES: \${MCP_TECHNICAL_SCOPES}
       QDRANT_URL: http://qdrant:6333
       NEBULA_ADDR: graphd
       NEBULA_PORT: 9669

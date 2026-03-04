@@ -98,9 +98,30 @@ function assignOutputPaths(
   ];
 }
 
+function scopeFromRepo(repo: string, fallback: string): string {
+  const normalized = repo.trim().replace(/\/+$/, '').replace(/\.git$/, '');
+  const scope = normalized.split('/').filter(Boolean).pop();
+  return scope && scope.length > 0 ? scope : fallback;
+}
+
+function computeEnvOverrides(config: CollabConfig): EnvMap {
+  const baseScope = 'uxmaltech';
+  const businessRepo = config.canons?.business?.repo;
+  if (!businessRepo) {
+    return { MCP_TECHNICAL_SCOPES: baseScope };
+  }
+
+  const businessScope = scopeFromRepo(businessRepo, baseScope);
+  return {
+    MCP_TECHNICAL_SCOPES:
+      businessScope === baseScope ? baseScope : `${baseScope},${businessScope}`,
+  };
+}
+
 export function generateComposeFiles(options: ComposeGenerationOptions): ComposeGenerationResult {
   const envFilePath = resolveEnvFilePath(options.config, options.envFile);
-  const env = ensureComposeEnvFile(envFilePath, options.logger, options.executor);
+  const overrides = computeEnvOverrides(options.config);
+  const env = ensureComposeEnvFile(envFilePath, options.logger, options.executor, overrides);
 
   const rendered = renderContent(options.mode);
   const files = assignOutputPaths(
