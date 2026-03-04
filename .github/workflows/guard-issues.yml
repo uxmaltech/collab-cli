@@ -1,0 +1,64 @@
+name: Guard Issues
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  issues: write
+
+jobs:
+  check-author:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check if author is a collaborator
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const author = context.payload.issue.user.login;
+
+            try {
+              const { data } = await github.rest.repos.checkCollaborator({
+                owner,
+                repo,
+                username: author,
+              });
+              // 204 = is collaborator, do nothing
+              console.log(`${author} is a collaborator — issue allowed.`);
+            } catch (err) {
+              if (err.status === 404) {
+                console.log(`${author} is NOT a collaborator — closing issue.`);
+
+                await github.rest.issues.createComment({
+                  owner,
+                  repo,
+                  issue_number: context.issue.number,
+                  body: [
+                    `👋 Hi @${author}, thanks for your interest!`,
+                    '',
+                    'This project is not yet open for community contributions or issue reports.',
+                    'We will open issues to the public in a future release.',
+                    '',
+                    'If you believe this is an error, please contact the maintainers directly.',
+                  ].join('\n'),
+                });
+
+                await github.rest.issues.update({
+                  owner,
+                  repo,
+                  issue_number: context.issue.number,
+                  state: 'closed',
+                  state_reason: 'not_planned',
+                });
+
+                await github.rest.issues.lock({
+                  owner,
+                  repo,
+                  issue_number: context.issue.number,
+                  lock_reason: 'spam',
+                });
+              } else {
+                throw err;
+              }
+            }

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
@@ -40,8 +41,10 @@ function writeExistingConfig(workspace, mode = 'indexed') {
 test('init --yes defaults to file-only mode and stores it in config', () => {
   const workspace = makeTempWorkspace();
   const env = createFakeDockerEnv();
+  // Isolate COLLAB_HOME to avoid git lock conflicts with parallel tests.
+  env.COLLAB_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'collab-home-'));
 
-  const result = runCli(['--cwd', workspace, 'init', '--yes'], {
+  const result = runCli(['--cwd', workspace, 'init', '--yes', '--skip-analysis'], {
     cwd: workspace,
     env,
   });
@@ -58,9 +61,10 @@ test('init --yes defaults to file-only mode and stores it in config', () => {
 test('init preserves existing config without --force', () => {
   const workspace = makeTempWorkspace();
   const env = createFakeDockerEnv();
+  env.COLLAB_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'collab-home-'));
   const configPath = writeExistingConfig(workspace, 'indexed');
 
-  const result = runCli(['--cwd', workspace, 'init', '--yes', '--mode', 'file-only'], {
+  const result = runCli(['--cwd', workspace, 'init', '--yes', '--mode', 'file-only', '--skip-analysis'], {
     cwd: workspace,
     env,
   });
@@ -75,9 +79,10 @@ test('init preserves existing config without --force', () => {
 test('init overwrites existing config with --force', () => {
   const workspace = makeTempWorkspace();
   const env = createFakeDockerEnv();
+  env.COLLAB_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'collab-home-'));
   const configPath = writeExistingConfig(workspace, 'indexed');
 
-  const result = runCli(['--cwd', workspace, 'init', '--yes', '--mode', 'file-only', '--force'], {
+  const result = runCli(['--cwd', workspace, 'init', '--yes', '--mode', 'file-only', '--force', '--skip-analysis'], {
     cwd: workspace,
     env,
   });
@@ -88,7 +93,7 @@ test('init overwrites existing config with --force', () => {
   assert.equal(config.mode, 'file-only');
 });
 
-test('init with mode=file-only skips infra and MCP stages', () => {
+test('init with mode=file-only does not contain infra or MCP stages', () => {
   const workspace = makeTempWorkspace();
   const env = createFakeDockerEnv();
 
@@ -98,8 +103,15 @@ test('init with mode=file-only skips infra and MCP stages', () => {
   });
 
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /skipping infra startup stage/i);
-  assert.match(result.stdout, /skipping mcp startup stage/i);
+  // File-only pipeline has separate stages — infra/MCP are not in the pipeline at all
+  assert.ok(
+    !result.stdout.includes('Start infrastructure services'),
+    'infra stage should not exist in file-only pipeline',
+  );
+  assert.ok(
+    !result.stdout.includes('Start MCP service'),
+    'MCP stage should not exist in file-only pipeline',
+  );
 });
 
 test('up command skips pipeline in file-only mode', () => {
