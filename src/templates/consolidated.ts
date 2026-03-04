@@ -65,6 +65,7 @@ export const consolidatedTemplate = `services:
       - --ws_ip=graphd
       - --port=9669
       - --ws_http_port=19669
+      - --max_sessions_per_ip_per_user=10000
     networks:
       - collab
 
@@ -90,15 +91,20 @@ export const consolidatedTemplate = `services:
 
 networks:
   collab:
+    external: true
     name: \${COLLAB_NETWORK}
 
 volumes:
   qdrant:
+    external: true
     name: \${QDRANT_VOLUME}
   nebula-metad0:
+    external: true
     name: \${NEBULA_METAD_VOLUME}
   nebula-storaged0:
+    external: true
     name: \${NEBULA_STORAGED_VOLUME}
   mcp:
+    external: true
     name: \${MCP_VOLUME}
 `;

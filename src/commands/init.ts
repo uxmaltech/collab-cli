@@ -36,6 +36,7 @@ import { ciSetupStage } from '../stages/ci-setup';
 import { getEnabledProviders, PROVIDER_DEFAULTS, type ProviderKey } from '../lib/providers';
 import type { Executor } from '../lib/executor';
 import type { Logger } from '../lib/logger';
+import { loadRuntimeEnv, waitForInfraHealth, waitForMcpHealth, logServiceHealth } from '../lib/service-health';
 
 interface InitOptions {
   force?: boolean;
@@ -375,6 +376,14 @@ function buildInfraStages(
         'Run collab init --resume after infra services are healthy.',
       ],
       run: async () => {
+        // Check if infra is already running (e.g. from a workspace-level init)
+        const env = loadRuntimeEnv(effectiveConfig);
+        const probe = await waitForInfraHealth(env, { ...health, retries: 1 });
+        if (probe.ok) {
+          logger.info('Infrastructure already running — skipping docker compose up.');
+          logServiceHealth(logger, 'infra health', probe);
+          return;
+        }
         const selection = resolveInfraComposeFile(effectiveConfig, options.outputDir, undefined);
         await runInfraCompose(logger, executor, effectiveConfig, selection, 'up', { health });
       },
@@ -387,6 +396,14 @@ function buildInfraStages(
         'Run collab init --resume after MCP health endpoint responds.',
       ],
       run: async () => {
+        // Check if MCP is already running (e.g. from a workspace-level init)
+        const env = loadRuntimeEnv(effectiveConfig);
+        const probe = await waitForMcpHealth(env, { ...health, retries: 1 });
+        if (probe.ok) {
+          logger.info('MCP service already running — skipping docker compose up.');
+          logServiceHealth(logger, 'mcp health', probe);
+          return;
+        }
         const selection = resolveMcpComposeFile(effectiveConfig, options.outputDir, undefined);
         await runMcpCompose(logger, executor, effectiveConfig, selection, 'up', { health });
       },
@@ -465,12 +482,6 @@ function buildIndexedPipeline(
   options: InitOptions,
   composeMode: ComposeMode,
 ): OrchestrationStage[] {
-  const health = {
-    timeoutMs: toNumber(options.timeoutMs, 5_000),
-    retries: toNumber(options.retries, 15),
-    retryDelayMs: toNumber(options.retryDelayMs, 2_000),
-  };
-
   return [
     // Phase A — Local setup (shared with file-only)
     buildPreflightStage(executor, logger),                     // 1
@@ -483,97 +494,8 @@ function buildIndexedPipeline(
     ciSetupStage,                                              // 7
     agentSkillsSetupStage,                                     // 8
 
-    // Phase B — Infrastructure
-    {                                                          // 9
-      id: 'compose-generation',
-      title: 'Generate and validate compose files',
-      recovery: [
-        'Run collab compose validate to inspect configuration errors.',
-        'Run collab init --resume after fixing compose inputs.',
-      ],
-      run: () => {
-        const generation = generateComposeFiles({
-          config: effectiveConfig,
-          mode: composeMode,
-          outputDirectory: options.outputDir,
-          logger,
-          executor,
-        });
-
-        for (const warning of generation.driftWarnings) {
-          logger.warn(warning);
-        }
-
-        assertComposeFilesValid(
-          generation.files.map((file) => file.filePath),
-          effectiveConfig.workspaceDir,
-          executor,
-        );
-      },
-    },
-    {                                                          // 10
-      id: 'infra-start',
-      title: 'Start infrastructure services',
-      recovery: [
-        'Run collab infra status to inspect Qdrant and Nebula.',
-        'Run collab init --resume after infra services are healthy.',
-      ],
-      run: async () => {
-        const selection = resolveInfraComposeFile(effectiveConfig, options.outputDir, undefined);
-        await runInfraCompose(logger, executor, effectiveConfig, selection, 'up', { health });
-      },
-    },
-    {                                                          // 11
-      id: 'mcp-start',
-      title: 'Start MCP service',
-      recovery: [
-        'Run collab mcp status to inspect MCP runtime.',
-        'Run collab init --resume after MCP health endpoint responds.',
-      ],
-      run: async () => {
-        const selection = resolveMcpComposeFile(effectiveConfig, options.outputDir, undefined);
-        await runMcpCompose(logger, executor, effectiveConfig, selection, 'up', { health });
-      },
-    },
-    {                                                          // 12
-      id: 'mcp-client-config',
-      title: 'Generate MCP client config snippets',
-      recovery: [
-        'Verify permissions in .collab directory.',
-        'Run collab init --resume to regenerate MCP config snippets.',
-      ],
-      run: () => {
-        if (options.skipMcpSnippets) {
-          logger.info('Skipping MCP snippet generation by user choice.');
-          return;
-        }
-
-        const enabled = getEnabledProviders(effectiveConfig);
-        if (enabled.length === 0) {
-          logger.info('No providers configured; skipping MCP snippet generation.');
-          return;
-        }
-
-        for (const provider of enabled) {
-          const snippet = renderMcpSnippet(provider, effectiveConfig);
-          if (!snippet) {
-            continue;
-          }
-          const target = path.join(effectiveConfig.collabDir, snippet.filename);
-          executor.writeFile(target, snippet.content, {
-            description: `write ${PROVIDER_DEFAULTS[provider].label} MCP config snippet`,
-          });
-        }
-
-        logger.info(
-          `Generated MCP snippets for: ${enabled.map((k) => PROVIDER_DEFAULTS[k].label).join(', ')}`,
-        );
-      },
-    },
-
-    // Phase C — Ingestion
-    graphSeedStage,                                            // 13
-    canonIngestStage,                                          // 14
+    // Phase B — Infrastructure + Phase C — Ingestion  (9-14)
+    ...buildInfraStages(effectiveConfig, executor, logger, options, composeMode),
   ];
 }
 

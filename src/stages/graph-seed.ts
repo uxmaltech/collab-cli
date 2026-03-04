@@ -1,6 +1,7 @@
-import { runDockerCompose } from '../lib/docker-compose';
 import type { OrchestrationStage } from '../lib/orchestrator';
-import { resolveMcpComposeFile } from '../commands/mcp/shared';
+
+/** Container name for the MCP service — matches the compose template. */
+const MCP_CONTAINER = 'collab-mcp';
 
 export const graphSeedStage: OrchestrationStage = {
   id: 'graph-seed',
@@ -15,17 +16,11 @@ export const graphSeedStage: OrchestrationStage = {
       return;
     }
 
-    const outputDir = ctx.options?.outputDir as string | undefined;
-    const selection = resolveMcpComposeFile(ctx.config, outputDir, undefined);
-
     ctx.logger.info('Seeding NebulaGraph with canonical architecture graph...');
 
-    runDockerCompose({
-      executor: ctx.executor,
-      files: [selection.filePath],
-      arguments: ['exec', 'mcp', 'node', 'scripts/seed-graph.mjs'],
-      cwd: ctx.config.workspaceDir,
-    });
+    // Use `docker exec` directly against the well-known container name so the
+    // command succeeds regardless of which compose project started the container.
+    ctx.executor.run('docker', ['exec', MCP_CONTAINER, 'node', 'scripts/seed-graph.mjs']);
 
     ctx.logger.info('NebulaGraph seeding complete.');
   },

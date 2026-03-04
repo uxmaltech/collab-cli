@@ -23,5 +23,6 @@ networks:
 
 volumes:
   mcp:
+    external: true
     name: \${MCP_VOLUME}
 `;

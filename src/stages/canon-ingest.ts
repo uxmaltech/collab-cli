@@ -2,9 +2,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { isWorkspaceMode, resolveRepoConfigs } from '../lib/config';
-import { runDockerCompose } from '../lib/docker-compose';
 import type { OrchestrationStage, StageContext } from '../lib/orchestrator';
-import { resolveMcpComposeFile } from '../commands/mcp/shared';
+
+/** Container name for the MCP service — matches the compose template. */
+const MCP_CONTAINER = 'collab-mcp';
 
 /**
  * Recursively collects all `.md` files under a directory.
@@ -45,7 +46,7 @@ function collectAllArchitectureFiles(ctx: StageContext): string[] {
   return files;
 }
 
-function ingestCanonFiles(ctx: StageContext, mcpComposeFile: string): void {
+function ingestCanonFiles(ctx: StageContext): void {
   const files = collectAllArchitectureFiles(ctx);
 
   if (files.length === 0) {
@@ -59,12 +60,12 @@ function ingestCanonFiles(ctx: StageContext, mcpComposeFile: string): void {
   // can resolve them via its mounted volume.
   const relativePaths = files.map((f) => path.relative(ctx.config.workspaceDir, f));
 
-  runDockerCompose({
-    executor: ctx.executor,
-    files: [mcpComposeFile],
-    arguments: ['exec', 'mcp', 'npm', 'run', 'ingest:v2', '--', '--files', ...relativePaths],
-    cwd: ctx.config.workspaceDir,
-  });
+  // Use `docker exec` directly against the well-known container name so the
+  // command succeeds regardless of which compose project started the container.
+  ctx.executor.run('docker', [
+    'exec', MCP_CONTAINER,
+    'npm', 'run', 'ingest:v2', '--', '--files', ...relativePaths,
+  ]);
 }
 
 export const canonIngestStage: OrchestrationStage = {
@@ -80,8 +81,6 @@ export const canonIngestStage: OrchestrationStage = {
       return;
     }
 
-    const outputDir = ctx.options?.outputDir as string | undefined;
-    const selection = resolveMcpComposeFile(ctx.config, outputDir, undefined);
-    ingestCanonFiles(ctx, selection.filePath);
+    ingestCanonFiles(ctx);
   },
 };
