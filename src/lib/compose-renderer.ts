@@ -98,9 +98,22 @@ function assignOutputPaths(
   ];
 }
 
+function computeEnvOverrides(config: CollabConfig): EnvMap | undefined {
+  const businessRepo = config.canons?.business?.repo;
+  if (!businessRepo) {
+    return undefined;
+  }
+
+  const businessScope = businessRepo.split('/').pop() ?? businessRepo;
+  return {
+    MCP_TECHNICAL_SCOPES: `uxmaltech,${businessScope}`,
+  };
+}
+
 export function generateComposeFiles(options: ComposeGenerationOptions): ComposeGenerationResult {
   const envFilePath = resolveEnvFilePath(options.config, options.envFile);
-  const env = ensureComposeEnvFile(envFilePath, options.logger, options.executor);
+  const overrides = computeEnvOverrides(options.config);
+  const env = ensureComposeEnvFile(envFilePath, options.logger, options.executor, overrides);
 
   const rendered = renderContent(options.mode);
   const files = assignOutputPaths(

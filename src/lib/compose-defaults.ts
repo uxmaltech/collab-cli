@@ -23,6 +23,7 @@ export const COMPOSE_ENV_DEFAULTS: EnvMap = {
   MCP_VOLUME: 'collab-mcp-data',
   MCP_ENV: 'local',
   MCP_API_KEYS: '',
+  MCP_TECHNICAL_SCOPES: 'uxmaltech',
 };
 
 export const COMPOSE_ENV_ORDER = Object.keys(COMPOSE_ENV_DEFAULTS);

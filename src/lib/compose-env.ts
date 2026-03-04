@@ -3,9 +3,21 @@ import { readEnvFile, mergeEnvWithDefaults, writeEnvFile, type EnvMap } from './
 import type { Executor } from './executor';
 import type { Logger } from './logger';
 
-export function ensureComposeEnvFile(envFilePath: string, logger: Logger, executor?: Executor): EnvMap {
+export function ensureComposeEnvFile(
+  envFilePath: string,
+  logger: Logger,
+  executor?: Executor,
+  overrides?: EnvMap,
+): EnvMap {
   const existing = readEnvFile(envFilePath);
   const merged = mergeEnvWithDefaults(existing, COMPOSE_ENV_DEFAULTS);
+
+  if (overrides) {
+    for (const [key, value] of Object.entries(overrides)) {
+      merged[key] = value;
+    }
+  }
+
   writeEnvFile(envFilePath, merged, COMPOSE_ENV_ORDER, executor);
 
   if (Object.keys(existing).length === 0) {

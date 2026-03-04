@@ -36,6 +36,7 @@ const expectedMcpVariables = [
   'MCP_ENV',
   'MCP_IMAGE',
   'MCP_PORT',
+  'MCP_TECHNICAL_SCOPES',
   'MCP_VOLUME',
 ];
 

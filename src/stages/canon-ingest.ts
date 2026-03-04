@@ -3,10 +3,9 @@ import path from 'node:path';
 
 import { isWorkspaceMode, resolveRepoConfigs } from '../lib/config';
 import { isBusinessCanonConfigured } from '../lib/canon-resolver';
+import { getMcpBaseUrl, ingestDocuments, type IngestDocument, type IngestPayload } from '../lib/mcp-client';
+import { loadRuntimeEnv } from '../lib/service-health';
 import type { OrchestrationStage, StageContext } from '../lib/orchestrator';
-
-/** Container name for the MCP service — matches the compose template. */
-const MCP_CONTAINER = 'collab-mcp';
 
 /**
  * Recursively collects all `.md` files under a directory.
@@ -32,64 +31,119 @@ function collectMarkdownFiles(dir: string): string[] {
 }
 
 /**
- * In workspace mode collects from shared uxmaltech + each repo's architecture.
- * In single-repo mode falls back to the existing architectureDir scan.
+ * Reads files and produces IngestDocument objects with paths relative to a base.
  */
-function collectAllArchitectureFiles(ctx: StageContext): string[] {
-  if (!isWorkspaceMode(ctx.config)) {
-    return collectMarkdownFiles(ctx.config.architectureDir);
+function filesToDocuments(files: string[], baseDir: string): IngestDocument[] {
+  return files.map((f) => ({
+    path: path.relative(baseDir, f),
+    content: fs.readFileSync(f, 'utf8'),
+  }));
+}
+
+/**
+ * Derives a scope name from a business canon repo slug.
+ * e.g. "uxmaltech/my-app-architecture" → "my-app-architecture"
+ */
+function businessScopeFromRepo(repo: string): string {
+  return repo.split('/').pop() ?? repo;
+}
+
+async function ingestCanonFiles(ctx: StageContext): Promise<void> {
+  const baseUrl = getMcpBaseUrl(ctx.config);
+  const env = loadRuntimeEnv(ctx.config);
+  const apiKey = env.MCP_API_KEYS || undefined;
+
+  // --- Framework canon (uxmaltech) ---
+  const uxmaltechFiles = collectMarkdownFiles(ctx.config.uxmaltechDir);
+
+  if (uxmaltechFiles.length > 0) {
+    ctx.logger.info(`Ingesting ${uxmaltechFiles.length} framework architecture file(s) via HTTP.`);
+
+    const payload: IngestPayload = {
+      context: 'technical',
+      scope: 'uxmaltech',
+      organization: 'uxmaltech',
+      repo: 'uxmaltech/collab-architecture',
+      documents: filesToDocuments(uxmaltechFiles, ctx.config.uxmaltechDir),
+    };
+
+    const result = await ingestDocuments(baseUrl, payload, apiKey);
+    ctx.logger.info(
+      `Framework canon ingested: ${result.vector.ingested_files} files, ` +
+        `${result.vector.total_points} vectors, ${result.graph.nodes_created} graph nodes.`,
+    );
+  } else {
+    ctx.logger.info('No framework architecture files found to ingest.');
   }
 
-  const files = [...collectMarkdownFiles(ctx.config.uxmaltechDir)];
-
-  // Business canon
+  // --- Business canon ---
   if (isBusinessCanonConfigured(ctx.config)) {
     const localDir = ctx.config.canons?.business?.localDir ?? 'business';
     const businessDir = path.join(ctx.config.architectureDir, localDir);
-    files.push(...collectMarkdownFiles(businessDir));
+    const businessFiles = collectMarkdownFiles(businessDir);
+
+    if (businessFiles.length > 0) {
+      const businessRepo = ctx.config.canons!.business!.repo;
+      const businessScope = businessScopeFromRepo(businessRepo);
+
+      ctx.logger.info(`Ingesting ${businessFiles.length} business architecture file(s) via HTTP.`);
+
+      const payload: IngestPayload = {
+        context: 'technical',
+        scope: businessScope,
+        organization: businessRepo.split('/')[0] ?? 'uxmaltech',
+        repo: businessRepo,
+        documents: filesToDocuments(businessFiles, businessDir),
+      };
+
+      const result = await ingestDocuments(baseUrl, payload, apiKey);
+      ctx.logger.info(
+        `Business canon ingested: ${result.vector.ingested_files} files, ` +
+          `${result.vector.total_points} vectors, ${result.graph.nodes_created} graph nodes.`,
+      );
+    } else {
+      ctx.logger.info('No business architecture files found to ingest.');
+    }
   }
 
-  for (const rc of resolveRepoConfigs(ctx.config)) {
-    files.push(...collectMarkdownFiles(rc.architectureRepoDir));
+  // --- Workspace repos ---
+  if (isWorkspaceMode(ctx.config)) {
+    for (const rc of resolveRepoConfigs(ctx.config)) {
+      const repoFiles = collectMarkdownFiles(rc.architectureRepoDir);
+      if (repoFiles.length > 0) {
+        ctx.logger.info(`Ingesting ${repoFiles.length} file(s) from repo ${rc.name} via HTTP.`);
+
+        const payload: IngestPayload = {
+          context: 'technical',
+          scope: rc.name,
+          organization: 'uxmaltech',
+          repo: `uxmaltech/${rc.name}`,
+          documents: filesToDocuments(repoFiles, rc.architectureRepoDir),
+        };
+
+        const result = await ingestDocuments(baseUrl, payload, apiKey);
+        ctx.logger.info(
+          `Repo ${rc.name} ingested: ${result.vector.ingested_files} files, ` +
+            `${result.vector.total_points} vectors.`,
+        );
+      }
+    }
   }
-  return files;
-}
-
-function ingestCanonFiles(ctx: StageContext): void {
-  const files = collectAllArchitectureFiles(ctx);
-
-  if (files.length === 0) {
-    ctx.logger.info('No architecture files found to ingest.');
-    return;
-  }
-
-  ctx.logger.info(`Ingesting ${files.length} architecture file(s) into MCP.`);
-
-  // Pass file paths relative to the workspace so the MCP container
-  // can resolve them via its mounted volume.
-  const relativePaths = files.map((f) => path.relative(ctx.config.workspaceDir, f));
-
-  // Use `docker exec` directly against the well-known container name so the
-  // command succeeds regardless of which compose project started the container.
-  ctx.executor.run('docker', [
-    'exec', MCP_CONTAINER,
-    'npm', 'run', 'ingest:v2', '--', '--files', ...relativePaths,
-  ]);
 }
 
 export const canonIngestStage: OrchestrationStage = {
   id: 'canon-ingest',
   title: 'Ingest canonical architecture files into MCP',
   recovery: [
-    'Ensure MCP and infra containers are running.',
+    'Ensure MCP service is running and accessible.',
     'Run collab init --resume to retry canon ingestion.',
   ],
-  run: (ctx) => {
+  run: async (ctx) => {
     if (ctx.executor.dryRun) {
-      ctx.logger.info('[dry-run] Would ingest architecture files into MCP.');
+      ctx.logger.info('[dry-run] Would ingest architecture files into MCP via HTTP.');
       return;
     }
 
-    ingestCanonFiles(ctx);
+    await ingestCanonFiles(ctx);
   },
 };
