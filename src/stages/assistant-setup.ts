@@ -1,4 +1,6 @@
-import { checkGhAuth, detectProviderCli, type CliInfo } from '../lib/cli-detection';
+import { execSync } from 'node:child_process';
+
+import { detectProviderCli } from '../lib/cli-detection';
 import { loadApiKey, saveApiKey } from '../lib/credentials';
 import { CliError } from '../lib/errors';
 import { listModels, type ModelInfo } from '../lib/model-listing';
@@ -205,7 +207,7 @@ async function selectModel(
  * Copilot doesn't use API keys or models — it works via `gh` CLI and GitHub issues.
  * Validates that `gh` is installed and authenticated.
  */
-async function configureCopilotProvider(ctx: StageContext): Promise<ProviderConfig> {
+function configureCopilotProvider(ctx: StageContext): ProviderConfig {
   ctx.logger.info(`\nConfiguring ${PROVIDER_DEFAULTS.copilot.label}...`);
 
   const cli = detectProviderCli('copilot');
@@ -215,7 +217,7 @@ async function configureCopilotProvider(ctx: StageContext): Promise<ProviderConf
     const ghExists = (() => {
       try {
         const whichCmd = process.platform === 'win32' ? 'where' : 'which';
-        require('node:child_process').execSync(`${whichCmd} gh`, {
+        execSync(`${whichCmd} gh`, {
           encoding: 'utf8',
           timeout: 3_000,
           stdio: ['ignore', 'pipe', 'ignore'],
@@ -355,7 +357,7 @@ export const assistantSetupStage: OrchestrationStage = {
       selectedProviders = parseProviderList(providersFlag);
     } else if (isNonInteractive) {
       // Auto-detect from environment variables
-      selectedProviders = autoDetectProviders();
+      selectedProviders = await autoDetectProviders();
 
       if (selectedProviders.length === 0) {
         ctx.logger.warn(
@@ -404,7 +406,7 @@ export const assistantSetupStage: OrchestrationStage = {
     for (const provider of selectedProviders) {
       providerConfigs[provider] =
         provider === 'copilot'
-          ? await configureCopilotProvider(ctx)
+          ? configureCopilotProvider(ctx)
           : await configureProvider(provider, ctx);
     }
 

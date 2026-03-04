@@ -54,7 +54,9 @@ async function listGeminiModels(apiKey: string): Promise<ModelInfo[]> {
     throw new Error(`Gemini API error (${res.statusCode})`);
   }
 
-  const parsed = JSON.parse(res.body);
+  const parsed = JSON.parse(res.body) as {
+    models?: { name: string; displayName?: string; supportedGenerationMethods?: string[] }[];
+  };
   const models = (parsed.models ?? []) as Array<{
     name: string;
     displayName?: string;
@@ -80,7 +82,7 @@ async function listOpenAiModels(apiKey: string): Promise<ModelInfo[]> {
     throw new Error(`OpenAI API error (${res.statusCode})`);
   }
 
-  const parsed = JSON.parse(res.body);
+  const parsed = JSON.parse(res.body) as { data?: { id: string; owned_by?: string }[] };
   const models = (parsed.data ?? []) as Array<{ id: string; owned_by?: string }>;
 
   // Filter to chat/completion models, exclude fine-tuned, audio, realtime, embedding
@@ -107,7 +109,7 @@ async function listAnthropicModels(apiKey: string): Promise<ModelInfo[]> {
     throw new Error(`Anthropic API error (${res.statusCode})`);
   }
 
-  const parsed = JSON.parse(res.body);
+  const parsed = JSON.parse(res.body) as { data?: { id: string; display_name?: string }[] };
   const models = (parsed.data ?? []) as Array<{
     id: string;
     display_name?: string;

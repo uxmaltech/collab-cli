@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
@@ -40,6 +41,8 @@ function writeExistingConfig(workspace, mode = 'indexed') {
 test('init --yes defaults to file-only mode and stores it in config', () => {
   const workspace = makeTempWorkspace();
   const env = createFakeDockerEnv();
+  // Isolate COLLAB_HOME to avoid git lock conflicts with parallel tests.
+  env.COLLAB_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'collab-home-'));
 
   const result = runCli(['--cwd', workspace, 'init', '--yes', '--skip-analysis'], {
     cwd: workspace,
@@ -58,6 +61,7 @@ test('init --yes defaults to file-only mode and stores it in config', () => {
 test('init preserves existing config without --force', () => {
   const workspace = makeTempWorkspace();
   const env = createFakeDockerEnv();
+  env.COLLAB_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'collab-home-'));
   const configPath = writeExistingConfig(workspace, 'indexed');
 
   const result = runCli(['--cwd', workspace, 'init', '--yes', '--mode', 'file-only', '--skip-analysis'], {
@@ -75,6 +79,7 @@ test('init preserves existing config without --force', () => {
 test('init overwrites existing config with --force', () => {
   const workspace = makeTempWorkspace();
   const env = createFakeDockerEnv();
+  env.COLLAB_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'collab-home-'));
   const configPath = writeExistingConfig(workspace, 'indexed');
 
   const result = runCli(['--cwd', workspace, 'init', '--yes', '--mode', 'file-only', '--force', '--skip-analysis'], {

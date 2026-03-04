@@ -97,9 +97,9 @@ export function getEnabledProviders(config: CollabConfig): ProviderKey[] {
  * Auto-detects providers from environment variables and installed CLIs.
  * A provider is detected if its env var is set OR its CLI is on PATH.
  */
-export function autoDetectProviders(): ProviderKey[] {
+export async function autoDetectProviders(): Promise<ProviderKey[]> {
   // Lazy import to avoid circular dependency at module level
-  const { detectProviderCli } = require('./cli-detection') as typeof import('./cli-detection');
+  const { detectProviderCli } = await import('./cli-detection');
 
   const detected: ProviderKey[] = [];
 

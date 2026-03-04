@@ -81,7 +81,6 @@ function httpsPost(
 function resolveApiKey(
   provider: ProviderKey,
   config: CollabConfig,
-  _logger: Logger,
 ): string | null {
   const defaults = PROVIDER_DEFAULTS[provider];
 
@@ -127,7 +126,9 @@ function createOpenAiClient(apiKey: string): AiClient {
         throw new Error(`OpenAI API error (${res.statusCode}): ${res.body}`);
       }
 
-      const parsed = JSON.parse(res.body);
+      const parsed = JSON.parse(res.body) as {
+        choices?: { message?: { content?: string } }[];
+      };
       return parsed.choices?.[0]?.message?.content ?? '';
     },
   };
@@ -166,8 +167,10 @@ function createAnthropicClient(apiKey: string): AiClient {
         throw new Error(`Anthropic API error (${res.statusCode}): ${res.body}`);
       }
 
-      const parsed = JSON.parse(res.body);
-      const textBlock = parsed.content?.find((b: { type: string }) => b.type === 'text');
+      const parsed = JSON.parse(res.body) as {
+        content?: { type: string; text?: string }[];
+      };
+      const textBlock = parsed.content?.find((b) => b.type === 'text');
       return textBlock?.text ?? '';
     },
   };
@@ -209,7 +212,9 @@ function createGeminiClient(apiKey: string): AiClient {
         throw new Error(`Gemini API error (${res.statusCode}): ${res.body}`);
       }
 
-      const parsed = JSON.parse(res.body);
+      const parsed = JSON.parse(res.body) as {
+        candidates?: { content?: { parts?: { text?: string }[] } }[];
+      };
       return parsed.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
     },
   };
@@ -335,7 +340,7 @@ const CLI_EXECUTORS: Partial<Record<ProviderKey, (prompt: string, model?: string
 function createCliClient(provider: ProviderKey, model?: string): AiClient {
   return {
     provider,
-    async complete(messages, options = {}) {
+    complete(messages, options = {}) {
       const effectiveModel = options.model ?? model;
       const prompt = buildCombinedPrompt(messages);
       const executor = CLI_EXECUTORS[provider];
@@ -343,7 +348,7 @@ function createCliClient(provider: ProviderKey, model?: string): AiClient {
         throw new Error(`No CLI executor available for provider '${provider}'.`);
       }
 
-      return executor(prompt, effectiveModel);
+      return Promise.resolve(executor(prompt, effectiveModel));
     },
   };
 }
@@ -376,7 +381,7 @@ export function createAiClient(
 
   // 1. Try API key first
   const factory = CLIENT_FACTORIES[provider];
-  const apiKey = resolveApiKey(provider, config, logger);
+  const apiKey = resolveApiKey(provider, config);
   if (apiKey && factory) {
     return factory(apiKey);
   }
