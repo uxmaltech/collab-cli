@@ -578,6 +578,63 @@ function buildIndexedPipeline(
 }
 
 // ────────────────────────────────────────────────────────────────
+// Standalone infra phase  (collab init infra)
+// ────────────────────────────────────────────────────────────────
+
+async function runInfraOnly(
+  context: { config: CollabConfig; executor: Executor; logger: Logger },
+  options: InitOptions,
+): Promise<void> {
+  // Config must already exist — full init should have been run before.
+  if (!fs.existsSync(context.config.configFile)) {
+    throw new CliError(
+      'No .collab/config.json found. Run "collab init" first to create the base configuration.',
+    );
+  }
+
+  // Infrastructure stages only make sense in indexed mode.
+  if (context.config.mode !== 'indexed') {
+    throw new CliError(
+      `Infrastructure stages require indexed mode. Current mode: ${context.config.mode}`,
+    );
+  }
+
+  const composeMode = parseComposeMode(options.composeMode, inferComposeMode(context.config));
+
+  context.logger.phaseHeader('Infrastructure', 'Docker + MCP services');
+
+  const infraStages = buildInfraStages(
+    context.config,
+    context.executor,
+    context.logger,
+    options,
+    composeMode,
+  );
+
+  await runOrchestration(
+    {
+      workflowId: 'init:infra',
+      config: context.config,
+      executor: context.executor,
+      logger: context.logger,
+      resume: options.resume,
+      mode: 'indexed (infra)',
+      stageOptions: { outputDir: options.outputDir },
+    },
+    infraStages,
+  );
+
+  // Summary
+  context.logger.phaseHeader('Infrastructure Ready');
+  context.logger.summaryFooter([
+    { label: 'Phase', value: 'infra only' },
+    { label: 'Compose mode', value: composeMode },
+    { label: 'Dry-run', value: context.executor.dryRun ? 'yes' : 'no' },
+    { label: 'Config', value: context.config.configFile },
+  ]);
+}
+
+// ────────────────────────────────────────────────────────────────
 // Command registration
 // ────────────────────────────────────────────────────────────────
 
@@ -585,6 +642,7 @@ export function registerInitCommand(program: Command): void {
   program
     .command('init')
     .description('Run onboarding wizard and orchestrate setup stages')
+    .argument('[phase]', 'Optional phase to run in isolation (e.g. "infra")')
     .option('-f, --force', 'Overwrite existing .collab/config.json with new wizard selection')
     .option('--yes', 'Accept wizard defaults and run non-interactively')
     .option('--resume', 'Resume from the last incomplete wizard stage')
@@ -609,11 +667,25 @@ Examples:
   collab init --yes --mode indexed
   collab init --repos api,web,shared --yes
   collab init --resume
+  collab init infra
+  collab init infra --resume
 `,
     )
-    .action(async (options: InitOptions, command: Command) => {
+    .action(async (phase: string | undefined, options: InitOptions, command: Command) => {
       const context = createCommandContext(command);
       ensureWritableDirectory(context.config.workspaceDir);
+
+      // ── Phase shortcut: collab init infra ───────────────────
+      if (phase === 'infra') {
+        await runInfraOnly(context, options);
+        return;
+      }
+
+      if (phase) {
+        throw new CliError(`Unknown init phase "${phase}". Available phases: infra`);
+      }
+
+      // ── Full wizard flow ────────────────────────────────────
       const configExistedBefore = fs.existsSync(context.config.configFile);
 
       if (options.force) {
