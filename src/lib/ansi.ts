@@ -59,3 +59,6 @@ export function gray(text: string): string {
 export const CHECK = '\u2713';
 export const CROSS = '\u2717';
 export const BULLET = '\u2022';
+
+/** ANSI: clear entire screen and move cursor to top-left. */
+export const CLEAR_SCREEN = '\x1b[2J\x1b[H';

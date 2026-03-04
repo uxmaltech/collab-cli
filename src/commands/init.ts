@@ -5,13 +5,20 @@ import { Command } from 'commander';
 
 import { createCommandContext } from '../lib/command-context';
 import { assertComposeFilesValid } from '../lib/compose-validator';
-import { defaultCollabConfig, serializeUserConfig, type CollabConfig } from '../lib/config';
+import {
+  defaultCollabConfig,
+  discoverRepos,
+  isWorkspaceRoot,
+  resolveRepoConfigs,
+  serializeUserConfig,
+  type CollabConfig,
+} from '../lib/config';
 import { checkEcosystemCompatibility } from '../lib/ecosystem';
 import { generateComposeFiles } from '../lib/compose-renderer';
 import { CliError } from '../lib/errors';
 import { parseMode, type CollabMode } from '../lib/mode';
-import { runOrchestration, type OrchestrationStage } from '../lib/orchestrator';
-import { promptChoice } from '../lib/prompt';
+import { runOrchestration, runPerRepoOrchestration, type OrchestrationStage } from '../lib/orchestrator';
+import { promptChoice, promptMultiSelect } from '../lib/prompt';
 import { assertPreflightChecks, runPreflightChecks } from '../lib/preflight';
 import { ensureWritableDirectory } from '../lib/preconditions';
 import { resolveInfraComposeFile, runInfraCompose } from './infra/shared';
@@ -37,6 +44,7 @@ interface InitOptions {
   mode?: string;
   composeMode?: string;
   outputDir?: string;
+  repos?: string;
   skipMcpSnippets?: boolean;
   skipAnalysis?: boolean;
   skipCi?: boolean;
@@ -247,6 +255,181 @@ function buildConfigStage(
 }
 
 // ────────────────────────────────────────────────────────────────
+// Workspace helpers
+// ────────────────────────────────────────────────────────────────
+
+function parseRepos(value: string | undefined): string[] | null {
+  if (!value) return null;
+  return value.split(',').map((r) => r.trim()).filter(Boolean);
+}
+
+async function resolveWorkspaceRepos(
+  workspaceDir: string,
+  options: InitOptions,
+  logger: Logger,
+): Promise<string[] | null> {
+  // Explicit --repos flag takes priority
+  const explicit = parseRepos(options.repos);
+  if (explicit && explicit.length > 0) {
+    logger.info(`Workspace mode: ${explicit.length} repo(s) specified: ${explicit.join(', ')}`);
+    return explicit;
+  }
+
+  // Auto-discover when cwd looks like a workspace root
+  if (isWorkspaceRoot(workspaceDir)) {
+    const discovered = discoverRepos(workspaceDir);
+
+    if (options.yes) {
+      logger.info(`Workspace auto-detected: ${discovered.length} repo(s) found: ${discovered.join(', ')}`);
+      return discovered;
+    }
+
+    // Interactive: let user confirm/select repos
+    const selected = await promptMultiSelect(
+      'This directory contains multiple git repositories. Select repos to include:',
+      discovered.map((r) => ({ value: r, label: r })),
+      discovered,
+    );
+
+    return selected.length > 0 ? selected : null;
+  }
+
+  return null;
+}
+
+// ────────────────────────────────────────────────────────────────
+// Workspace pipeline builders
+// ────────────────────────────────────────────────────────────────
+
+function buildWorkspaceStages(
+  effectiveConfig: CollabConfig,
+  executor: Executor,
+  logger: Logger,
+  configExistedBefore: boolean,
+  options: InitOptions,
+): OrchestrationStage[] {
+  return [
+    buildPreflightStage(executor, logger),
+    buildConfigStage(effectiveConfig, executor, logger, configExistedBefore, options.force),
+    assistantSetupStage,
+    canonSyncStage,
+  ];
+}
+
+function buildPerRepoStages(mode: CollabMode): OrchestrationStage[] {
+  const analysisStage = mode === 'indexed' ? repoAnalysisStage : repoAnalysisFileOnlyStage;
+  return [
+    repoScaffoldStage,
+    analysisStage,
+    ciSetupStage,
+    agentSkillsSetupStage,
+  ];
+}
+
+function buildInfraStages(
+  effectiveConfig: CollabConfig,
+  executor: Executor,
+  logger: Logger,
+  options: InitOptions,
+  composeMode: ComposeMode,
+): OrchestrationStage[] {
+  const health = {
+    timeoutMs: toNumber(options.timeoutMs, 5_000),
+    retries: toNumber(options.retries, 15),
+    retryDelayMs: toNumber(options.retryDelayMs, 2_000),
+  };
+
+  return [
+    {
+      id: 'compose-generation',
+      title: 'Generate and validate compose files',
+      recovery: [
+        'Run collab compose validate to inspect configuration errors.',
+        'Run collab init --resume after fixing compose inputs.',
+      ],
+      run: () => {
+        const generation = generateComposeFiles({
+          config: effectiveConfig,
+          mode: composeMode,
+          outputDirectory: options.outputDir,
+          logger,
+          executor,
+        });
+
+        for (const warning of generation.driftWarnings) {
+          logger.warn(warning);
+        }
+
+        assertComposeFilesValid(
+          generation.files.map((file) => file.filePath),
+          effectiveConfig.workspaceDir,
+          executor,
+        );
+      },
+    },
+    {
+      id: 'infra-start',
+      title: 'Start infrastructure services',
+      recovery: [
+        'Run collab infra status to inspect Qdrant and Nebula.',
+        'Run collab init --resume after infra services are healthy.',
+      ],
+      run: async () => {
+        const selection = resolveInfraComposeFile(effectiveConfig, options.outputDir, undefined);
+        await runInfraCompose(logger, executor, effectiveConfig, selection, 'up', { health });
+      },
+    },
+    {
+      id: 'mcp-start',
+      title: 'Start MCP service',
+      recovery: [
+        'Run collab mcp status to inspect MCP runtime.',
+        'Run collab init --resume after MCP health endpoint responds.',
+      ],
+      run: async () => {
+        const selection = resolveMcpComposeFile(effectiveConfig, options.outputDir, undefined);
+        await runMcpCompose(logger, executor, effectiveConfig, selection, 'up', { health });
+      },
+    },
+    {
+      id: 'mcp-client-config',
+      title: 'Generate MCP client config snippets',
+      recovery: [
+        'Verify permissions in .collab directory.',
+        'Run collab init --resume to regenerate MCP config snippets.',
+      ],
+      run: () => {
+        if (options.skipMcpSnippets) {
+          logger.info('Skipping MCP snippet generation by user choice.');
+          return;
+        }
+
+        const enabled = getEnabledProviders(effectiveConfig);
+        if (enabled.length === 0) {
+          logger.info('No providers configured; skipping MCP snippet generation.');
+          return;
+        }
+
+        for (const provider of enabled) {
+          const snippet = renderMcpSnippet(provider, effectiveConfig);
+          if (!snippet) continue;
+          const target = path.join(effectiveConfig.collabDir, snippet.filename);
+          executor.writeFile(target, snippet.content, {
+            description: `write ${PROVIDER_DEFAULTS[provider].label} MCP config snippet`,
+          });
+        }
+
+        logger.info(
+          `Generated MCP snippets for: ${enabled.map((k) => PROVIDER_DEFAULTS[k].label).join(', ')}`,
+        );
+      },
+    },
+    graphSeedStage,
+    canonIngestStage,
+  ];
+}
+
+// ────────────────────────────────────────────────────────────────
 // File-only pipeline (8 stages)
 // ────────────────────────────────────────────────────────────────
 
@@ -408,6 +591,7 @@ export function registerInitCommand(program: Command): void {
     .option('--mode <mode>', 'Wizard mode: file-only|indexed')
     .option('--compose-mode <mode>', 'Compose mode: consolidated|split')
     .option('--output-dir <directory>', 'Directory used to write compose outputs')
+    .option('--repos <list>', 'Comma-separated repo directories for workspace mode')
     .option('--skip-mcp-snippets', 'Skip MCP client config snippet generation')
     .option('--skip-analysis', 'Skip AI-powered repository analysis stage')
     .option('--skip-ci', 'Skip CI workflow generation')
@@ -423,6 +607,7 @@ Examples:
   collab init --yes
   collab init --yes --mode file-only
   collab init --yes --mode indexed
+  collab init --repos api,web,shared --yes
   collab init --resume
 `,
     )
@@ -435,6 +620,9 @@ Examples:
         context.logger.warn('Force mode enabled: configuration will be overwritten with wizard selections.');
       }
 
+      // ── Step 1: Configuration wizard ────────────────────────
+      context.logger.phaseHeader('collab init', 'Configuration');
+
       const selections = await resolveWizardSelection(options, context.config);
       const preserveExisting = configExistedBefore && !options.force;
 
@@ -444,31 +632,115 @@ Examples:
         mode: preserveExisting ? context.config.mode : selections.mode,
       };
 
-      // Two completely separate pipelines — no mode branching inside stages
-      const stages = selections.mode === 'file-only'
-        ? buildFileOnlyPipeline(effectiveConfig, context.executor, context.logger, configExistedBefore, options)
-        : buildIndexedPipeline(effectiveConfig, context.executor, context.logger, configExistedBefore, options, selections.composeMode);
+      const stageOptions: Record<string, unknown> = {
+        yes: options.yes,
+        providers: options.providers,
+        outputDir: options.outputDir,
+        skipAnalysis: options.skipAnalysis,
+        skipCi: options.skipCi,
+      };
 
-      await runOrchestration(
-        {
-          workflowId: 'init',
-          config: effectiveConfig,
-          executor: context.executor,
-          logger: context.logger,
-          resume: options.resume,
-          mode: selections.mode,
-          stageOptions: {
-            yes: options.yes,
-            providers: options.providers,
-            outputDir: options.outputDir,
-            skipAnalysis: options.skipAnalysis,
-            skipCi: options.skipCi,
-          },
-        },
-        stages,
+      // ── Workspace detection ───────────────────────────────────
+      const repos = await resolveWorkspaceRepos(
+        context.config.workspaceDir,
+        options,
+        context.logger,
       );
 
-      // Summary footer
+      if (repos && repos.length > 0) {
+        // ── WORKSPACE MODE ────────────────────────────────────
+        effectiveConfig.workspace = { repos };
+        const repoConfigs = resolveRepoConfigs(effectiveConfig);
+
+        // Phase W — workspace-level stages
+        context.logger.phaseHeader('Workspace Setup', `${repos.length} repositories`);
+
+        const workspaceStages = buildWorkspaceStages(
+          effectiveConfig, context.executor, context.logger,
+          configExistedBefore, options,
+        );
+
+        await runOrchestration(
+          {
+            workflowId: 'init',
+            config: effectiveConfig,
+            executor: context.executor,
+            logger: context.logger,
+            resume: options.resume,
+            mode: `${selections.mode} (workspace)`,
+            stageOptions,
+          },
+          workspaceStages,
+        );
+
+        // Phase R — per-repo stages
+        context.logger.phaseHeader('Repository Analysis', `${selections.mode} mode`);
+
+        const perRepoStages = buildPerRepoStages(selections.mode);
+
+        for (const [i, rc] of repoConfigs.entries()) {
+          context.logger.repoHeader(rc.name, i + 1, repoConfigs.length);
+          await runPerRepoOrchestration(
+            {
+              workflowId: 'init',
+              config: effectiveConfig,
+              executor: context.executor,
+              logger: context.logger,
+              resume: options.resume,
+              stageOptions,
+            },
+            rc,
+            perRepoStages,
+          );
+        }
+
+        // Phase I — infra stages (indexed only)
+        if (selections.mode === 'indexed') {
+          context.logger.phaseHeader('Infrastructure', 'Docker + MCP services');
+
+          const infraStages = buildInfraStages(
+            effectiveConfig, context.executor, context.logger,
+            options, selections.composeMode,
+          );
+
+          await runOrchestration(
+            {
+              workflowId: 'init:infra',
+              config: effectiveConfig,
+              executor: context.executor,
+              logger: context.logger,
+              resume: options.resume,
+              mode: 'indexed (infra)',
+              stageOptions,
+            },
+            infraStages,
+          );
+        }
+      } else {
+        // ── SINGLE-REPO MODE (unchanged) ──────────────────────
+        context.logger.phaseHeader('Project Setup', selections.mode);
+
+        const stages = selections.mode === 'file-only'
+          ? buildFileOnlyPipeline(effectiveConfig, context.executor, context.logger, configExistedBefore, options)
+          : buildIndexedPipeline(effectiveConfig, context.executor, context.logger, configExistedBefore, options, selections.composeMode);
+
+        await runOrchestration(
+          {
+            workflowId: 'init',
+            config: effectiveConfig,
+            executor: context.executor,
+            logger: context.logger,
+            resume: options.resume,
+            mode: selections.mode,
+            stageOptions,
+          },
+          stages,
+        );
+      }
+
+      // ── Summary ───────────────────────────────────────────
+      context.logger.phaseHeader('Setup Complete');
+
       const enabledProviders = getEnabledProviders(effectiveConfig);
       const providerLabel = enabledProviders.length > 0
         ? enabledProviders.map((k) => PROVIDER_DEFAULTS[k].label).join(', ')
@@ -481,8 +753,12 @@ Examples:
         { label: 'Providers', value: providerLabel },
       ];
 
+      if (repos && repos.length > 0) {
+        summaryEntries.splice(1, 0, { label: 'Workspace repos', value: repos.join(', ') });
+      }
+
       if (selections.mode === 'indexed') {
-        summaryEntries.splice(1, 0, { label: 'Compose mode', value: selections.composeMode });
+        summaryEntries.splice(repos ? 2 : 1, 0, { label: 'Compose mode', value: selections.composeMode });
       }
 
       context.logger.summaryFooter(summaryEntries);

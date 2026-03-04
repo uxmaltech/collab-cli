@@ -1,4 +1,4 @@
-import type { CollabConfig } from './config';
+import type { CollabConfig, RepoConfig } from './config';
 import type { Executor } from './executor';
 import { CliError, CommandExecutionError } from './errors';
 import type { Logger } from './logger';
@@ -9,6 +9,16 @@ export interface StageContext {
   executor: Executor;
   logger: Logger;
   options?: Record<string, unknown>;
+}
+
+/**
+ * Returns the effective base directory for stages that write per-repo files.
+ * In workspace mode (repoConfig present) this is the individual repo dir;
+ * in single-repo mode it falls back to workspaceDir.
+ */
+export function getRepoBaseDir(ctx: StageContext): string {
+  const rc = ctx.options?._repoConfig as RepoConfig | undefined;
+  return rc ? rc.repoDir : ctx.config.workspaceDir;
 }
 
 export interface OrchestrationStage {
@@ -138,4 +148,41 @@ export async function runOrchestration(
     updatedAt: new Date().toISOString(),
   };
   saveState(options.config, state, options.executor);
+}
+
+/**
+ * Runs a set of stages scoped to a single repo inside a workspace.
+ *
+ * - Uses a namespaced workflow ID (`{baseId}:{repoName}`) for resume support.
+ * - Overrides `config.repoDir` and `config.aiDir` so existing stages write
+ *   into the repo instead of the workspace root.
+ * - Passes the `RepoConfig` via `stageOptions._repoConfig`.
+ */
+export async function runPerRepoOrchestration(
+  baseOptions: OrchestratorOptions,
+  repoConfig: RepoConfig,
+  stages: readonly OrchestrationStage[],
+): Promise<void> {
+  const repoWorkflowId = `${baseOptions.workflowId}:${repoConfig.name}`;
+
+  const repoAwareConfig: CollabConfig = {
+    ...baseOptions.config,
+    repoDir: repoConfig.architectureRepoDir,
+    aiDir: repoConfig.aiDir,
+  };
+
+  const stageOptions = {
+    ...baseOptions.stageOptions,
+    _repoConfig: repoConfig,
+  };
+
+  await runOrchestration(
+    {
+      ...baseOptions,
+      workflowId: repoWorkflowId,
+      config: repoAwareConfig,
+      stageOptions,
+    },
+    stages,
+  );
 }

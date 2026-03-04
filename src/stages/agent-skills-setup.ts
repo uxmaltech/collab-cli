@@ -2,8 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { resolveCanonFile } from '../lib/canon-resolver';
+import type { RepoConfig, WorkspaceConfig } from '../lib/config';
 import type { CollabMode } from '../lib/mode';
-import type { OrchestrationStage, StageContext } from '../lib/orchestrator';
+import { getRepoBaseDir, type OrchestrationStage, type StageContext } from '../lib/orchestrator';
 import { getEnabledProviders } from '../lib/providers';
 
 /**
@@ -57,9 +58,15 @@ const AGENT_PROMPTS: { name: string; description: string; canonPath: string }[] 
 // Mode-aware architecture access preambles
 // ────────────────────────────────────────────────────────────────
 
-function buildArchitectureAccessBlock(mode: CollabMode): string {
+function buildArchitectureAccessBlock(
+  mode: CollabMode,
+  repoConfig?: RepoConfig,
+  workspaceConfig?: WorkspaceConfig,
+): string {
+  const lines: string[] = [];
+
   if (mode === 'indexed') {
-    return [
+    lines.push(
       '## Architecture Access (MCP)',
       '',
       'This project uses an MCP server for architecture retrieval.',
@@ -73,17 +80,45 @@ function buildArchitectureAccessBlock(mode: CollabMode): string {
       '- `docs/ai/` — Quick reference helpers (start here for fast context)',
       '- `docs/architecture/repo/` — Project-specific canons and decisions',
       '- `.agents/skills/` — Governance phase guidance',
-    ].join('\n');
+    );
+  } else {
+    lines.push(
+      '## Architecture Access',
+      '',
+      'Read architecture context from local files:',
+    );
+
+    if (repoConfig && workspaceConfig) {
+      lines.push('- `../../docs/architecture/uxmaltech/` — Institutional canon (collab-architecture)');
+    } else {
+      lines.push('- `docs/architecture/uxmaltech/` — Institutional canon (collab-architecture)');
+    }
+
+    lines.push(
+      '- `docs/architecture/repo/` — Project-specific canons and decisions',
+      '- `docs/ai/` — Quick reference helpers (start here for fast context)',
+    );
   }
 
-  return [
-    '## Architecture Access',
-    '',
-    'Read architecture context from local files:',
-    '- `docs/architecture/uxmaltech/` — Institutional canon (collab-architecture)',
-    '- `docs/architecture/repo/` — Project-specific canons and decisions',
-    '- `docs/ai/` — Quick reference helpers (start here for fast context)',
-  ].join('\n');
+  // Append workspace context when running inside a multi-repo workspace
+  if (repoConfig && workspaceConfig) {
+    const otherRepos = workspaceConfig.repos.filter((r) => r !== repoConfig.name);
+    lines.push(
+      '',
+      '## Workspace Context',
+      '',
+      `This repo (\`${repoConfig.name}\`) is part of a multi-repo workspace.`,
+    );
+    if (otherRepos.length > 0) {
+      lines.push(`Other repos: ${otherRepos.map((r) => '`' + r + '`').join(', ')}`);
+      lines.push(`Access sibling repos via: ${otherRepos.map((r) => '`../../' + r + '/`').join(', ')}`);
+    }
+    if (repoConfig) {
+      lines.push('Shared canonical architecture: `../../docs/architecture/uxmaltech/`');
+    }
+  }
+
+  return lines.join('\n');
 }
 
 // ────────────────────────────────────────────────────────────────
@@ -94,9 +129,14 @@ function buildArchitectureAccessBlock(mode: CollabMode): string {
  * Generates Agent Skills Spec SKILL.md files for Claude, Codex, and Gemini.
  * Format: .agents/skills/<name>/SKILL.md with YAML frontmatter.
  */
-function generateAgentSkillsSpec(ctx: StageContext, mode: CollabMode): number {
-  const skillsBaseDir = path.join(ctx.config.workspaceDir, '.agents', 'skills');
-  const preamble = buildArchitectureAccessBlock(mode);
+function generateAgentSkillsSpec(
+  ctx: StageContext,
+  mode: CollabMode,
+  repoConfig?: RepoConfig,
+  workspaceConfig?: WorkspaceConfig,
+): number {
+  const skillsBaseDir = path.join(getRepoBaseDir(ctx), '.agents', 'skills');
+  const preamble = buildArchitectureAccessBlock(mode, repoConfig, workspaceConfig);
   let written = 0;
 
   for (const agent of AGENT_PROMPTS) {
@@ -141,10 +181,15 @@ function generateAgentSkillsSpec(ctx: StageContext, mode: CollabMode): number {
  * - .github/copilot-instructions.md — global instructions (mode-aware)
  * - .github/instructions/<name>.instructions.md — per-agent instructions
  */
-function generateCopilotInstructions(ctx: StageContext, mode: CollabMode): number {
-  const githubDir = path.join(ctx.config.workspaceDir, '.github');
+function generateCopilotInstructions(
+  ctx: StageContext,
+  mode: CollabMode,
+  repoConfig?: RepoConfig,
+  workspaceConfig?: WorkspaceConfig,
+): number {
+  const githubDir = path.join(getRepoBaseDir(ctx), '.github');
   const instructionsDir = path.join(githubDir, 'instructions');
-  const preamble = buildArchitectureAccessBlock(mode);
+  const preamble = buildArchitectureAccessBlock(mode, repoConfig, workspaceConfig);
   let written = 0;
 
   // Global instructions file
@@ -211,15 +256,20 @@ function generateCopilotInstructions(ctx: StageContext, mode: CollabMode): numbe
 /**
  * Generates a CLAUDE.md file at repo root with mode-aware architecture context.
  */
-function generateClaudeMd(ctx: StageContext, mode: CollabMode): boolean {
-  const claudeFile = path.join(ctx.config.workspaceDir, 'CLAUDE.md');
+function generateClaudeMd(
+  ctx: StageContext,
+  mode: CollabMode,
+  repoConfig?: RepoConfig,
+  workspaceConfig?: WorkspaceConfig,
+): boolean {
+  const claudeFile = path.join(getRepoBaseDir(ctx), 'CLAUDE.md');
 
   if (fs.existsSync(claudeFile)) {
     ctx.logger.debug('CLAUDE.md already exists, skipping.');
     return false;
   }
 
-  const accessBlock = buildArchitectureAccessBlock(mode);
+  const accessBlock = buildArchitectureAccessBlock(mode, repoConfig, workspaceConfig);
 
   const mcpConfigNote = mode === 'indexed'
     ? [
@@ -288,6 +338,8 @@ export const agentSkillsSetupStage: OrchestrationStage = {
     }
 
     const mode = ctx.config.mode;
+    const repoConfig = ctx.options?._repoConfig as RepoConfig | undefined;
+    const workspaceConfig = ctx.config.workspace;
     const hasSkillsProvider = enabledProviders.some((p) => p !== 'copilot');
     const hasCopilot = enabledProviders.includes('copilot');
     const hasClaude = enabledProviders.includes('claude');
@@ -296,7 +348,7 @@ export const agentSkillsSetupStage: OrchestrationStage = {
 
     // Agent Skills Spec for Claude, Codex, and Gemini
     if (hasSkillsProvider) {
-      const count = generateAgentSkillsSpec(ctx, mode);
+      const count = generateAgentSkillsSpec(ctx, mode, repoConfig, workspaceConfig);
       totalWritten += count;
       if (count > 0) {
         ctx.logger.info(`Agent Skills Spec: ${count} SKILL.md file(s) written to .agents/skills/.`);
@@ -305,7 +357,7 @@ export const agentSkillsSetupStage: OrchestrationStage = {
 
     // Copilot instructions
     if (hasCopilot) {
-      const count = generateCopilotInstructions(ctx, mode);
+      const count = generateCopilotInstructions(ctx, mode, repoConfig, workspaceConfig);
       totalWritten += count;
       if (count > 0) {
         ctx.logger.info(`Copilot instructions: ${count} file(s) written to .github/.`);
@@ -314,7 +366,7 @@ export const agentSkillsSetupStage: OrchestrationStage = {
 
     // CLAUDE.md for Claude provider
     if (hasClaude) {
-      const wrote = generateClaudeMd(ctx, mode);
+      const wrote = generateClaudeMd(ctx, mode, repoConfig, workspaceConfig);
       if (wrote) {
         totalWritten++;
         ctx.logger.info('CLAUDE.md written at repo root.');

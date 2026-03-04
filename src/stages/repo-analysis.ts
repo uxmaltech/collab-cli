@@ -2,7 +2,7 @@ import path from 'node:path';
 
 import { createFirstAvailableClient, type AiMessage } from '../lib/ai-client';
 import { isCanonsAvailable, resolveCanonFile, syncCanons } from '../lib/canon-resolver';
-import type { OrchestrationStage } from '../lib/orchestrator';
+import { getRepoBaseDir, type OrchestrationStage } from '../lib/orchestrator';
 import { getEnabledProviders, type ProviderKey } from '../lib/providers';
 import { buildUserMessage, extractJson, generateAiHelpers, writeAnalysisResults, type AnalysisResult } from '../lib/repo-analysis-helpers';
 import { scanRepository } from '../lib/repo-scanner';
@@ -32,7 +32,7 @@ export const repoAnalysisStage: OrchestrationStage = {
       ctx.logger.info('No AI-capable providers enabled; skipping repository analysis.');
 
       // Still generate basic AI helper files
-      const repoCtx = scanRepository(ctx.config.workspaceDir);
+      const repoCtx = scanRepository(getRepoBaseDir(ctx));
       generateAiHelpers(ctx, repoCtx, {});
       return;
     }
@@ -48,7 +48,7 @@ export const repoAnalysisStage: OrchestrationStage = {
       ctx.logger.warn(
         'No AI provider credentials or CLI available; generating basic AI helpers only.',
       );
-      const repoCtx = scanRepository(ctx.config.workspaceDir);
+      const repoCtx = scanRepository(getRepoBaseDir(ctx));
       generateAiHelpers(ctx, repoCtx, {});
       return;
     }
@@ -72,7 +72,7 @@ export const repoAnalysisStage: OrchestrationStage = {
     }
 
     ctx.logger.info('Scanning repository structure...');
-    const repoCtx = scanRepository(ctx.config.workspaceDir);
+    const repoCtx = scanRepository(getRepoBaseDir(ctx));
 
     ctx.logger.info(
       `Repository: ${repoCtx.name} (${repoCtx.language}${repoCtx.framework ? ` / ${repoCtx.framework}` : ''}, ${repoCtx.totalSourceFiles} source files)`,

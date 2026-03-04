@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { isWorkspaceMode, resolveRepoConfigs } from '../lib/config';
 import { runDockerCompose } from '../lib/docker-compose';
 import type { OrchestrationStage, StageContext } from '../lib/orchestrator';
 import { resolveMcpComposeFile } from '../commands/mcp/shared';
@@ -28,8 +29,24 @@ function collectMarkdownFiles(dir: string): string[] {
   return results;
 }
 
+/**
+ * In workspace mode collects from shared uxmaltech + each repo's architecture.
+ * In single-repo mode falls back to the existing architectureDir scan.
+ */
+function collectAllArchitectureFiles(ctx: StageContext): string[] {
+  if (!isWorkspaceMode(ctx.config)) {
+    return collectMarkdownFiles(ctx.config.architectureDir);
+  }
+
+  const files = [...collectMarkdownFiles(ctx.config.uxmaltechDir)];
+  for (const rc of resolveRepoConfigs(ctx.config)) {
+    files.push(...collectMarkdownFiles(rc.architectureRepoDir));
+  }
+  return files;
+}
+
 function ingestCanonFiles(ctx: StageContext, mcpComposeFile: string): void {
-  const files = collectMarkdownFiles(ctx.config.architectureDir);
+  const files = collectAllArchitectureFiles(ctx);
 
   if (files.length === 0) {
     ctx.logger.info('No architecture files found to ingest.');

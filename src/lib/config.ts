@@ -10,6 +10,17 @@ export interface ComposePathConfig {
   mcpFile: string;
 }
 
+export interface WorkspaceConfig {
+  repos: string[];
+}
+
+export interface RepoConfig {
+  name: string;
+  repoDir: string;
+  architectureRepoDir: string;
+  aiDir: string;
+}
+
 export interface CollabConfig {
   workspaceDir: string;
   collabDir: string;
@@ -23,6 +34,7 @@ export interface CollabConfig {
   repoDir: string;
   aiDir: string;
   assistants?: AssistantsConfig;
+  workspace?: WorkspaceConfig;
 }
 
 interface RawCollabConfig {
@@ -31,6 +43,7 @@ interface RawCollabConfig {
   mode?: string;
   architectureDir?: string;
   assistants?: AssistantsConfig;
+  workspace?: WorkspaceConfig;
 }
 
 const DEFAULT_COMPOSE_PATHS: ComposePathConfig = {
@@ -91,6 +104,7 @@ export function loadCollabConfig(cwd = process.cwd()): CollabConfig {
     repoDir: path.join(architectureDir, 'repo'),
     aiDir: path.join(defaults.workspaceDir, 'docs', 'ai'),
     assistants: raw.assistants,
+    workspace: raw.workspace,
   };
 }
 
@@ -109,5 +123,65 @@ export function serializeUserConfig(config: CollabConfig): string {
     data.assistants = config.assistants;
   }
 
+  if (config.workspace) {
+    data.workspace = config.workspace;
+  }
+
   return JSON.stringify(data, null, 2);
+}
+
+// ────────────────────────────────────────────────────────────────
+// Workspace helpers
+// ────────────────────────────────────────────────────────────────
+
+export function isWorkspaceMode(config: CollabConfig): boolean {
+  return config.workspace !== undefined && config.workspace.repos.length > 0;
+}
+
+export function resolveRepoConfigs(config: CollabConfig): RepoConfig[] {
+  if (!config.workspace) {
+    return [];
+  }
+
+  return config.workspace.repos.map((repoName) => {
+    const repoDir = path.join(config.workspaceDir, repoName);
+    return {
+      name: repoName,
+      repoDir,
+      architectureRepoDir: path.join(repoDir, 'docs', 'architecture', 'repo'),
+      aiDir: path.join(repoDir, 'docs', 'ai'),
+    };
+  });
+}
+
+/**
+ * Detects subdirectories of `workspaceDir` that contain a `.git` directory.
+ * Returns sorted directory names (not full paths).
+ */
+export function discoverRepos(workspaceDir: string): string[] {
+  const entries = fs.readdirSync(workspaceDir, { withFileTypes: true });
+  const repos: string[] = [];
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    if (entry.name.startsWith('.')) continue;
+
+    const gitDir = path.join(workspaceDir, entry.name, '.git');
+    if (fs.existsSync(gitDir)) {
+      repos.push(entry.name);
+    }
+  }
+
+  return repos.sort();
+}
+
+/**
+ * Returns true when the directory looks like a workspace root:
+ * no `.git/` of its own and at least two child git repos.
+ */
+export function isWorkspaceRoot(dir: string): boolean {
+  const hasOwnGit = fs.existsSync(path.join(dir, '.git'));
+  if (hasOwnGit) return false;
+
+  return discoverRepos(dir).length >= 2;
 }

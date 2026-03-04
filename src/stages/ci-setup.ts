@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import type { OrchestrationStage, StageContext } from '../lib/orchestrator';
+import { getRepoBaseDir, type OrchestrationStage, type StageContext } from '../lib/orchestrator';
 import { architecturePrTemplate, architectureMergeTemplate } from '../templates/ci';
 
 export const ciSetupStage: OrchestrationStage = {
@@ -17,7 +17,7 @@ export const ciSetupStage: OrchestrationStage = {
       return;
     }
 
-    const workflowDir = path.join(ctx.config.workspaceDir, '.github', 'workflows');
+    const workflowDir = path.join(getRepoBaseDir(ctx), '.github', 'workflows');
     let created = 0;
     let skipped = 0;
 

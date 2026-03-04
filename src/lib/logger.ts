@@ -1,4 +1,4 @@
-import { bold, cyan, dim, green, red, yellow, CHECK, CROSS } from './ansi';
+import { bold, cyan, dim, green, red, yellow, CHECK, CROSS, CLEAR_SCREEN } from './ansi';
 import { toShellCommand } from './shell';
 
 export type Verbosity = 'quiet' | 'normal' | 'verbose';
@@ -23,6 +23,8 @@ export interface Logger {
   stageHeader(index: number, total: number, title: string): void;
   step(ok: boolean, message: string): void;
   workflowHeader(workflow: string, mode: string): void;
+  repoHeader(repoName: string, index: number, total: number): void;
+  phaseHeader(title: string, subtitle?: string): void;
   summaryFooter(entries: readonly SummaryEntry[]): void;
 }
 
@@ -93,6 +95,25 @@ class ConsoleLogger implements Logger {
 
   workflowHeader(workflow: string, mode: string): void {
     process.stdout.write(`\n  ${bold(workflow)} ${dim(`\u2014 ${mode}`)}\n`);
+  }
+
+  repoHeader(repoName: string, index: number, total: number): void {
+    if (this.verbosity === 'quiet') return;
+    const tag = bold(cyan(`[repo ${index}/${total}]`));
+    process.stdout.write(`\n  ${tag} ${bold(repoName)}\n`);
+  }
+
+  phaseHeader(title: string, subtitle?: string): void {
+    if (this.verbosity === 'quiet') return;
+
+    // Only clear when stdout is a real terminal (skip in pipes/tests)
+    if (process.stdout.isTTY) {
+      process.stdout.write(CLEAR_SCREEN);
+    }
+
+    const line = dim('\u2500'.repeat(48));
+    const sub = subtitle ? `  ${dim(subtitle)}` : '';
+    process.stdout.write(`\n  ${line}\n  ${bold(cyan(title))}${sub}\n  ${line}\n\n`);
   }
 
   summaryFooter(entries: readonly SummaryEntry[]): void {
