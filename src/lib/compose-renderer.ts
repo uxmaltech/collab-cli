@@ -98,15 +98,23 @@ function assignOutputPaths(
   ];
 }
 
-function computeEnvOverrides(config: CollabConfig): EnvMap | undefined {
+function scopeFromRepo(repo: string, fallback: string): string {
+  const normalized = repo.trim().replace(/\/+$/, '').replace(/\.git$/, '');
+  const scope = normalized.split('/').filter(Boolean).pop();
+  return scope && scope.length > 0 ? scope : fallback;
+}
+
+function computeEnvOverrides(config: CollabConfig): EnvMap {
+  const baseScope = 'uxmaltech';
   const businessRepo = config.canons?.business?.repo;
   if (!businessRepo) {
-    return undefined;
+    return { MCP_TECHNICAL_SCOPES: baseScope };
   }
 
-  const businessScope = businessRepo.split('/').pop() ?? businessRepo;
+  const businessScope = scopeFromRepo(businessRepo, baseScope);
   return {
-    MCP_TECHNICAL_SCOPES: `uxmaltech,${businessScope}`,
+    MCP_TECHNICAL_SCOPES:
+      businessScope === baseScope ? baseScope : `${baseScope},${businessScope}`,
   };
 }
 

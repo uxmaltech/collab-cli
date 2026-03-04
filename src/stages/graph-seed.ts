@@ -1,4 +1,9 @@
-import { getMcpBaseUrl, triggerGraphSeed } from '../lib/mcp-client';
+import {
+  getMcpBaseUrl,
+  resolveMcpApiKey,
+  resolveMcpHttpTimeoutMs,
+  triggerGraphSeed,
+} from '../lib/mcp-client';
 import { loadRuntimeEnv } from '../lib/service-health';
 import type { OrchestrationStage } from '../lib/orchestrator';
 
@@ -19,9 +24,10 @@ export const graphSeedStage: OrchestrationStage = {
 
     const baseUrl = getMcpBaseUrl(ctx.config);
     const env = loadRuntimeEnv(ctx.config);
-    const apiKey = env.MCP_API_KEYS || undefined;
+    const apiKey = resolveMcpApiKey(env);
+    const timeoutMs = resolveMcpHttpTimeoutMs(env);
 
-    const result = await triggerGraphSeed(baseUrl, apiKey);
+    const result = await triggerGraphSeed(baseUrl, apiKey, timeoutMs);
     ctx.logger.info(
       `NebulaGraph seeding complete: ${result.nodes_created} nodes, ${result.edges_created} edges.`,
     );
