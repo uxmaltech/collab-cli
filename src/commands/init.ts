@@ -11,6 +11,7 @@ import {
   isWorkspaceRoot,
   resolveRepoConfigs,
   serializeUserConfig,
+  type CanonsConfig,
   type CollabConfig,
 } from '../lib/config';
 import { checkEcosystemCompatibility } from '../lib/ecosystem';
@@ -18,7 +19,8 @@ import { generateComposeFiles } from '../lib/compose-renderer';
 import { CliError } from '../lib/errors';
 import { parseMode, type CollabMode } from '../lib/mode';
 import { runOrchestration, runPerRepoOrchestration, type OrchestrationStage } from '../lib/orchestrator';
-import { promptChoice, promptMultiSelect } from '../lib/prompt';
+import { loadGitHubAuth, isGitHubAuthValid, runGitHubDeviceFlow, storeGitHubToken } from '../lib/github-auth';
+import { promptChoice, promptMultiSelect, promptText } from '../lib/prompt';
 import { assertPreflightChecks, runPreflightChecks } from '../lib/preflight';
 import { ensureWritableDirectory } from '../lib/preconditions';
 import { resolveInfraComposeFile, runInfraCompose } from './infra/shared';
@@ -53,6 +55,8 @@ interface InitOptions {
   retries?: string;
   retryDelayMs?: string;
   providers?: string;
+  businessCanon?: string;
+  githubToken?: string;
 }
 
 interface WizardSelection {
@@ -207,6 +211,122 @@ function renderMcpSnippet(provider: ProviderKey, config: CollabConfig): { filena
 }
 
 // ────────────────────────────────────────────────────────────────
+// GitHub auth & business canon helpers
+// ────────────────────────────────────────────────────────────────
+
+function buildGitHubAuthStage(
+  effectiveConfig: CollabConfig,
+  logger: Logger,
+  options: InitOptions,
+): OrchestrationStage {
+  return {
+    id: 'github-auth',
+    title: 'Authorize GitHub access',
+    recovery: [
+      'Set COLLAB_GITHUB_CLIENT_ID env var if OAuth App is not configured.',
+      'Use --github-token <token> to provide a token directly.',
+      'Run collab init --resume after fixing GitHub access.',
+    ],
+    run: async () => {
+      // Skip if no business canon is configured — GitHub auth is only needed for private repos
+      if (!effectiveConfig.canons?.business) {
+        logger.info('No business canon configured; skipping GitHub authorization.');
+        return;
+      }
+
+      // Check for pre-existing valid token
+      const existing = loadGitHubAuth(effectiveConfig.collabDir);
+      if (existing) {
+        const valid = await isGitHubAuthValid(existing);
+        if (valid) {
+          logger.info('GitHub authorization already configured and valid.');
+          return;
+        }
+        logger.info('Existing GitHub token is invalid or expired. Re-authorizing...');
+      }
+
+      // --github-token flag: store directly
+      if (options.githubToken) {
+        storeGitHubToken(effectiveConfig.collabDir, options.githubToken);
+        logger.info('GitHub token stored from --github-token flag.');
+        return;
+      }
+
+      // --yes without token: fail
+      if (options.yes) {
+        throw new CliError(
+          'GitHub authorization required. Use --github-token <token> in non-interactive mode.',
+        );
+      }
+
+      // Interactive: run Device Flow
+      await runGitHubDeviceFlow(effectiveConfig.collabDir, (msg) => logger.info(msg));
+    },
+  };
+}
+
+function parseBusinessCanonOption(value: string | undefined): CanonsConfig | undefined {
+  if (!value || value === 'none' || value === 'skip') {
+    return undefined;
+  }
+
+  if (!value.includes('/')) {
+    throw new CliError(
+      `Invalid business canon format "${value}". Use "owner/repo" or "none" to skip.`,
+    );
+  }
+
+  return {
+    business: {
+      repo: value,
+      branch: 'main',
+      localDir: 'business',
+    },
+  };
+}
+
+async function resolveBusinessCanon(
+  options: InitOptions,
+  logger: Logger,
+): Promise<CanonsConfig | undefined> {
+  // CLI flag takes priority
+  if (options.businessCanon) {
+    return parseBusinessCanonOption(options.businessCanon);
+  }
+
+  // --yes without --business-canon: mandatory error
+  if (options.yes) {
+    throw new CliError(
+      '--business-canon is required with --yes. Use --business-canon owner/repo or --business-canon none.',
+    );
+  }
+
+  // Interactive prompt
+  const repo = await promptText(
+    'Business architecture canon repo (owner/repo, empty to skip):',
+  );
+
+  if (!repo) {
+    logger.info('No business canon configured.');
+    return undefined;
+  }
+
+  if (!repo.includes('/')) {
+    throw new CliError(`Invalid format "${repo}". Use "owner/repo".`);
+  }
+
+  const branch = await promptText('Business canon branch:', 'main');
+
+  return {
+    business: {
+      repo,
+      branch: branch || 'main',
+      localDir: 'business',
+    },
+  };
+}
+
+// ────────────────────────────────────────────────────────────────
 // Shared inline stages used by both pipelines
 // ────────────────────────────────────────────────────────────────
 
@@ -312,6 +432,7 @@ function buildWorkspaceStages(
   return [
     buildPreflightStage(executor, logger),
     buildConfigStage(effectiveConfig, executor, logger, configExistedBefore, options.force),
+    buildGitHubAuthStage(effectiveConfig, logger, options),
     assistantSetupStage,
     canonSyncStage,
   ];
@@ -461,17 +582,18 @@ function buildFileOnlyPipeline(
     buildPreflightStage(executor, logger),                     // 1
     buildConfigStage(effectiveConfig, executor, logger,
       configExistedBefore, options.force),                     // 2
-    assistantSetupStage,                                       // 3
-    canonSyncStage,                                            // 4
-    repoScaffoldStage,                                         // 5
-    repoAnalysisFileOnlyStage,                                 // 6
-    ciSetupStage,                                              // 7
-    agentSkillsSetupStage,                                     // 8
+    buildGitHubAuthStage(effectiveConfig, logger, options),    // 3
+    assistantSetupStage,                                       // 4
+    canonSyncStage,                                            // 5
+    repoScaffoldStage,                                         // 6
+    repoAnalysisFileOnlyStage,                                 // 7
+    ciSetupStage,                                              // 8
+    agentSkillsSetupStage,                                     // 9
   ];
 }
 
 // ────────────────────────────────────────────────────────────────
-// Indexed pipeline (14 stages)
+// Indexed pipeline (15 stages)
 // ────────────────────────────────────────────────────────────────
 
 function buildIndexedPipeline(
@@ -487,12 +609,13 @@ function buildIndexedPipeline(
     buildPreflightStage(executor, logger),                     // 1
     buildConfigStage(effectiveConfig, executor, logger,
       configExistedBefore, options.force),                     // 2
-    assistantSetupStage,                                       // 3
-    canonSyncStage,                                            // 4
-    repoScaffoldStage,                                         // 5
-    repoAnalysisStage,                                         // 6
-    ciSetupStage,                                              // 7
-    agentSkillsSetupStage,                                     // 8
+    buildGitHubAuthStage(effectiveConfig, logger, options),    // 3
+    assistantSetupStage,                                       // 4
+    canonSyncStage,                                            // 5
+    repoScaffoldStage,                                         // 6
+    repoAnalysisStage,                                         // 7
+    ciSetupStage,                                              // 8
+    agentSkillsSetupStage,                                     // 9
 
     // Phase B — Infrastructure + Phase C — Ingestion  (9-14)
     ...buildInfraStages(effectiveConfig, executor, logger, options, composeMode),
@@ -581,6 +704,8 @@ export function registerInitCommand(program: Command): void {
     .option('--skip-analysis', 'Skip AI-powered repository analysis stage')
     .option('--skip-ci', 'Skip CI workflow generation')
     .option('--providers <list>', 'Comma-separated AI provider list (codex,claude,gemini,copilot)')
+    .option('--business-canon <owner/repo>', 'Business canon repo (owner/repo or "none" to skip)')
+    .option('--github-token <token>', 'GitHub token for non-interactive mode')
     .option('--timeout-ms <ms>', 'Per-check timeout in milliseconds', '5000')
     .option('--retries <count>', 'Health check retries', '15')
     .option('--retry-delay-ms <ms>', 'Delay between retries in milliseconds', '2000')
@@ -630,6 +755,12 @@ Examples:
         ...context.config,
         mode: preserveExisting ? context.config.mode : selections.mode,
       };
+
+      // ── Step 2: Business canon configuration ──────────────────
+      const canons = await resolveBusinessCanon(options, context.logger);
+      if (canons) {
+        effectiveConfig.canons = canons;
+      }
 
       const stageOptions: Record<string, unknown> = {
         yes: options.yes,

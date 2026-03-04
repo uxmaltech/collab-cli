@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { isWorkspaceMode, resolveRepoConfigs } from '../lib/config';
+import { isBusinessCanonConfigured } from '../lib/canon-resolver';
 import type { OrchestrationStage, StageContext } from '../lib/orchestrator';
 
 /** Container name for the MCP service — matches the compose template. */
@@ -40,6 +41,14 @@ function collectAllArchitectureFiles(ctx: StageContext): string[] {
   }
 
   const files = [...collectMarkdownFiles(ctx.config.uxmaltechDir)];
+
+  // Business canon
+  if (isBusinessCanonConfigured(ctx.config)) {
+    const localDir = ctx.config.canons?.business?.localDir ?? 'business';
+    const businessDir = path.join(ctx.config.architectureDir, localDir);
+    files.push(...collectMarkdownFiles(businessDir));
+  }
+
   for (const rc of resolveRepoConfigs(ctx.config)) {
     files.push(...collectMarkdownFiles(rc.architectureRepoDir));
   }

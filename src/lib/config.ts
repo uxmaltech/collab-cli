@@ -14,6 +14,19 @@ export interface WorkspaceConfig {
   repos: string[];
 }
 
+export interface CanonConfig {
+  /** GitHub repo slug: "owner/repo" */
+  repo: string;
+  /** Branch to track */
+  branch: string;
+  /** Local copy directory name under docs/architecture/ */
+  localDir: string;
+}
+
+export interface CanonsConfig {
+  business?: CanonConfig;
+}
+
 export interface RepoConfig {
   name: string;
   repoDir: string;
@@ -35,6 +48,7 @@ export interface CollabConfig {
   aiDir: string;
   assistants?: AssistantsConfig;
   workspace?: WorkspaceConfig;
+  canons?: CanonsConfig;
 }
 
 interface RawCollabConfig {
@@ -44,6 +58,7 @@ interface RawCollabConfig {
   architectureDir?: string;
   assistants?: AssistantsConfig;
   workspace?: WorkspaceConfig;
+  canons?: CanonsConfig;
 }
 
 const DEFAULT_COMPOSE_PATHS: ComposePathConfig = {
@@ -105,6 +120,7 @@ export function loadCollabConfig(cwd = process.cwd()): CollabConfig {
     aiDir: path.join(defaults.workspaceDir, 'docs', 'ai'),
     assistants: raw.assistants,
     workspace: raw.workspace,
+    canons: raw.canons,
   };
 }
 
@@ -125,6 +141,10 @@ export function serializeUserConfig(config: CollabConfig): string {
 
   if (config.workspace) {
     data.workspace = config.workspace;
+  }
+
+  if (config.canons) {
+    data.canons = config.canons;
   }
 
   return JSON.stringify(data, null, 2);

@@ -44,7 +44,7 @@ test('init --yes defaults to file-only mode and stores it in config', () => {
   // Isolate COLLAB_HOME to avoid git lock conflicts with parallel tests.
   env.COLLAB_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'collab-home-'));
 
-  const result = runCli(['--cwd', workspace, 'init', '--yes', '--skip-analysis'], {
+  const result = runCli(['--cwd', workspace, 'init', '--yes', '--business-canon', 'none', '--skip-analysis'], {
     cwd: workspace,
     env,
   });
@@ -64,7 +64,7 @@ test('init preserves existing config without --force', () => {
   env.COLLAB_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'collab-home-'));
   const configPath = writeExistingConfig(workspace, 'indexed');
 
-  const result = runCli(['--cwd', workspace, 'init', '--yes', '--mode', 'file-only', '--skip-analysis'], {
+  const result = runCli(['--cwd', workspace, 'init', '--yes', '--business-canon', 'none', '--mode', 'file-only', '--skip-analysis'], {
     cwd: workspace,
     env,
   });
@@ -82,7 +82,7 @@ test('init overwrites existing config with --force', () => {
   env.COLLAB_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'collab-home-'));
   const configPath = writeExistingConfig(workspace, 'indexed');
 
-  const result = runCli(['--cwd', workspace, 'init', '--yes', '--mode', 'file-only', '--force', '--skip-analysis'], {
+  const result = runCli(['--cwd', workspace, 'init', '--yes', '--business-canon', 'none', '--mode', 'file-only', '--force', '--skip-analysis'], {
     cwd: workspace,
     env,
   });
@@ -97,7 +97,7 @@ test('init with mode=file-only does not contain infra or MCP stages', () => {
   const workspace = makeTempWorkspace();
   const env = createFakeDockerEnv();
 
-  const result = runCli(['--cwd', workspace, 'init', '--yes', '--mode', 'file-only', '--dry-run'], {
+  const result = runCli(['--cwd', workspace, 'init', '--yes', '--business-canon', 'none', '--mode', 'file-only', '--dry-run'], {
     cwd: workspace,
     env,
   });

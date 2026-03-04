@@ -30,7 +30,7 @@ test('init --repos runs workspace mode with per-repo stages (dry-run)', () => {
   const env = createFakeDockerEnv();
 
   const result = runCli(
-    ['--cwd', workspace, '--dry-run', 'init', '--yes', '--repos', 'api,web', '--mode', 'file-only'],
+    ['--cwd', workspace, '--dry-run', 'init', '--yes', '--business-canon', 'none', '--repos', 'api,web', '--mode', 'file-only'],
     { cwd: workspace, env },
   );
 
@@ -55,7 +55,7 @@ test('init --repos indexed workspace has infra phase (dry-run)', () => {
   const env = createFakeDockerEnv();
 
   const result = runCli(
-    ['--cwd', workspace, '--dry-run', 'init', '--yes', '--repos', 'svc1,svc2', '--mode', 'indexed'],
+    ['--cwd', workspace, '--dry-run', 'init', '--yes', '--business-canon', 'none', '--repos', 'svc1,svc2', '--mode', 'indexed'],
     { cwd: workspace, env },
   );
 
@@ -73,7 +73,7 @@ test('init auto-discovers workspace when cwd has multiple git repos (dry-run)', 
 
   // No --repos flag, but workspace root has no .git and 2 child repos
   const result = runCli(
-    ['--cwd', workspace, '--dry-run', 'init', '--yes', '--mode', 'file-only'],
+    ['--cwd', workspace, '--dry-run', 'init', '--yes', '--business-canon', 'none', '--mode', 'file-only'],
     { cwd: workspace, env },
   );
 
@@ -92,7 +92,7 @@ test('init single-repo mode unchanged when cwd has .git (dry-run)', () => {
   fs.mkdirSync(path.join(workspace, '.git'), { recursive: true });
 
   const result = runCli(
-    ['--cwd', workspace, '--dry-run', 'init', '--yes', '--mode', 'file-only'],
+    ['--cwd', workspace, '--dry-run', 'init', '--yes', '--business-canon', 'none', '--mode', 'file-only'],
     { cwd: workspace, env },
   );
 
@@ -110,7 +110,7 @@ test('workspace config is persisted in .collab/config.json (dry-run)', () => {
   const env = createFakeDockerEnv();
 
   const result = runCli(
-    ['--cwd', workspace, '--dry-run', 'init', '--yes', '--repos', 'fe,be', '--mode', 'file-only'],
+    ['--cwd', workspace, '--dry-run', 'init', '--yes', '--business-canon', 'none', '--repos', 'fe,be', '--mode', 'file-only'],
     { cwd: workspace, env },
   );
 
