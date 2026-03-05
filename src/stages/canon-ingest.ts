@@ -177,7 +177,7 @@ async function ingestInBatches(
   };
 }
 
-async function ingestCanonFiles(ctx: StageContext): Promise<void> {
+export async function ingestCanonFiles(ctx: StageContext): Promise<void> {
   const baseUrl = getMcpBaseUrl(ctx.config);
   const env = loadRuntimeEnv(ctx.config);
   const apiKey = resolveMcpApiKey(env);
