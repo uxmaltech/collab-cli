@@ -6,9 +6,13 @@ on:
       - main
     tags-ignore:
       - "**"
+  # Allow promote-main-ff to trigger this via gh workflow run.
+  # GITHUB_TOKEN pushes don't fire on:push, but CAN fire workflow_dispatch.
+  workflow_dispatch:
 
 permissions:
   contents: write
+  actions: write
 
 concurrency:
   group: auto-release
@@ -16,17 +20,21 @@ concurrency:
 
 jobs:
   release:
-    # Skip version-bump commits to avoid infinite loops
-    if: "!startsWith(github.event.head_commit.message, 'chore(release):')"
+    # Skip version-bump commits to avoid infinite loops.
+    # For workflow_dispatch, head_commit is null — always run.
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      !startsWith(github.event.head_commit.message, 'chore(release):')
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          ref: main
           fetch-depth: 0
-          # Use default GITHUB_TOKEN — must be able to push to main & development
-          token: ${{ secrets.GITHUB_TOKEN }}
+          # Use RELEASE_PAT to bypass branch protection on main
+          token: ${{ secrets.RELEASE_PAT }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -82,6 +90,15 @@ jobs:
           new="${{ steps.version.outputs.new }}"
           git tag "v${new}"
           git push origin "v${new}"
+
+      - name: Trigger release workflow
+        # GITHUB_TOKEN tag pushes don't trigger on:push workflows.
+        # Use workflow_dispatch to chain to the release pipeline.
+        run: |
+          new="${{ steps.version.outputs.new }}"
+          gh workflow run release.yml --ref "v${new}"
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
 
       - name: Sync version to development
         # Fast-forward development to include the version bump.

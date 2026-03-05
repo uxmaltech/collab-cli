@@ -69,6 +69,7 @@
 - `src/lib/update-checker.ts`: daily npm update check with 24h cache and notification banner.
 - `src/lib/parsers.ts`: shared CLI option parsers (numbers, health options).
 - `src/lib/npm-operations.ts`: npm global install/uninstall with permission error handling.
+- `src/lib/docker-status.ts`: container status parsing, health merging, and formatted status table rendering.
 - `src/lib/credentials.ts`: credential management.
 - `src/lib/ai-client.ts`: provider-agnostic AI client.
 - `src/lib/model-registry.ts`: AI model definitions and registry.
