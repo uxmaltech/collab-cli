@@ -9,7 +9,7 @@ import type { Executor } from './executor';
 import { sha256 } from './hash';
 import type { Logger } from './logger';
 import { loadState, saveState, toStateKey } from './state';
-import { COMPOSE_ENV_DEFAULTS } from './compose-defaults';
+import { COMPOSE_ENV_DEFAULTS, scopedComposeDefaults } from './compose-defaults';
 import { consolidatedTemplate } from '../templates/consolidated';
 import { infraTemplate } from '../templates/infra';
 import { mcpTemplate } from '../templates/mcp';
@@ -121,7 +121,10 @@ function computeEnvOverrides(config: CollabConfig): EnvMap {
 export function generateComposeFiles(options: ComposeGenerationOptions): ComposeGenerationResult {
   const envFilePath = resolveEnvFilePath(options.config, options.envFile);
   const overrides = computeEnvOverrides(options.config);
-  const env = ensureComposeEnvFile(envFilePath, options.logger, options.executor, overrides);
+  const defaults = options.config.workspace?.name
+    ? scopedComposeDefaults(options.config.workspace.name)
+    : COMPOSE_ENV_DEFAULTS;
+  const env = ensureComposeEnvFile(envFilePath, options.logger, options.executor, overrides, defaults);
 
   const rendered = renderContent(options.mode);
   const files = assignOutputPaths(

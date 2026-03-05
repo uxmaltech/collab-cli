@@ -55,6 +55,7 @@ Examples:
         files: [composeFile],
         arguments: ['ps'],
         cwd: context.config.workspaceDir,
+        projectName: context.config.compose.projectName,
       });
 
       context.logger.result(
