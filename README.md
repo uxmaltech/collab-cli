@@ -29,11 +29,16 @@ graph TD
     style APP fill:#e8f4f8,stroke:#4a9eff
 ```
 
-| Repositorio | Rol | Relación con este repo |
-|-------------|-----|----------------------|
-| **`collab-cli`** | **Orquestador CLI** | **Este repo — interfaz de usuario que orquesta todo** |
-| [`collab-architecture`](https://github.com/uxmaltech/collab-architecture) | Fuente de verdad | Provee reglas, patrones y decisiones canónicas |
-| [`collab-architecture-mcp`](https://github.com/uxmaltech/collab-architecture-mcp) | Servidor MCP | Expone el canon como grafo + vectores a los agentes IA |
+| Repository | Role | Relation to this repo |
+|------------|------|----------------------|
+| [`collab-architecture`](https://github.com/uxmaltech/collab-architecture) | Framework canon | Framework-level rules, patterns, and governance |
+| [`collab-app-architecture`](https://github.com/uxmaltech/collab-app-architecture) | Application canon | Application-specific rules, patterns, and decisions |
+| **`collab-cli`** | **Orchestrator CLI** | **This repo — infrastructure CLI — canon sync, init, domain generation** |
+| [`collab-architecture-mcp`](https://github.com/uxmaltech/collab-architecture-mcp) | MCP server | NebulaGraph + Qdrant — indexes canon for AI agents |
+| [`collab-laravel-app`](https://github.com/uxmaltech/collab-laravel-app) | Host application | Laravel app that installs the ecosystem packages |
+| [`collab-chat-ai-pkg`](https://github.com/uxmaltech/collab-chat-ai-pkg) | AI Chat package | Chat UI and prompt admin |
+| [`collab-core-pkg`](https://github.com/uxmaltech/collab-core-pkg) | Issue orchestration | AI agent pipeline for issue creation |
+| [`collab-project-manager-pkg`](https://github.com/uxmaltech/collab-project-manager-pkg) | Project manager | Project management functionality |
 
 ## Requisitos previos
 
