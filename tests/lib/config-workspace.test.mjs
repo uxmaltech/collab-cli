@@ -208,6 +208,54 @@ test('loadCollabConfig preserves full workspace config with name/type', () => {
   assert.equal(config.compose.projectName, 'collab-analytics');
 });
 
+test('loadCollabConfig backfills compose.projectName from migrated workspace', () => {
+  const workspace = makeTempWorkspace();
+  const collabDir = path.join(workspace, '.collab');
+  fs.mkdirSync(collabDir, { recursive: true });
+
+  // Old format: workspace repos but no compose.projectName
+  const oldConfig = { mode: 'file-only', workspace: { repos: ['api', 'web'] }, compose: {} };
+  fs.writeFileSync(path.join(collabDir, 'config.json'), JSON.stringify(oldConfig));
+
+  const config = loadCollabConfig(workspace);
+
+  assert.ok(config.compose.projectName, 'projectName should be backfilled');
+  assert.ok(
+    config.compose.projectName.startsWith('collab-'),
+    `projectName should start with "collab-", got "${config.compose.projectName}"`,
+  );
+});
+
+test('loadCollabConfig handles invalid repos entries gracefully', () => {
+  const workspace = makeTempWorkspace();
+  const collabDir = path.join(workspace, '.collab');
+  fs.mkdirSync(collabDir, { recursive: true });
+
+  // Corrupt repos: contains non-string values
+  const badConfig = { mode: 'file-only', workspace: { repos: [42, null, 'valid'] }, compose: {} };
+  fs.writeFileSync(path.join(collabDir, 'config.json'), JSON.stringify(badConfig));
+
+  const config = loadCollabConfig(workspace);
+
+  assert.ok(config.workspace, 'workspace should be defined');
+  assert.deepEqual(config.workspace.repos, ['valid']);
+  assert.equal(config.workspace.type, 'mono-repo');
+});
+
+test('loadCollabConfig returns no workspace for empty repos array', () => {
+  const workspace = makeTempWorkspace();
+  const collabDir = path.join(workspace, '.collab');
+  fs.mkdirSync(collabDir, { recursive: true });
+
+  const emptyConfig = { mode: 'file-only', workspace: { repos: [] }, compose: {} };
+  fs.writeFileSync(path.join(collabDir, 'config.json'), JSON.stringify(emptyConfig));
+
+  const config = loadCollabConfig(workspace);
+
+  assert.equal(config.workspace, undefined, 'workspace should be undefined for empty repos');
+  assert.equal(config.compose.projectName, undefined, 'projectName should be undefined without workspace');
+});
+
 // ────────────────────────────────────────────────────────────────
 // scopedComposeDefaults
 // ────────────────────────────────────────────────────────────────

@@ -29,29 +29,43 @@ function isPortAvailable(port: number): Promise<boolean> {
 
 /**
  * Finds the next available port starting from `start`, incrementing by 1.
- * Tries up to 100 ports before giving up and returning the original.
+ * Skips ports already claimed in `reserved` to avoid collisions when
+ * multiple services are resolved in the same run.
+ * Throws if no port is found within 100 attempts.
  */
-async function findAvailablePort(start: number): Promise<number> {
+async function findAvailablePort(
+  start: number,
+  reserved: Set<number>,
+): Promise<number> {
   for (let port = start; port < start + 100; port++) {
+    if (reserved.has(port)) continue;
     if (await isPortAvailable(port)) {
       return port;
     }
   }
-  return start;
+  throw new Error(
+    `No available port found in range ${start}–${start + 99}`,
+  );
 }
 
 /**
  * Resolves available ports for Qdrant, NebulaGraph, and MCP.
  * If default ports are in use, automatically increments to find free ones.
+ * Ports are resolved sequentially to avoid assigning the same port to
+ * multiple services.
  */
 export async function resolveAvailablePorts(
   defaults: PortDefaults = DEFAULT_PORTS,
 ): Promise<PortDefaults> {
-  const [qdrant, nebula, mcp] = await Promise.all([
-    findAvailablePort(defaults.qdrant),
-    findAvailablePort(defaults.nebula),
-    findAvailablePort(defaults.mcp),
-  ]);
+  const reserved = new Set<number>();
+
+  const qdrant = await findAvailablePort(defaults.qdrant, reserved);
+  reserved.add(qdrant);
+
+  const nebula = await findAvailablePort(defaults.nebula, reserved);
+  reserved.add(nebula);
+
+  const mcp = await findAvailablePort(defaults.mcp, reserved);
 
   return { qdrant, nebula, mcp };
 }

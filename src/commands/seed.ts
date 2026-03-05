@@ -44,7 +44,10 @@ Examples:
       }
 
       if (isDryRun) {
-        context.logger.command(['docker', 'compose', '-f', composeFile, 'ps']);
+        const projectArgs = context.config.compose.projectName
+          ? ['-p', context.config.compose.projectName]
+          : [];
+        context.logger.command(['docker', 'compose', ...projectArgs, '-f', composeFile, 'ps']);
         context.logger.result('Seed preflight command rendered (dry-run).');
         return;
       }

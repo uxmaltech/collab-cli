@@ -401,11 +401,12 @@ async function resolveWorkspace(
 ): Promise<WorkspaceResolution | null> {
   const name = deriveWorkspaceName(workspaceDir);
 
-  // Explicit --repos flag takes priority → always multi-repo
+  // Explicit --repos flag takes priority
   const explicit = parseRepos(options.repos);
   if (explicit && explicit.length > 0) {
+    const type = explicit.length >= 2 ? 'multi-repo' : 'mono-repo';
     logger.info(`Workspace mode: ${explicit.length} repo(s) specified: ${explicit.join(', ')}`);
-    return { name, type: 'multi-repo', repos: explicit };
+    return { name, type, repos: explicit };
   }
 
   // Auto-detect workspace layout
@@ -965,11 +966,16 @@ Examples:
       };
 
       // ── Workspace detection ───────────────────────────────────
-      const ws = await resolveWorkspace(
-        context.config.workspaceDir,
-        options,
-        context.logger,
-      );
+      // Prefer persisted workspace config when it exists (unless
+      // --force or explicit --repos override is provided).
+      const ws =
+        !options.force && !options.repos && context.config.workspace
+          ? context.config.workspace
+          : await resolveWorkspace(
+              context.config.workspaceDir,
+              options,
+              context.logger,
+            );
 
       if (ws) {
         // ── WORKSPACE MODE ────────────────────────────────────

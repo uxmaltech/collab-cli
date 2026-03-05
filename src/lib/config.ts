@@ -121,6 +121,8 @@ export function loadCollabConfig(cwd = process.cwd()): CollabConfig {
     ? path.resolve(defaults.workspaceDir, raw.architectureDir)
     : defaults.architectureDir;
 
+  const workspace = migrateWorkspaceConfig(raw.workspace, defaults.workspaceDir);
+
   return {
     ...defaults,
     mode: parseMode(raw.mode, defaults.mode),
@@ -129,14 +131,14 @@ export function loadCollabConfig(cwd = process.cwd()): CollabConfig {
       consolidatedFile: raw.compose?.consolidatedFile ?? defaults.compose.consolidatedFile,
       infraFile: raw.compose?.infraFile ?? defaults.compose.infraFile,
       mcpFile: raw.compose?.mcpFile ?? defaults.compose.mcpFile,
-      projectName: raw.compose?.projectName,
+      projectName: raw.compose?.projectName ?? (workspace ? `collab-${workspace.name}` : undefined),
     },
     architectureDir,
     uxmaltechDir: path.join(architectureDir, 'uxmaltech'),
     repoDir: path.join(architectureDir, 'repo'),
     aiDir: path.join(defaults.workspaceDir, 'docs', 'ai'),
     assistants: raw.assistants,
-    workspace: migrateWorkspaceConfig(raw.workspace, defaults.workspaceDir),
+    workspace,
     canons: raw.canons,
   };
 }
@@ -276,13 +278,18 @@ function migrateWorkspaceConfig(
   raw: RawWorkspaceConfig | undefined,
   workspaceDir: string,
 ): WorkspaceConfig | undefined {
-  if (!raw || !raw.repos || raw.repos.length === 0) {
+  if (!raw || !Array.isArray(raw.repos)) {
+    return undefined;
+  }
+
+  const repos = raw.repos.filter((r): r is string => typeof r === 'string' && r.length > 0);
+  if (repos.length === 0) {
     return undefined;
   }
 
   return {
     name: raw.name || deriveWorkspaceName(workspaceDir),
-    type: raw.type || (raw.repos.length >= 2 ? 'multi-repo' : 'mono-repo'),
-    repos: raw.repos,
+    type: raw.type || (repos.length >= 2 ? 'multi-repo' : 'mono-repo'),
+    repos,
   };
 }
