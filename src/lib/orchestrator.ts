@@ -38,6 +38,28 @@ export interface OrchestratorOptions {
   stageOptions?: Record<string, unknown>;
 }
 
+/**
+ * Inspects stderr for well-known platform-specific errors and returns
+ * additional recovery hints that are appended to the stage's recovery list.
+ */
+function detectPlatformHints(stderr: string | undefined): string[] {
+  if (!stderr) return [];
+
+  const hints: string[] = [];
+
+  // macOS: Docker credential helper cannot access the keychain
+  if (
+    process.platform === 'darwin' &&
+    /keychain.*cannot be accessed|error getting credentials/i.test(stderr)
+  ) {
+    hints.push(
+      'macOS keychain is locked. Run: security unlock-keychain ~/Library/Keychains/login.keychain-db',
+    );
+  }
+
+  return hints;
+}
+
 function formatFailure(failure: WorkflowFailureState): string {
   const lines: string[] = [];
   lines.push(`Stage '${failure.stage}' failed.`);
@@ -54,10 +76,13 @@ function formatFailure(failure: WorkflowFailureState): string {
     lines.push(failure.stderr.trim());
   }
 
-  if (failure.recovery.length > 0) {
+  const platformHints = detectPlatformHints(failure.stderr);
+  const allRecovery = [...failure.recovery, ...platformHints];
+
+  if (allRecovery.length > 0) {
     lines.push('');
     lines.push('Recovery actions:');
-    for (const step of failure.recovery) {
+    for (const step of allRecovery) {
       lines.push(`- ${step}`);
     }
   }
