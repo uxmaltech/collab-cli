@@ -33,8 +33,8 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
-          # Use default GITHUB_TOKEN — must be able to push to main & development
-          token: ${{ secrets.GITHUB_TOKEN }}
+          # Use RELEASE_PAT to bypass branch protection on main
+          token: ${{ secrets.RELEASE_PAT }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -98,7 +98,7 @@ jobs:
           new="${{ steps.version.outputs.new }}"
           gh workflow run release.yml --ref "v${new}"
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
 
       - name: Sync version to development
         # Fast-forward development to include the version bump.
