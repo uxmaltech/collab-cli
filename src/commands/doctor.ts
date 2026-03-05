@@ -3,8 +3,10 @@ import fs from 'node:fs';
 import { Command } from 'commander';
 
 import { createCommandContext } from '../lib/command-context';
+import { COMPOSE_ENV_DEFAULTS } from '../lib/compose-defaults';
 import { getComposeFilePaths } from '../lib/compose-paths';
 import { validateComposeFiles } from '../lib/compose-validator';
+import { checkDockerDaemon, checkDockerImages } from '../lib/docker-checks';
 import { checkEcosystemCompatibility } from '../lib/ecosystem';
 import { CliError } from '../lib/errors';
 import { loadRuntimeEnv, waitForInfraHealth, waitForMcpHealth } from '../lib/service-health';
@@ -56,6 +58,32 @@ Examples:
           fix: item.fix,
         })),
       );
+
+      // ── Docker daemon check ───────────────────────────────
+      const daemonResult = checkDockerDaemon(context.executor);
+      checks.push({
+        id: 'docker:daemon',
+        ok: daemonResult.ok,
+        detail: daemonResult.ok
+          ? `Docker daemon v${daemonResult.version}`
+          : (daemonResult.error ?? 'Docker daemon unavailable'),
+        fix: 'Start Docker Desktop or run: sudo systemctl start docker',
+      });
+
+      // ── Docker image checks ────────────────────────────────
+      const imagesToCheck = [
+        COMPOSE_ENV_DEFAULTS.MCP_IMAGE,
+        COMPOSE_ENV_DEFAULTS.QDRANT_IMAGE,
+      ];
+      const imageResults = checkDockerImages(context.executor, imagesToCheck);
+      for (const img of imageResults) {
+        checks.push({
+          id: `docker:image:${img.image.split('/').pop()?.split(':')[0] ?? img.image}`,
+          ok: img.ok,
+          detail: img.ok ? `${img.image} available locally` : (img.error ?? `${img.image} not found`),
+          fix: `Pull with: docker pull ${img.image}`,
+        });
+      }
 
       const envFileExists = fs.existsSync(context.config.envFile);
       checks.push({
@@ -133,6 +161,7 @@ Examples:
 
       process.stdout.write(`node: ${process.version}\n`);
       process.stdout.write(`platform: ${process.platform}/${process.arch}\n`);
+      process.stdout.write(`docker: ${daemonResult.version ?? 'not available'}\n`);
       for (const check of checks) {
         printCheck(check);
       }
