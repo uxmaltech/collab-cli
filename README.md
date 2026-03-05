@@ -34,6 +34,9 @@ graph TD
 | **`collab-cli`** | **Orchestrator CLI** | **This repo — user interface that orchestrates everything** |
 | [`collab-architecture`](https://github.com/uxmaltech/collab-architecture) | Source of truth | Provides canonical rules, patterns, and decisions |
 | [`collab-architecture-mcp`](https://github.com/uxmaltech/collab-architecture-mcp) | MCP server | Exposes the canon as graph + vectors to AI agents |
+| [`collab-laravel-app`](https://github.com/uxmaltech/collab-laravel-app) | Host application | Laravel app managed by this CLI |
+| [`collab-core-pkg`](https://github.com/uxmaltech/collab-core-pkg) | Issue orchestration | AI agent pipeline for issue creation |
+| [`collab-project-manager-pkg`](https://github.com/uxmaltech/collab-project-manager-pkg) | Project manager | Project management package |
 
 ## Prerequisites
 
