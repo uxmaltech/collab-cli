@@ -10,7 +10,11 @@ import {
   syncCanons,
   syncBusinessCanon,
 } from '../lib/canon-resolver';
+import { CliError } from '../lib/errors';
 import { loadGitHubAuth } from '../lib/github-auth';
+
+/** Git log format used to display the latest commit info after sync. */
+const COMMIT_FORMAT = '%h (%ci)';
 
 export function registerUpdateCanonsCommand(program: Command): void {
   program
@@ -20,22 +24,21 @@ export function registerUpdateCanonsCommand(program: Command): void {
       const context = createCommandContext(command);
 
       // ── Framework canon ──────────────────────────────────────
-      const ok = syncCanons();
+      const ok = syncCanons((msg) => context.logger.info(msg));
       if (!ok) {
-        process.exitCode = 1;
-        return;
+        throw new CliError('Failed to sync framework canon.');
       }
 
       const canonsDir = getCanonsBaseDir();
       try {
         const commitInfo = execFileSync(
           'git',
-          ['-C', canonsDir, 'log', '-1', '--format=%h (%ci)'],
+          ['-C', canonsDir, 'log', '-1', `--format=${COMMIT_FORMAT}`],
           { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
         ).trim();
-        console.log(`Framework canon up to date: ${commitInfo}`);
+        context.logger.info(`Framework canon up to date: ${commitInfo}`);
       } catch {
-        console.log('Framework canon updated successfully.');
+        context.logger.info('Framework canon updated successfully.');
       }
 
       // ── Business canon ───────────────────────────────────────
@@ -43,23 +46,21 @@ export function registerUpdateCanonsCommand(program: Command): void {
         const auth = loadGitHubAuth(context.config.collabDir);
         const token = auth?.token;
 
-        const bizOk = syncBusinessCanon(context.config, undefined, token);
+        const bizOk = syncBusinessCanon(context.config, (msg) => context.logger.info(msg), token);
         if (!bizOk) {
-          console.error('Failed to sync business canon.');
-          process.exitCode = 1;
-          return;
+          throw new CliError('Failed to sync business canon.');
         }
 
         const bizDir = getBusinessCanonDir(context.config);
         try {
           const bizCommitInfo = execFileSync(
             'git',
-            ['-C', bizDir, 'log', '-1', '--format=%h (%ci)'],
+            ['-C', bizDir, 'log', '-1', `--format=${COMMIT_FORMAT}`],
             { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
           ).trim();
-          console.log(`Business canon up to date: ${bizCommitInfo}`);
+          context.logger.info(`Business canon up to date: ${bizCommitInfo}`);
         } catch {
-          console.log('Business canon updated successfully.');
+          context.logger.info('Business canon updated successfully.');
         }
       }
     });

@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import type { CollabConfig } from './config';
+import type { ServiceHealthOptions } from './service-health';
 
 export type ComposeMode = 'consolidated' | 'split';
 
@@ -13,7 +14,23 @@ export interface ComposeFilePaths {
 
 export interface ComposeSelection {
   file: string;
-  source: 'consolidated' | 'split';
+  source: ComposeMode;
+}
+
+/**
+ * Shared selection shape used by infra and MCP compose commands.
+ * Contains the resolved file path and topology source.
+ */
+export interface ComposeServiceSelection {
+  filePath: string;
+  source: ComposeMode;
+}
+
+/**
+ * Shared run options for compose service commands (infra/MCP).
+ */
+export interface ComposeRunOptions {
+  health?: ServiceHealthOptions;
 }
 
 export function getComposeFilePaths(config: CollabConfig, outputDirectory?: string): ComposeFilePaths {

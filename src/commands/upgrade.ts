@@ -1,13 +1,11 @@
-import { execFileSync } from 'node:child_process';
-
 import type { Command } from 'commander';
+import semver from 'semver';
 
-import { green, red, yellow, CHECK, CROSS } from '../lib/ansi';
-import { resolveCommandPath } from '../lib/shell';
+import { green, yellow, CHECK } from '../lib/ansi';
+import { CliError } from '../lib/errors';
+import { requireNpm, npmGlobalInstall } from '../lib/npm-operations';
 import { fetchLatestVersion, checkForUpdate } from '../lib/update-checker';
 import { readCliVersion } from '../lib/version';
-
-import semver from 'semver';
 
 interface UpgradeOptions {
   check?: boolean;
@@ -35,17 +33,13 @@ Examples:
       const latestVersion = await fetchLatestVersion();
 
       if (!latestVersion) {
-        process.stderr.write(red(`${CROSS} Unable to reach npm registry. Check your internet connection.\n`));
-        process.exitCode = 1;
-        return;
+        throw new CliError('Unable to reach npm registry. Check your internet connection.');
       }
 
       const updateAvailable = semver.gt(latestVersion, currentVersion);
 
       if (!updateAvailable) {
         process.stdout.write(green(`${CHECK} collab-cli is up to date (v${currentVersion})\n`));
-
-        // Persist state so the daily check won't re-query unnecessarily
         await checkForUpdate();
         return;
       }
@@ -58,37 +52,18 @@ Examples:
       }
 
       // ── Perform the upgrade ────────────────────────────────────
-      const npmPath = resolveCommandPath('npm');
+      const npmPath = requireNpm();
       if (!npmPath) {
-        process.stderr.write(red(`${CROSS} npm not found in PATH. Install Node.js/npm first.\n`));
-        process.exitCode = 1;
-        return;
+        throw new CliError('npm not found in PATH. Install Node.js/npm first.');
       }
 
       process.stdout.write(`Upgrading collab-cli: ${currentVersion} → ${latestVersion}...\n`);
 
-      try {
-        execFileSync(npmPath, ['install', '-g', `@uxmaltech/collab-cli@${latestVersion}`], {
-          stdio: 'inherit',
-          timeout: 60_000,
-        });
-      } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : String(error);
-        if (/EACCES|permission denied/i.test(message)) {
-          process.stderr.write(
-            red(`${CROSS} Permission denied. Try:\n`) +
-            `  sudo npm install -g @uxmaltech/collab-cli@${latestVersion}\n`,
-          );
-        } else {
-          process.stderr.write(red(`${CROSS} Upgrade failed: ${message}\n`));
-        }
-        process.exitCode = 1;
-        return;
+      if (!npmGlobalInstall(npmPath, latestVersion)) {
+        throw new CliError('Upgrade failed.');
       }
 
       process.stdout.write(green(`${CHECK} Successfully upgraded to v${latestVersion}\n`));
-
-      // Update the check state so the daily banner won't fire
       await checkForUpdate();
     });
 }

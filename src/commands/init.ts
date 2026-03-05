@@ -19,6 +19,7 @@ import { checkEcosystemCompatibility } from '../lib/ecosystem';
 import { generateComposeFiles } from '../lib/compose-renderer';
 import { CliError } from '../lib/errors';
 import { parseMode, type CollabMode } from '../lib/mode';
+import { parseNumber } from '../lib/parsers';
 import { runOrchestration, runPerRepoOrchestration, type OrchestrationStage } from '../lib/orchestrator';
 import { loadGitHubAuth, isGitHubAuthValid, runGitHubDeviceFlow, storeGitHubToken } from '../lib/github-auth';
 import { promptChoice, promptMultiSelect, promptText } from '../lib/prompt';
@@ -80,14 +81,7 @@ function parseComposeMode(value: string | undefined, fallback: ComposeMode = 'co
   throw new CliError(`Invalid compose mode '${value}'. Use 'consolidated' or 'split'.`);
 }
 
-function toNumber(value: string | undefined, fallback: number): number {
-  if (!value) {
-    return fallback;
-  }
-
-  const parsed = Number.parseInt(value, 10);
-  return Number.isNaN(parsed) ? fallback : parsed;
-}
+// Use parseNumber from lib/parsers instead of local toNumber
 
 function inferComposeMode(config: CollabConfig): ComposeMode {
   const infraPath = path.resolve(config.workspaceDir, config.compose.infraFile);
@@ -490,9 +484,9 @@ function buildInfraStages(
   composeMode: ComposeMode,
 ): OrchestrationStage[] {
   const health = {
-    timeoutMs: toNumber(options.timeoutMs, 5_000),
-    retries: toNumber(options.retries, 15),
-    retryDelayMs: toNumber(options.retryDelayMs, 2_000),
+    timeoutMs: parseNumber(options.timeoutMs, 5_000),
+    retries: parseNumber(options.retries, 15),
+    retryDelayMs: parseNumber(options.retryDelayMs, 2_000),
   };
 
   return [

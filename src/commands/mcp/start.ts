@@ -2,7 +2,7 @@ import { Command } from 'commander';
 
 import { createCommandContext } from '../../lib/command-context';
 import { checkEcosystemCompatibility } from '../../lib/ecosystem';
-import { CliError } from '../../lib/errors';
+import { parsePositiveInt } from '../../lib/parsers';
 import type { ServiceHealthOptions } from '../../lib/service-health';
 import { resolveMcpComposeFile, runMcpCompose } from './shared';
 
@@ -14,24 +14,11 @@ interface McpCommandOptions {
   retryDelayMs?: string;
 }
 
-function toPositiveInt(flagName: string, value: string | undefined, fallback: number): number {
-  if (value === undefined) {
-    return fallback;
-  }
-
-  const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed <= 0) {
-    throw new CliError(`${flagName} must be a positive integer.`);
-  }
-
-  return parsed;
-}
-
 function healthOptions(options: McpCommandOptions): ServiceHealthOptions {
   return {
-    timeoutMs: toPositiveInt('--timeout-ms', options.timeoutMs, 5_000),
-    retries: toPositiveInt('--retries', options.retries, 15),
-    retryDelayMs: toPositiveInt('--retry-delay-ms', options.retryDelayMs, 2_000),
+    timeoutMs: parsePositiveInt('--timeout-ms', options.timeoutMs, 5_000),
+    retries: parsePositiveInt('--retries', options.retries, 15),
+    retryDelayMs: parsePositiveInt('--retry-delay-ms', options.retryDelayMs, 2_000),
   };
 }
 

@@ -24,6 +24,8 @@
 - `src/commands/seed.ts`: pre-seed readiness command.
 - `src/commands/doctor.ts`: diagnostics and compatibility report.
 - `src/commands/update-canons.ts`: download/update canon from GitHub.
+- `src/commands/upgrade.ts`: self-update to latest npm release.
+- `src/commands/uninstall.ts`: global npm uninstall with confirmation.
 
 ## Stages (init pipeline)
 - `src/stages/repo-analysis.ts`: AI-powered code analysis (indexed mode).
@@ -55,7 +57,7 @@
 - `src/lib/compose-validator.ts`: compose validation and error formatting.
 - `src/lib/compose-env.ts`: `.env` merge/preservation helper.
 - `src/lib/compose-defaults.ts`: default compose configuration values.
-- `src/lib/compose-paths.ts`: deterministic compose path resolution.
+- `src/lib/compose-paths.ts`: deterministic compose path resolution and shared compose types.
 - `src/lib/state.ts`: generated-file + workflow state management.
 - `src/lib/hash.ts`: content hashing for state detection.
 - `src/lib/prompt.ts`: wizard interaction prompts.
@@ -64,6 +66,9 @@
 - `src/lib/errors.ts`: typed error classes.
 - `src/lib/ansi.ts`: ANSI color/formatting utilities.
 - `src/lib/version.ts`: CLI version resolution.
+- `src/lib/update-checker.ts`: daily npm update check with 24h cache and notification banner.
+- `src/lib/parsers.ts`: shared CLI option parsers (numbers, health options).
+- `src/lib/npm-operations.ts`: npm global install/uninstall with permission error handling.
 - `src/lib/credentials.ts`: credential management.
 - `src/lib/ai-client.ts`: provider-agnostic AI client.
 - `src/lib/model-registry.ts`: AI model definitions and registry.
@@ -100,6 +105,8 @@
 - `uninstall.sh`: uninstall script.
 - `docs/release.md`: distribution channels, semver policy, release/pinning/rollback guidance.
 - `.github/workflows/release.yml`: tag-triggered validate/package/publish/release workflow.
+- `.github/workflows/auto-release.yml`: auto-release on merge to main.
+- `DEVELOPMENT.md`: git workflow, versioning, and CI/CD guide.
 
 ## Tests
 - `tests/compose/*`: template snapshots + parameter coverage + override/edge scenarios.

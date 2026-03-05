@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 
 import { createCommandContext } from '../../lib/command-context';
-import type { ServiceHealthOptions } from '../../lib/service-health';
+import { parseHealthOptions } from '../../lib/parsers';
 import { runInfraCompose, resolveInfraComposeFile } from './shared';
 
 interface InfraCommandOptions {
@@ -10,23 +10,6 @@ interface InfraCommandOptions {
   timeoutMs?: string;
   retries?: string;
   retryDelayMs?: string;
-}
-
-function toNumber(value: string | undefined, fallback: number): number {
-  if (!value) {
-    return fallback;
-  }
-
-  const parsed = Number.parseInt(value, 10);
-  return Number.isNaN(parsed) ? fallback : parsed;
-}
-
-function healthOptions(options: InfraCommandOptions): ServiceHealthOptions {
-  return {
-    timeoutMs: toNumber(options.timeoutMs, 5_000),
-    retries: toNumber(options.retries, 15),
-    retryDelayMs: toNumber(options.retryDelayMs, 2_000),
-  };
 }
 
 export function registerInfraUpCommand(program: Command): void {
@@ -57,7 +40,7 @@ Examples:
         selection,
         'up',
         {
-          health: healthOptions(options),
+          health: parseHealthOptions(options),
         },
       );
       context.logger.result(`Infrastructure started using ${selection.filePath}`);
