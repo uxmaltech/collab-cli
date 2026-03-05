@@ -1,10 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { getSnapshotIndexPaths } from '../lib/canon-index-targets';
 import type { OrchestrationStage, StageContext } from '../lib/orchestrator';
 
 /**
  * Recursively copies files from sourceDir into snapshotDir using the executor.
+ * Reads go through `fs` directly (the Executor API only wraps side-effect
+ * operations: commands, writes, mkdirs), writes go through `ctx.executor`.
  * Returns the number of files copied.
  */
 function snapshotDirectory(
@@ -34,18 +37,6 @@ function snapshotDirectory(
   return count;
 }
 
-/** Relative paths of index README files to snapshot. */
-const INDEX_FILES = [
-  'README.md',
-  'knowledge/README.md',
-  'knowledge/axioms/README.md',
-  'knowledge/decisions/README.md',
-  'knowledge/conventions/README.md',
-  'knowledge/anti-patterns/README.md',
-  'domains/README.md',
-  'contracts/README.md',
-];
-
 export const canonRebuildSnapshotStage: OrchestrationStage = {
   id: 'canon-rebuild-snapshot',
   title: 'Create pre-rebuild snapshot',
@@ -64,8 +55,9 @@ export const canonRebuildSnapshotStage: OrchestrationStage = {
 
     let totalFiles = 0;
 
-    // Snapshot index README files
-    for (const relPath of INDEX_FILES) {
+    // Snapshot index README files (derived from shared canon-index-targets)
+    const indexPaths = getSnapshotIndexPaths(ctx.config.architectureDir);
+    for (const relPath of indexPaths) {
       const src = path.join(ctx.config.architectureDir, relPath);
       if (fs.existsSync(src)) {
         const dest = path.join(snapshotBase, 'indexes', relPath);

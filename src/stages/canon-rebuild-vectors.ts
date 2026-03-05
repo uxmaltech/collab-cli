@@ -1,4 +1,4 @@
-import { loadRuntimeEnv, waitForMcpHealth } from '../lib/service-health';
+import { loadRuntimeEnv, REBUILD_HEALTH_OPTIONS, waitForMcpHealth } from '../lib/service-health';
 import { CliError } from '../lib/errors';
 import type { OrchestrationStage } from '../lib/orchestrator';
 import { ingestCanonFiles } from './canon-ingest';
@@ -20,11 +20,7 @@ export const canonRebuildVectorsStage: OrchestrationStage = {
     const env = loadRuntimeEnv(ctx.config);
 
     // Pre-check: is MCP reachable?
-    const health = await waitForMcpHealth(env, {
-      timeoutMs: 5_000,
-      retries: 3,
-      retryDelayMs: 1_000,
-    });
+    const health = await waitForMcpHealth(env, REBUILD_HEALTH_OPTIONS);
 
     if (!health.ok) {
       throw new CliError(

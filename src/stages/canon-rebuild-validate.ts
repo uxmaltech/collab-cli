@@ -1,24 +1,17 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { getCanonIndexTargets } from '../lib/canon-index-targets';
 import type { OrchestrationStage, StageContext } from '../lib/orchestrator';
-
-/** Relative paths of index files expected after rebuild. */
-const EXPECTED_INDEX_FILES = [
-  'knowledge/axioms/README.md',
-  'knowledge/decisions/README.md',
-  'knowledge/conventions/README.md',
-  'knowledge/anti-patterns/README.md',
-  'domains/README.md',
-  'contracts/README.md',
-];
 
 function validateIndexFiles(ctx: StageContext): string[] {
   const errors: string[] = [];
   const archDir = ctx.config.architectureDir;
+  const targets = getCanonIndexTargets(archDir);
 
-  for (const relPath of EXPECTED_INDEX_FILES) {
-    const fullPath = path.join(archDir, relPath);
+  for (const target of targets) {
+    const fullPath = target.outputFile;
+    const relPath = path.relative(archDir, fullPath);
 
     if (!fs.existsSync(fullPath)) {
       errors.push(`Missing index file: ${relPath}`);

@@ -10,11 +10,48 @@ import { canonRebuildGraphStage } from '../../stages/canon-rebuild-graph';
 import { canonRebuildVectorsStage } from '../../stages/canon-rebuild-vectors';
 import { canonRebuildValidateStage } from '../../stages/canon-rebuild-validate';
 
-interface RebuildOptions {
+interface RebuildFlags {
   confirm?: boolean;
   graph?: boolean;
   vectors?: boolean;
   indexes?: boolean;
+}
+
+/**
+ * Builds the ordered list of orchestration stages for a canon rebuild.
+ *
+ * The pipeline always starts with a snapshot and ends with validation.
+ * Middle stages depend on the workspace mode and the selective flags
+ * provided by the user.
+ */
+export function buildRebuildPipeline(
+  isFileOnly: boolean,
+  flags: Pick<RebuildFlags, 'graph' | 'vectors' | 'indexes'>,
+): OrchestrationStage[] {
+  const selective = flags.graph || flags.vectors || flags.indexes;
+  const stages: OrchestrationStage[] = [];
+
+  // 1. Snapshot always runs first
+  stages.push(canonRebuildSnapshotStage);
+
+  // 2. Selective or full rebuild
+  if (!selective) {
+    // Full rebuild: all applicable stages for the mode
+    stages.push(canonRebuildIndexesStage);
+    if (!isFileOnly) {
+      stages.push(canonRebuildGraphStage);
+      stages.push(canonRebuildVectorsStage);
+    }
+  } else {
+    if (flags.indexes) stages.push(canonRebuildIndexesStage);
+    if (flags.graph) stages.push(canonRebuildGraphStage);
+    if (flags.vectors) stages.push(canonRebuildVectorsStage);
+  }
+
+  // 3. Validation always runs last
+  stages.push(canonRebuildValidateStage);
+
+  return stages;
 }
 
 export function registerCanonRebuildCommand(parent: Command): void {
@@ -22,7 +59,7 @@ export function registerCanonRebuildCommand(parent: Command): void {
     .command('rebuild')
     .description('Destroy and recreate all derived canon artifacts for the current workspace')
     .option('--confirm', 'Required flag to confirm destructive rebuild')
-    .option('--graph', 'Only rebuild graph seeds and indexes')
+    .option('--graph', 'Only rebuild graph seeds via MCP')
     .option('--vectors', 'Only rebuild vector embeddings')
     .option('--indexes', 'Only rebuild README/index files')
     .addHelpText(
@@ -35,7 +72,7 @@ Examples:
   collab canon rebuild --dry-run
 `,
     )
-    .action(async (options: RebuildOptions, command: Command) => {
+    .action(async (options: RebuildFlags, command: Command) => {
       const context = createCommandContext(command);
 
       // Safety: --confirm is mandatory unless in dry-run
@@ -56,28 +93,7 @@ Examples:
         );
       }
 
-      // Build the stage pipeline
-      const stages: OrchestrationStage[] = [];
-
-      // 1. Snapshot always runs first
-      stages.push(canonRebuildSnapshotStage);
-
-      // 2. Selective or full rebuild
-      if (!selectiveMode) {
-        // Full rebuild: all applicable stages for the mode
-        stages.push(canonRebuildIndexesStage);
-        if (!isFileOnly) {
-          stages.push(canonRebuildGraphStage);
-          stages.push(canonRebuildVectorsStage);
-        }
-      } else {
-        if (options.indexes) stages.push(canonRebuildIndexesStage);
-        if (options.graph) stages.push(canonRebuildGraphStage);
-        if (options.vectors) stages.push(canonRebuildVectorsStage);
-      }
-
-      // 3. Validation always runs last
-      stages.push(canonRebuildValidateStage);
+      const stages = buildRebuildPipeline(isFileOnly, options);
 
       const modeLabel = isFileOnly ? 'file-only' : 'indexed';
       const scopeLabel = selectiveMode
