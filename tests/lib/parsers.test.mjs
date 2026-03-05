@@ -95,3 +95,18 @@ test('parseHealthOptions uses defaults for partially provided options', () => {
   assert.equal(result.timeoutMs, 5_000);
   assert.equal(result.retryDelayMs, 2_000);
 });
+
+test('parseHealthOptions throws for non-positive values', () => {
+  assert.throws(
+    () => parseHealthOptions({ retries: '0' }),
+    /--retries must be a positive integer/,
+  );
+  assert.throws(
+    () => parseHealthOptions({ timeoutMs: '-1' }),
+    /--timeout-ms must be a positive integer/,
+  );
+  assert.throws(
+    () => parseHealthOptions({ retryDelayMs: 'abc' }),
+    /--retry-delay-ms must be a positive integer/,
+  );
+});

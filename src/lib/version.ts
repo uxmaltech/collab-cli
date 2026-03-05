@@ -5,7 +5,7 @@ import path from 'node:path';
 const PACKAGE_JSON_PATH = path.resolve(__dirname, '../../package.json');
 
 /**
- * Reads the CLI version from the nearest `package.json`.
+ * Reads the CLI version from the CLI's own `package.json`.
  * Returns `'0.0.0'` when the file cannot be read or parsed.
  */
 export function readCliVersion(): string {

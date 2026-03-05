@@ -33,6 +33,7 @@ export function parsePositiveInt(flagName: string, value: string | undefined, fa
 
 /**
  * Builds a ServiceHealthOptions object from raw CLI option strings.
+ * Uses strict positive-integer validation to match `mcp start` behavior.
  */
 export function parseHealthOptions(options: {
   timeoutMs?: string;
@@ -40,8 +41,8 @@ export function parseHealthOptions(options: {
   retryDelayMs?: string;
 }): ServiceHealthOptions {
   return {
-    timeoutMs: parseNumber(options.timeoutMs, 5_000),
-    retries: parseNumber(options.retries, 15),
-    retryDelayMs: parseNumber(options.retryDelayMs, 2_000),
+    timeoutMs: parsePositiveInt('--timeout-ms', options.timeoutMs, 5_000),
+    retries: parsePositiveInt('--retries', options.retries, 15),
+    retryDelayMs: parsePositiveInt('--retry-delay-ms', options.retryDelayMs, 2_000),
   };
 }

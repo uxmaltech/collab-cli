@@ -1,3 +1,5 @@
+import { CliError } from './errors';
+
 /** Supported execution modes for the collab workspace. */
 export const COLLAB_MODES = ['file-only', 'indexed'] as const;
 
@@ -27,7 +29,7 @@ export function parseMode(value: string | undefined, fallback: CollabMode = DEFA
     return value;
   }
 
-  throw new Error(`Invalid mode '${value}'. Valid values: ${COLLAB_MODES.join(', ')}`);
+  throw new CliError(`Invalid mode '${value}'. Valid values: ${COLLAB_MODES.join(', ')}`);
 }
 
 /** Returns a human-readable description of a mode. */
