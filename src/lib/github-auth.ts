@@ -150,7 +150,6 @@ async function pollForAccessToken(
   deviceCode: string,
   interval: number,
   expiresIn: number,
-  log: (msg: string) => void,
 ): Promise<string> {
   const deadline = Date.now() + expiresIn * 1000;
   let pollInterval = interval * 1000;
@@ -236,7 +235,6 @@ export async function runGitHubDeviceFlow(
     deviceCode.device_code,
     deviceCode.interval,
     deviceCode.expires_in,
-    print,
   );
 
   const auth: GitHubAuth = {
