@@ -27,7 +27,7 @@ import {
   type IngestDocument,
 } from '../lib/mcp-client';
 import type { OrchestrationStage } from '../lib/orchestrator';
-import { getEnabledProviders } from '../lib/providers';
+import { getEnabledProviders, type ProviderKey } from '../lib/providers';
 import { scanRepository } from '../lib/repo-scanner';
 import { loadRuntimeEnv } from '../lib/service-health';
 
@@ -35,6 +35,7 @@ import { loadRuntimeEnv } from '../lib/service-health';
 // Helper: collect markdown files recursively
 // ────────────────────────────────────────────────────────────────
 
+/** Recursively collects all `.md` file paths under the given directory. */
 function collectMarkdownFiles(dir: string): string[] {
   if (!fs.existsSync(dir)) {
     return [];
@@ -59,6 +60,7 @@ function collectMarkdownFiles(dir: string): string[] {
 // Shared stage: domain-analysis (used by both file-only & indexed)
 // ────────────────────────────────────────────────────────────────
 
+/** Builds the AI-driven domain analysis stage shared by both pipelines. */
 function buildDomainAnalysisStage(): OrchestrationStage {
   return {
     id: 'domain-analysis',
@@ -71,6 +73,23 @@ function buildDomainAnalysisStage(): OrchestrationStage {
       const repoPath = ctx.options?._repoPath as string;
       if (!repoPath) {
         throw new CliError('No repo path provided for domain analysis.');
+      }
+
+      // Resume support: check for cached result from a previous run
+      const cacheFile = path.join(ctx.config.collabDir, 'domain-gen-result.json');
+      if (fs.existsSync(cacheFile)) {
+        try {
+          const cached = JSON.parse(fs.readFileSync(cacheFile, 'utf8')) as DomainGenerationResult;
+          if (cached.domainName && cached.domainSlug) {
+            ctx.logger.info(`Resuming with cached domain result: "${cached.domainName}".`);
+            if (ctx.options) {
+              ctx.options._domainResult = cached;
+            }
+            return;
+          }
+        } catch {
+          // Cache is corrupt; re-run analysis
+        }
       }
 
       if (ctx.executor.dryRun) {
@@ -89,13 +108,20 @@ function buildDomainAnalysisStage(): OrchestrationStage {
       // 2. Build prompt
       const prompt = buildDomainGenPrompt(repoCtx);
 
-      // 3. Get AI client
-      const providers = getEnabledProviders(ctx.config);
-      const client = createFirstAvailableClient(providers, ctx.config, ctx.logger);
+      // 3. Get AI client — honour --providers CLI flag, fall back to config
+      const cliProvidersRaw = ctx.options?.providers as string | string[] | undefined;
+      const cliProviders = typeof cliProvidersRaw === 'string'
+        ? cliProvidersRaw.split(',').map((s: string) => s.trim()).filter(Boolean)
+        : Array.isArray(cliProvidersRaw) ? cliProvidersRaw : [];
+      const configuredProviders = getEnabledProviders(ctx.config);
+      const providers = cliProviders.length > 0 ? cliProviders : configuredProviders;
+
+      const client = createFirstAvailableClient(providers as ProviderKey[], ctx.config, ctx.logger);
       if (!client) {
         throw new CliError(
           'No AI provider available for domain analysis. ' +
-            'Set OPENAI_API_KEY, configure claude CLI, or install another supported provider.',
+            'Set OPENAI_API_KEY, configure claude CLI, install another supported provider, ' +
+            'or pass --providers to select a specific provider.',
         );
       }
 
@@ -119,10 +145,13 @@ function buildDomainAnalysisStage(): OrchestrationStage {
           `${result.patterns.length} patterns, ${result.technologies.length} technologies.`,
       );
 
-      // Store result for subsequent stages
+      // Store result for subsequent stages (in-memory + file for resume)
       if (ctx.options) {
         ctx.options._domainResult = result;
       }
+      ctx.executor.writeFile(cacheFile, JSON.stringify(result, null, 2), {
+        description: 'cache domain generation result for resume support',
+      });
     },
   };
 }
@@ -131,6 +160,7 @@ function buildDomainAnalysisStage(): OrchestrationStage {
 // File-only stages
 // ────────────────────────────────────────────────────────────────
 
+/** Builds the stage that writes domain files to the local repository. */
 function buildDomainFileWriteLocalStage(): OrchestrationStage {
   return {
     id: 'domain-file-write-local',
@@ -155,7 +185,7 @@ function buildDomainFileWriteLocalStage(): OrchestrationStage {
         return;
       }
 
-      const count = writeDomainFiles(targetDir, result);
+      const count = writeDomainFiles(targetDir, result, ctx.executor);
       ctx.logger.info(`Domain files written: ${count} file(s) to ${targetDir}`);
     },
   };
@@ -165,6 +195,7 @@ function buildDomainFileWriteLocalStage(): OrchestrationStage {
 // Indexed stages
 // ────────────────────────────────────────────────────────────────
 
+/** Builds the stage that syncs the business canon repository before writing. */
 function buildDomainCanonSyncStage(): OrchestrationStage {
   return {
     id: 'domain-canon-sync',
@@ -195,6 +226,7 @@ function buildDomainCanonSyncStage(): OrchestrationStage {
   };
 }
 
+/** Builds the stage that writes domain files to the business canon repository. */
 function buildDomainFileWriteCanonStage(): OrchestrationStage {
   return {
     id: 'domain-file-write-canon',
@@ -219,12 +251,13 @@ function buildDomainFileWriteCanonStage(): OrchestrationStage {
         return;
       }
 
-      const count = writeDomainFiles(targetDir, result);
+      const count = writeDomainFiles(targetDir, result, ctx.executor);
       ctx.logger.info(`Domain files written: ${count} file(s) to ${targetDir}`);
     },
   };
 }
 
+/** Builds the stage that appends domain vertices and edges to the graph seed. */
 function buildDomainGraphUpdateStage(): OrchestrationStage {
   return {
     id: 'domain-graph-update',
@@ -251,7 +284,7 @@ function buildDomainGraphUpdateStage(): OrchestrationStage {
 
       const nextIds = findNextIds(dataPath);
       const nGql = generateDomainGraphSeed(result, nextIds);
-      appendGraphSeed(dataPath, nGql);
+      appendGraphSeed(dataPath, nGql, ctx.executor);
 
       const techCount = result.technologies.length;
       const patCount = result.patterns.length;
@@ -263,6 +296,7 @@ function buildDomainGraphUpdateStage(): OrchestrationStage {
   };
 }
 
+/** Builds the stage that commits and pushes domain changes to the business canon. */
 function buildDomainCanonPushStage(): OrchestrationStage {
   return {
     id: 'domain-canon-push',
@@ -318,6 +352,7 @@ function buildDomainCanonPushStage(): OrchestrationStage {
   };
 }
 
+/** Builds the stage that ingests domain files into MCP via HTTP. */
 function buildDomainIngestStage(): OrchestrationStage {
   return {
     id: 'domain-ingest',

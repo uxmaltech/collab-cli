@@ -699,24 +699,45 @@ async function runInfraOnly(
  *   2. Relative path from cwd → resolve
  *   3. Name within workspace → join with workspaceDir
  */
+/**
+ * Resolves and validates the path to a repository package.
+ *
+ * Resolution order:
+ *   1. Absolute path → use directly
+ *   2. Relative path from workspace dir → resolve
+ *   3. Name within workspace → join with workspaceDir
+ *
+ * @throws {CliError} When the path is not found or is not a directory.
+ */
 function resolveRepoPath(repoValue: string, config: CollabConfig): string {
+  const isDirectory = (p: string): boolean => {
+    try {
+      return fs.statSync(p).isDirectory();
+    } catch {
+      return false;
+    }
+  };
+
   // 1. Absolute path
   if (path.isAbsolute(repoValue)) {
     if (!fs.existsSync(repoValue)) {
       throw new CliError(`Repository path not found: ${repoValue}`);
+    }
+    if (!isDirectory(repoValue)) {
+      throw new CliError(`Repository path is not a directory: ${repoValue}`);
     }
     return repoValue;
   }
 
   // 2. Relative path from workspace dir (respects --cwd)
   const fromCwd = path.resolve(config.workspaceDir, repoValue);
-  if (fs.existsSync(fromCwd)) {
+  if (isDirectory(fromCwd)) {
     return fromCwd;
   }
 
   // 3. Name within workspace
   const fromWorkspace = path.join(config.workspaceDir, repoValue);
-  if (fs.existsSync(fromWorkspace)) {
+  if (isDirectory(fromWorkspace)) {
     return fromWorkspace;
   }
 
@@ -875,6 +896,17 @@ Examples:
       // ── Repo domain generation: collab init --repo <pkg> ───
       if (options.repo) {
         await runRepoDomainGeneration(context, options);
+
+        // Ecosystem compatibility checks (same as full wizard)
+        const compatibility = await checkEcosystemCompatibility(context.config, {
+          dryRun: context.executor.dryRun,
+        });
+        for (const check of compatibility) {
+          const prefix = check.ok ? '[PASS]' : '[WARN]';
+          context.logger.result(`${prefix} ${check.id}: ${check.detail}`);
+          if (!check.ok && check.fix) context.logger.result(`       fix: ${check.fix}`);
+        }
+
         return;
       }
 

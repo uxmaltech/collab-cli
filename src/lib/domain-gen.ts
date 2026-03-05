@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+import type { Executor } from './executor';
 import type { RepoContext } from './repo-scanner';
 import { extractJson } from './repo-analysis-helpers';
 
@@ -35,6 +36,7 @@ export interface DomainPattern {
 // Renderers — follow exact collab-architecture/domains/ format
 // ────────────────────────────────────────────────────────────────
 
+/** Renders principles as markdown following the collab-architecture domain format. */
 export function renderPrinciplesMd(r: DomainGenerationResult): string {
   const lines = [`# ${r.domainName} Principles`, ''];
 
@@ -48,6 +50,7 @@ export function renderPrinciplesMd(r: DomainGenerationResult): string {
   return lines.join('\n');
 }
 
+/** Renders rules as markdown following the collab-architecture domain format. */
 export function renderRulesMd(r: DomainGenerationResult): string {
   const lines = [`# ${r.domainName} Rules`, ''];
 
@@ -61,6 +64,7 @@ export function renderRulesMd(r: DomainGenerationResult): string {
   return lines.join('\n');
 }
 
+/** Renders anti-patterns as markdown with violated rule references. */
 export function renderAntiPatternsMd(r: DomainGenerationResult): string {
   const lines = [`# ${r.domainName} Anti-Patterns`, ''];
 
@@ -79,6 +83,7 @@ export function renderAntiPatternsMd(r: DomainGenerationResult): string {
   return lines.join('\n');
 }
 
+/** Renders the domain glossary as a markdown term list. */
 export function renderGlossaryMd(r: DomainGenerationResult): string {
   const lines = [`# ${r.domainName} Glossary`, ''];
 
@@ -92,6 +97,7 @@ export function renderGlossaryMd(r: DomainGenerationResult): string {
   return lines.join('\n');
 }
 
+/** Renders a single pattern as a full markdown document with context, problem, and solution. */
 export function renderPatternMd(p: DomainPattern): string {
   const lines = [
     `# Pattern: ${p.name}`,
@@ -137,35 +143,55 @@ function slugify(name: string): string {
 }
 
 /**
- * Writes all domain files to a target directory.
+ * Writes all domain files to a target directory via the executor abstraction.
  * Creates: principles.md, rules.md, anti-patterns.md, glossary.md, patterns/*.md
+ *
+ * When an executor is provided, all filesystem operations go through it
+ * to respect `--dry-run` mode and centralized side-effect control.
  *
  * @returns The number of files written.
  */
-export function writeDomainFiles(targetDir: string, result: DomainGenerationResult): number {
+export function writeDomainFiles(targetDir: string, result: DomainGenerationResult, executor?: Executor): number {
   let count = 0;
 
-  fs.mkdirSync(targetDir, { recursive: true });
+  const writeFile = (filePath: string, content: string, desc: string) => {
+    if (executor) {
+      executor.writeFile(filePath, content, { description: desc });
+    } else {
+      fs.mkdirSync(path.dirname(filePath), { recursive: true });
+      fs.writeFileSync(filePath, content, 'utf8');
+    }
+  };
 
-  fs.writeFileSync(path.join(targetDir, 'principles.md'), renderPrinciplesMd(result), 'utf8');
+  const ensureDir = (dirPath: string) => {
+    if (executor) {
+      executor.ensureDirectory(dirPath);
+    } else {
+      fs.mkdirSync(dirPath, { recursive: true });
+    }
+  };
+
+  ensureDir(targetDir);
+
+  writeFile(path.join(targetDir, 'principles.md'), renderPrinciplesMd(result), 'write principles.md');
   count++;
 
-  fs.writeFileSync(path.join(targetDir, 'rules.md'), renderRulesMd(result), 'utf8');
+  writeFile(path.join(targetDir, 'rules.md'), renderRulesMd(result), 'write rules.md');
   count++;
 
-  fs.writeFileSync(path.join(targetDir, 'anti-patterns.md'), renderAntiPatternsMd(result), 'utf8');
+  writeFile(path.join(targetDir, 'anti-patterns.md'), renderAntiPatternsMd(result), 'write anti-patterns.md');
   count++;
 
-  fs.writeFileSync(path.join(targetDir, 'glossary.md'), renderGlossaryMd(result), 'utf8');
+  writeFile(path.join(targetDir, 'glossary.md'), renderGlossaryMd(result), 'write glossary.md');
   count++;
 
   if (result.patterns.length > 0) {
     const patternsDir = path.join(targetDir, 'patterns');
-    fs.mkdirSync(patternsDir, { recursive: true });
+    ensureDir(patternsDir);
 
     for (const pattern of result.patterns) {
       const filename = `${slugify(pattern.name)}.md`;
-      fs.writeFileSync(path.join(patternsDir, filename), renderPatternMd(pattern), 'utf8');
+      writeFile(path.join(patternsDir, filename), renderPatternMd(pattern), `write pattern ${filename}`);
       count++;
     }
   }
@@ -282,12 +308,20 @@ function escape(str: string): string {
 
 /**
  * Appends nGQL statements to a data.ngql file, creating parent dirs if needed.
+ *
+ * When an executor is provided, the write goes through the executor abstraction
+ * to respect `--dry-run` mode and centralized side-effect control.
  */
-export function appendGraphSeed(dataPath: string, nGql: string): void {
-  fs.mkdirSync(path.dirname(dataPath), { recursive: true });
-
+export function appendGraphSeed(dataPath: string, nGql: string, executor?: Executor): void {
   const separator = `\n-- Domain generated by collab-cli (${new Date().toISOString().split('T')[0]})\n`;
-  fs.appendFileSync(dataPath, separator + nGql, 'utf8');
+  const existing = fs.existsSync(dataPath) ? fs.readFileSync(dataPath, 'utf8') : '';
+
+  if (executor) {
+    executor.writeFile(dataPath, existing + separator + nGql, { description: 'append graph seed' });
+  } else {
+    fs.mkdirSync(path.dirname(dataPath), { recursive: true });
+    fs.appendFileSync(dataPath, separator + nGql, 'utf8');
+  }
 }
 
 // ────────────────────────────────────────────────────────────────
