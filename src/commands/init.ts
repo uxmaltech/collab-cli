@@ -35,6 +35,8 @@ import { repoAnalysisStage } from '../stages/repo-analysis';
 import { repoAnalysisFileOnlyStage } from '../stages/repo-analysis-fileonly';
 import { agentSkillsSetupStage } from '../stages/agent-skills-setup';
 import { ciSetupStage } from '../stages/ci-setup';
+import { buildFileOnlyDomainPipeline, buildIndexedDomainPipeline } from '../stages/domain-gen';
+import { isBusinessCanonConfigured } from '../lib/canon-resolver';
 import { getEnabledProviders, PROVIDER_DEFAULTS, type ProviderKey } from '../lib/providers';
 import type { Executor } from '../lib/executor';
 import type { Logger } from '../lib/logger';
@@ -48,6 +50,7 @@ interface InitOptions {
   composeMode?: string;
   outputDir?: string;
   repos?: string;
+  repo?: string;
   skipMcpSnippets?: boolean;
   skipAnalysis?: boolean;
   skipCi?: boolean;
@@ -685,6 +688,129 @@ async function runInfraOnly(
 }
 
 // ────────────────────────────────────────────────────────────────
+// Repo domain generation  (collab init --repo=<package>)
+// ────────────────────────────────────────────────────────────────
+
+/**
+ * Resolves the path to a repository package.
+ *
+ * Resolution order:
+ *   1. Absolute path → use directly
+ *   2. Relative path from cwd → resolve
+ *   3. Name within workspace → join with workspaceDir
+ */
+function resolveRepoPath(repoValue: string, config: CollabConfig): string {
+  // 1. Absolute path
+  if (path.isAbsolute(repoValue)) {
+    if (!fs.existsSync(repoValue)) {
+      throw new CliError(`Repository path not found: ${repoValue}`);
+    }
+    return repoValue;
+  }
+
+  // 2. Relative path from cwd
+  const fromCwd = path.resolve(process.cwd(), repoValue);
+  if (fs.existsSync(fromCwd)) {
+    return fromCwd;
+  }
+
+  // 3. Name within workspace
+  const fromWorkspace = path.join(config.workspaceDir, repoValue);
+  if (fs.existsSync(fromWorkspace)) {
+    return fromWorkspace;
+  }
+
+  throw new CliError(
+    `Repository "${repoValue}" not found.\n` +
+      `Searched:\n` +
+      `  - ${fromCwd}\n` +
+      `  - ${fromWorkspace}\n` +
+      `Provide an absolute path, a relative path from cwd, or a repo name within your workspace.`,
+  );
+}
+
+async function runRepoDomainGeneration(
+  context: { config: CollabConfig; executor: Executor; logger: Logger },
+  options: InitOptions,
+): Promise<void> {
+  const repoValue = options.repo!;
+
+  // Build a minimal config — reuse existing if available
+  const effectiveConfig: CollabConfig = {
+    ...defaultCollabConfig(context.config.workspaceDir),
+    ...context.config,
+  };
+
+  // Resolve business canon if passed via flag (but don't require it for file-only)
+  const canons = options.businessCanon ? parseBusinessCanonOption(options.businessCanon) : undefined;
+  if (canons) {
+    effectiveConfig.canons = canons;
+  }
+
+  // Resolve mode
+  let mode: CollabMode;
+  if (options.mode) {
+    mode = parseMode(options.mode);
+  } else if (options.yes) {
+    mode = 'file-only';
+  } else {
+    mode = await promptChoice(
+      'Select domain generation mode:',
+      [
+        { value: 'file-only', label: 'file-only (write domain files to local repo only)' },
+        { value: 'indexed', label: 'indexed (write to business canon + ingest into MCP)' },
+      ],
+      'file-only',
+    );
+  }
+
+  // Validate prerequisites
+  if (mode === 'indexed' && !isBusinessCanonConfigured(effectiveConfig)) {
+    throw new CliError(
+      'Business canon is required for indexed mode. ' +
+        'Use --business-canon owner/repo to configure it, or use --mode file-only.',
+    );
+  }
+
+  // Resolve repo path
+  const repoPath = resolveRepoPath(repoValue, effectiveConfig);
+  const repoName = path.basename(repoPath);
+
+  context.logger.phaseHeader('Domain Generation', `${repoName} (${mode})`);
+
+  // Build pipeline
+  const stages = mode === 'file-only'
+    ? buildFileOnlyDomainPipeline()
+    : buildIndexedDomainPipeline();
+
+  // Execute
+  await runOrchestration(
+    {
+      workflowId: 'init:repo-domain',
+      config: effectiveConfig,
+      executor: context.executor,
+      logger: context.logger,
+      resume: options.resume,
+      mode: `${mode} (repo domain)`,
+      stageOptions: {
+        _repoPath: repoPath,
+        yes: options.yes,
+        providers: options.providers,
+      },
+    },
+    stages,
+  );
+
+  // Summary
+  context.logger.phaseHeader('Domain Generation Complete');
+  context.logger.summaryFooter([
+    { label: 'Mode', value: mode },
+    { label: 'Repository', value: repoName },
+    { label: 'Dry-run', value: context.executor.dryRun ? 'yes' : 'no' },
+  ]);
+}
+
+// ────────────────────────────────────────────────────────────────
 // Command registration
 // ────────────────────────────────────────────────────────────────
 
@@ -700,6 +826,7 @@ export function registerInitCommand(program: Command): void {
     .option('--compose-mode <mode>', 'Compose mode: consolidated|split')
     .option('--output-dir <directory>', 'Directory used to write compose outputs')
     .option('--repos <list>', 'Comma-separated repo directories for workspace mode')
+    .option('--repo <package>', 'Generate domain definition from package analysis')
     .option('--skip-mcp-snippets', 'Skip MCP client config snippet generation')
     .option('--skip-analysis', 'Skip AI-powered repository analysis stage')
     .option('--skip-ci', 'Skip CI workflow generation')
@@ -718,6 +845,8 @@ Examples:
   collab init --yes --mode file-only
   collab init --yes --mode indexed
   collab init --repos api,web,shared --yes
+  collab init --repo collab-chat-ai-pkg --mode file-only
+  collab init --repo collab-chat-ai-pkg --mode indexed
   collab init --resume
   collab init infra
   collab init infra --resume
@@ -735,6 +864,12 @@ Examples:
 
       if (phase) {
         throw new CliError(`Unknown init phase "${phase}". Available phases: infra`);
+      }
+
+      // ── Repo domain generation: collab init --repo <pkg> ───
+      if (options.repo) {
+        await runRepoDomainGeneration(context, options);
+        return;
       }
 
       // ── Full wizard flow ────────────────────────────────────
