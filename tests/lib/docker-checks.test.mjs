@@ -38,10 +38,12 @@ test('checkDockerDaemon returns ok=false when docker is not in PATH', () => {
 });
 
 test('checkDockerDaemon returns dry-run result when in dry-run mode', () => {
+  const binDir = fs.mkdtempSync(path.join(os.tmpdir(), 'collab-docker-'));
+  writeExecutable(binDir, 'docker', '#!/bin/sh\nexit 0\n');
   const logger = createBufferedLogger();
   const executor = new Executor(logger, { dryRun: true, cwd: process.cwd() });
 
-  const result = checkDockerDaemon(executor);
+  const result = withPath(binDir, () => checkDockerDaemon(executor));
 
   assert.equal(result.ok, true);
   assert.equal(result.version, 'dry-run');
@@ -93,10 +95,12 @@ test('checkDockerImages returns ok=false when docker is not in PATH', () => {
 });
 
 test('checkDockerImages returns dry-run result', () => {
+  const binDir = fs.mkdtempSync(path.join(os.tmpdir(), 'collab-docker-'));
+  writeExecutable(binDir, 'docker', '#!/bin/sh\nexit 0\n');
   const logger = createBufferedLogger();
   const executor = new Executor(logger, { dryRun: true, cwd: process.cwd() });
 
-  const results = checkDockerImages(executor, ['img-a:latest', 'img-b:v1']);
+  const results = withPath(binDir, () => checkDockerImages(executor, ['img-a:latest', 'img-b:v1']));
 
   assert.equal(results.length, 2);
   assert.ok(results.every((r) => r.ok));

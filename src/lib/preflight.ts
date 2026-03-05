@@ -86,16 +86,20 @@ export function runPreflightChecks(executor: Executor, opts?: PreflightOptions):
   );
 
   // In indexed mode, verify the Docker daemon is actually reachable
+  // (skip if docker binary itself is missing — already reported above)
   if (opts?.mode === 'indexed') {
-    const daemon = checkDockerDaemon(executor);
-    results.push({
-      id: 'docker-daemon',
-      ok: daemon.ok,
-      detail: daemon.ok
-        ? `Docker daemon v${daemon.version}`
-        : (daemon.error ?? 'Docker daemon unreachable'),
-      fix: 'Start Docker Desktop or run: sudo systemctl start docker',
-    });
+    const dockerCommandCheck = results.find((r) => r.id === 'docker');
+    if (dockerCommandCheck?.ok) {
+      const daemon = checkDockerDaemon(executor);
+      results.push({
+        id: 'docker-daemon',
+        ok: daemon.ok,
+        detail: daemon.ok
+          ? `Docker daemon v${daemon.version}`
+          : (daemon.error ?? 'Docker daemon unreachable'),
+        fix: 'Start Docker Desktop or run: sudo systemctl start docker',
+      });
+    }
   }
 
   return results;

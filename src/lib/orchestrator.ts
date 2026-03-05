@@ -64,8 +64,11 @@ function detectPlatformHints(stderr: string | undefined): string[] {
     );
   }
 
-  // Docker registry authentication failure
-  if (/denied.*login|unauthorized|authentication required/i.test(stderr)) {
+  // Docker registry authentication failure (only in Docker/image contexts)
+  if (
+    /(denied: requested access to the resource|unauthorized: authentication required|pull access denied)/i.test(stderr) &&
+    /(docker|ghcr\.io|image|manifest|pull)/i.test(stderr)
+  ) {
     hints.push('Docker registry auth failed. Run: docker login ghcr.io');
   }
 
@@ -76,8 +79,11 @@ function detectPlatformHints(stderr: string | undefined): string[] {
     );
   }
 
-  // Network errors during image pull
-  if (/network.*unreachable|timeout.*pull|dial tcp.*connection refused/i.test(stderr)) {
+  // Network errors during image pull (only in Docker/image contexts)
+  if (
+    /(network.*unreachable|timeout.*pull|dial tcp.*connection refused)/i.test(stderr) &&
+    /(docker|image|pull|manifest|registry)/i.test(stderr)
+  ) {
     hints.push('Network error pulling images. Check internet connection and DNS settings.');
   }
 

@@ -72,14 +72,27 @@ export function checkDockerImages(
       verboseOnly: true,
     });
 
-    if (result.status === 0) {
+    if (result.status === 0 && result.stdout.trim()) {
       return { image, ok: true };
+    }
+
+    const stderr = result.stderr.trim();
+
+    // Distinguish daemon/auth errors from genuine "image not found"
+    if (/cannot connect to.*docker daemon|is the docker daemon running/i.test(stderr)) {
+      return {
+        image,
+        ok: false,
+        error: 'Docker daemon is not running. Start Docker Desktop or run: sudo systemctl start docker',
+      };
     }
 
     return {
       image,
       ok: false,
-      error: `Image not found locally. Pull with: docker pull ${image}`,
+      error: /no such image|not found/i.test(stderr)
+        ? `Image not found locally. Pull with: docker pull ${image}`
+        : (stderr || `docker image inspect failed for ${image}`),
     };
   });
 }
