@@ -110,6 +110,11 @@ async function resolveWizardSelection(
   };
 
   if (options.yes) {
+    if (!options.mode) {
+      process.stderr.write(
+        'Info: Non-interactive mode defaults to file-only. Use --mode indexed for graph/vector features.\n',
+      );
+    }
     return {
       ...defaults,
       mode: options.mode ? parseMode(options.mode) : 'file-only',
@@ -334,7 +339,7 @@ async function resolveBusinessCanon(
 // Shared inline stages used by both pipelines
 // ────────────────────────────────────────────────────────────────
 
-function buildPreflightStage(executor: Executor, logger: Logger): OrchestrationStage {
+function buildPreflightStage(executor: Executor, logger: Logger, mode?: string): OrchestrationStage {
   return {
     id: 'preflight',
     title: 'Run preflight checks',
@@ -343,7 +348,7 @@ function buildPreflightStage(executor: Executor, logger: Logger): OrchestrationS
       'Run collab init --resume after fixing prerequisites.',
     ],
     run: () => {
-      const checks = runPreflightChecks(executor);
+      const checks = runPreflightChecks(executor, { mode });
       assertPreflightChecks(checks, logger);
     },
   };
@@ -635,7 +640,7 @@ function buildIndexedPipeline(
 ): OrchestrationStage[] {
   return [
     // Phase A — Local setup (shared with file-only)
-    buildPreflightStage(executor, logger),                     // 1
+    buildPreflightStage(executor, logger, 'indexed'),          // 1
     buildConfigStage(effectiveConfig, executor, logger,
       configExistedBefore, options.force),                     // 2
     buildGitHubAuthStage(effectiveConfig, logger, options),    // 3
@@ -1112,6 +1117,30 @@ Examples:
           context.logger.result(`       fix: ${check.fix}`);
         }
       }
+
+      // ── Next steps guidance ──────────────────────────────
+      context.logger.info('');
+      context.logger.info('Next steps:');
+
+      if (selections.mode === 'file-only') {
+        context.logger.info('  - Upgrade to indexed mode for graph/vector features:');
+        context.logger.info('      collab init --mode indexed');
+      }
+
+      if (selections.mode === 'indexed') {
+        context.logger.info('  - Populate graph and vector stores:');
+        context.logger.info('      collab canon rebuild --confirm');
+      }
+
+      if (ws) {
+        context.logger.info('  - Initialize domain repos:');
+        context.logger.info('      collab init --repo=<package-name>');
+      }
+
+      context.logger.info('  - Verify full setup health:');
+      context.logger.info('      collab doctor');
+      context.logger.info('  - Finalize and archive when done:');
+      context.logger.info('      collab end');
 
       if (!options.force && configExistedBefore) {
         context.logger.debug('Existing configuration was reused.');

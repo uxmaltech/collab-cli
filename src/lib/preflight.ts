@@ -1,7 +1,13 @@
 import type { Executor } from './executor';
+import { checkDockerDaemon } from './docker-checks';
 import { CliError } from './errors';
 import type { Logger } from './logger';
 import { resolveCommandPath } from './shell';
+
+export interface PreflightOptions {
+  /** When set to 'indexed', adds Docker daemon reachability check. */
+  mode?: string;
+}
 
 export interface PreflightCheckResult {
   id: string;
@@ -68,7 +74,7 @@ function dockerComposeCheck(executor: Executor): PreflightCheckResult {
   };
 }
 
-export function runPreflightChecks(executor: Executor): PreflightCheckResult[] {
+export function runPreflightChecks(executor: Executor, opts?: PreflightOptions): PreflightCheckResult[] {
   const results: PreflightCheckResult[] = [];
 
   results.push(
@@ -78,6 +84,23 @@ export function runPreflightChecks(executor: Executor): PreflightCheckResult[] {
     commandCheck('docker', 'Install Docker Desktop or Docker Engine.', executor),
     dockerComposeCheck(executor),
   );
+
+  // In indexed mode, verify the Docker daemon is actually reachable
+  // (skip if docker binary itself is missing — already reported above)
+  if (opts?.mode === 'indexed') {
+    const dockerCommandCheck = results.find((r) => r.id === 'docker');
+    if (dockerCommandCheck?.ok) {
+      const daemon = checkDockerDaemon(executor);
+      results.push({
+        id: 'docker-daemon',
+        ok: daemon.ok,
+        detail: daemon.ok
+          ? `Docker daemon v${daemon.version}`
+          : (daemon.error ?? 'Docker daemon unreachable'),
+        fix: 'Start Docker Desktop or run: sudo systemctl start docker',
+      });
+    }
+  }
 
   return results;
 }

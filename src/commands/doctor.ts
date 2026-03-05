@@ -3,8 +3,10 @@ import fs from 'node:fs';
 import { Command } from 'commander';
 
 import { createCommandContext } from '../lib/command-context';
+import { COMPOSE_ENV_DEFAULTS } from '../lib/compose-defaults';
 import { getComposeFilePaths } from '../lib/compose-paths';
 import { validateComposeFiles } from '../lib/compose-validator';
+import { checkDockerDaemon, checkDockerImages } from '../lib/docker-checks';
 import { checkEcosystemCompatibility } from '../lib/ecosystem';
 import { CliError } from '../lib/errors';
 import { loadRuntimeEnv, waitForInfraHealth, waitForMcpHealth } from '../lib/service-health';
@@ -57,6 +59,39 @@ Examples:
         })),
       );
 
+      // ── Docker daemon check ───────────────────────────────
+      const dockerBinaryOk = preflight.find((item) => item.id === 'docker')?.ok ?? false;
+      const daemonResult = checkDockerDaemon(context.executor);
+      const daemonFix = !dockerBinaryOk
+        ? 'Install Docker Desktop or Docker Engine.'
+        : 'Start Docker Desktop or run: sudo systemctl start docker';
+      checks.push({
+        id: 'docker:daemon',
+        ok: daemonResult.ok,
+        detail: daemonResult.ok
+          ? `Docker daemon v${daemonResult.version}`
+          : (daemonResult.error ?? 'Docker daemon unavailable'),
+        fix: daemonFix,
+      });
+
+      // ── Docker image checks ────────────────────────────────
+      const env = loadRuntimeEnv(context.config);
+      const imagesToCheck = [
+        env.MCP_IMAGE || COMPOSE_ENV_DEFAULTS.MCP_IMAGE,
+        env.QDRANT_IMAGE || COMPOSE_ENV_DEFAULTS.QDRANT_IMAGE,
+      ];
+      const imageResults = checkDockerImages(context.executor, imagesToCheck);
+      for (const img of imageResults) {
+        checks.push({
+          id: `docker:image:${img.image.split('/').pop()?.split(':')[0] ?? img.image}`,
+          ok: img.ok,
+          detail: img.ok ? `${img.image} available locally` : (img.error ?? `${img.image} not found`),
+          fix: img.error && !/not found locally/i.test(img.error)
+            ? img.error
+            : `Pull with: docker pull ${img.image}`,
+        });
+      }
+
       const envFileExists = fs.existsSync(context.config.envFile);
       checks.push({
         id: 'config:env-file',
@@ -90,7 +125,6 @@ Examples:
         });
       }
 
-      const env = loadRuntimeEnv(context.config);
       const infraHealth = await waitForInfraHealth(env, {
         timeoutMs: 2_000,
         retries: 1,
@@ -133,6 +167,7 @@ Examples:
 
       process.stdout.write(`node: ${process.version}\n`);
       process.stdout.write(`platform: ${process.platform}/${process.arch}\n`);
+      process.stdout.write(`docker: ${daemonResult.version ?? 'not available'}\n`);
       for (const check of checks) {
         printCheck(check);
       }
