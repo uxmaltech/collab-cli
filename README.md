@@ -9,20 +9,23 @@ graph TD
     DEV[Developer] --> CLI[collab-cli<br><i>infrastructure</i>]
 
     subgraph APP["collab-laravel-app"]
-        CHAT[collab-chat-ai-pkg]
-        CORE[collab-core-pkg]
+        CHAT[collab-chat-ai-pkg<br><i>Chat UI</i>]
+        CORE[collab-core-pkg<br><i>Discovery Agent</i>]
         PM[collab-project-manager-pkg]
+        CHAT -- interface --> CORE
     end
 
-    DEV --> APP
+    DEV -- "chat · GOV-R-001" --> CHAT
 
     CLI -- canon-sync --> CA[collab-architecture<br><i>framework canon</i>]
     CLI -- docker compose up --> MCP[collab-architecture-mcp<br><i>NebulaGraph · Qdrant</i>]
     CA -- seed + ingest --> MCP
 
-    CORE -- MCP tools --> MCP
+    CORE -- research --> MCP
     CORE -- "Epic + Stories" --> GH[GitHub Issues]
-    GH -- "GOV-R-002 → merge → GOV-R-003" --> BCA[collab-app-architecture<br><i>application canon</i>]
+
+    GH -- "GOV-R-002" --> REPOS[Target Repos]
+    REPOS -- "merge → GOV-R-003" --> BCA[collab-app-architecture<br><i>application canon</i>]
     BCA -- ingest --> MCP
 
     style CLI fill:#4a9eff,stroke:#2b7de9,color:#fff
