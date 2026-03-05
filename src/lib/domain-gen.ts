@@ -197,21 +197,21 @@ export function findNextIds(dataPath: string): NextIds {
   const content = fs.readFileSync(dataPath, 'utf8');
 
   // Find highest DOM-NNN
-  const domMatches = content.matchAll(/DOM-(\d{3})/g);
+  const domMatches = content.matchAll(/DOM-(\d+)/g);
   for (const m of domMatches) {
     const num = parseInt(m[1], 10);
     if (num >= ids.domain) ids.domain = num + 1;
   }
 
   // Find highest PAT-NNN
-  const patMatches = content.matchAll(/PAT-(\d{3})/g);
+  const patMatches = content.matchAll(/PAT-(\d+)/g);
   for (const m of patMatches) {
     const num = parseInt(m[1], 10);
     if (num >= ids.pattern) ids.pattern = num + 1;
   }
 
   // Find highest TECH-NNN
-  const techMatches = content.matchAll(/TECH-(\d{3})/g);
+  const techMatches = content.matchAll(/TECH-(\d+)/g);
   for (const m of techMatches) {
     const num = parseInt(m[1], 10);
     if (num >= ids.technology) ids.technology = num + 1;
@@ -241,11 +241,10 @@ export function generateDomainGraphSeed(
 
   // Technology vertices and edges
   let techCounter = nextIds.technology;
-  const techIds: string[] = [];
 
   for (const tech of result.technologies) {
     const techId = `TECH-${pad(techCounter)}`;
-    techIds.push(techId);
+
     lines.push(
       `INSERT VERTEX Node(name, type, status, summary) VALUES` +
       ` "${techId}":("${escape(tech.name)}", "technology", "active", "${escape(tech.summary)}");`,

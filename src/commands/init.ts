@@ -708,8 +708,8 @@ function resolveRepoPath(repoValue: string, config: CollabConfig): string {
     return repoValue;
   }
 
-  // 2. Relative path from cwd
-  const fromCwd = path.resolve(process.cwd(), repoValue);
+  // 2. Relative path from workspace dir (respects --cwd)
+  const fromCwd = path.resolve(config.workspaceDir, repoValue);
   if (fs.existsSync(fromCwd)) {
     return fromCwd;
   }
@@ -745,6 +745,12 @@ async function runRepoDomainGeneration(
   const canons = options.businessCanon ? parseBusinessCanonOption(options.businessCanon) : undefined;
   if (canons) {
     effectiveConfig.canons = canons;
+  }
+
+  // Store GitHub token if provided (required for indexed push/sync)
+  if (options.githubToken) {
+    storeGitHubToken(effectiveConfig.collabDir, options.githubToken);
+    context.logger.info('GitHub token stored from --github-token flag.');
   }
 
   // Resolve mode

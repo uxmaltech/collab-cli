@@ -298,13 +298,17 @@ function buildDomainCanonPushStage(): OrchestrationStage {
       const commitMsg = `feat(domain): add ${result.domainName} from ${repoName}`;
       ctx.executor.run('git', ['-C', canonDir, 'commit', '-m', commitMsg]);
 
-      // Push — use token auth if available
+      // Push — use token auth via http.extraHeader to avoid leaking secrets in logs
       const auth = loadGitHubAuth(ctx.config.collabDir);
       if (auth?.token) {
         const canon = ctx.config.canons!.business!;
-        const pushUrl = `https://x-access-token:${auth.token}@github.com/${canon.repo}.git`;
+        const remoteUrl = `https://github.com/${canon.repo}.git`;
         const branch = canon.branch || 'main';
-        ctx.executor.run('git', ['-C', canonDir, 'push', pushUrl, branch]);
+        ctx.executor.run('git', [
+          '-C', canonDir,
+          '-c', `http.${remoteUrl}.extraHeader=Authorization: Bearer ${auth.token}`,
+          'push', remoteUrl, branch,
+        ], { verboseOnly: true });
       } else {
         ctx.executor.run('git', ['-C', canonDir, 'push']);
       }
@@ -348,7 +352,7 @@ function buildDomainIngestStage(): OrchestrationStage {
         const configuredRepo = ctx.config.canons!.business!.repo;
         const repoSlug = configuredRepo.replace(/\.git$/, '').replace(/^https?:\/\/github\.com\//i, '');
         const scope = repoSlug.split('/').pop() ?? repoSlug;
-        const org = repoSlug.split('/')[0] ?? 'uxmaltech';
+        const org = repoSlug.includes('/') ? repoSlug.split('/')[0] : scope;
 
         const documents: IngestDocument[] = mdFiles.map((f) => ({
           path: path.relative(canonDir, f),
