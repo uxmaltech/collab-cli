@@ -64,8 +64,16 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === 'POST' && req.url === '/api/v1/ingest') {
     sendJson(res, 200, {
-      ingested: 0,
-      skipped: 0,
+      vector: {
+        ingested_files: 0,
+        total_points: 0,
+        collection: 'mock',
+      },
+      graph: {
+        nodes_created: 0,
+        edges_created: 0,
+        space: 'mock',
+      },
     });
     return;
   }
