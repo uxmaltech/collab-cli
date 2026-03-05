@@ -1,3 +1,8 @@
+/**
+ * Base error class for all expected CLI failures.
+ * The top-level entrypoint catches these and exits with `exitCode`
+ * instead of printing an unhandled exception stack trace.
+ */
 export class CliError extends Error {
   readonly exitCode: number;
 
@@ -8,6 +13,7 @@ export class CliError extends Error {
   }
 }
 
+/** Structured details attached to a {@link CommandExecutionError}. */
 export interface CommandExecutionErrorDetails {
   command: string;
   exitCode: number;
@@ -15,6 +21,10 @@ export interface CommandExecutionErrorDetails {
   stdout: string;
 }
 
+/**
+ * Thrown when a subprocess exits with a non-zero status.
+ * Carries the full stdout/stderr for diagnostics.
+ */
 export class CommandExecutionError extends CliError {
   readonly details: CommandExecutionErrorDetails;
 

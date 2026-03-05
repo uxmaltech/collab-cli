@@ -1,24 +1,12 @@
-import { execFileSync } from 'node:child_process';
-import readline from 'node:readline';
-
 import type { Command } from 'commander';
 
-import { green, red, yellow, CHECK, CROSS } from '../lib/ansi';
-import { resolveCommandPath } from '../lib/shell';
+import { green, CHECK } from '../lib/ansi';
+import { CliError } from '../lib/errors';
+import { requireNpm, npmGlobalUninstall } from '../lib/npm-operations';
+import { promptBoolean } from '../lib/prompt';
 
 interface UninstallOptions {
   yes?: boolean;
-}
-
-async function confirm(message: string): Promise<boolean> {
-  const rl = readline.createInterface({ input: process.stdin, output: process.stderr });
-
-  return new Promise((resolve) => {
-    rl.question(`${yellow(message)} (y/N) `, (answer) => {
-      rl.close();
-      resolve(/^y(es)?$/i.test(answer.trim()));
-    });
-  });
 }
 
 export function registerUninstallCommand(program: Command): void {
@@ -35,15 +23,13 @@ Examples:
 `,
     )
     .action(async (options: UninstallOptions) => {
-      const npmPath = resolveCommandPath('npm');
+      const npmPath = requireNpm();
       if (!npmPath) {
-        process.stderr.write(red(`${CROSS} npm not found in PATH. Cannot uninstall.\n`));
-        process.exitCode = 1;
-        return;
+        throw new CliError('npm not found in PATH. Cannot uninstall.');
       }
 
       if (!options.yes) {
-        const accepted = await confirm('Are you sure you want to uninstall collab-cli?');
+        const accepted = await promptBoolean('Are you sure you want to uninstall collab-cli?', false);
         if (!accepted) {
           process.stdout.write('Uninstall cancelled.\n');
           return;
@@ -52,23 +38,8 @@ Examples:
 
       process.stdout.write('Uninstalling collab-cli...\n');
 
-      try {
-        execFileSync(npmPath, ['uninstall', '-g', '@uxmaltech/collab-cli'], {
-          stdio: 'inherit',
-          timeout: 60_000,
-        });
-      } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : String(error);
-        if (/EACCES|permission denied/i.test(message)) {
-          process.stderr.write(
-            red(`${CROSS} Permission denied. Try:\n`) +
-            '  sudo npm uninstall -g @uxmaltech/collab-cli\n',
-          );
-        } else {
-          process.stderr.write(red(`${CROSS} Uninstall failed: ${message}\n`));
-        }
-        process.exitCode = 1;
-        return;
+      if (!npmGlobalUninstall(npmPath)) {
+        throw new CliError('Uninstall failed.');
       }
 
       process.stdout.write(green(`${CHECK} collab-cli has been uninstalled successfully.\n`));
