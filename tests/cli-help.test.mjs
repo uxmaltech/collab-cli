@@ -17,6 +17,7 @@ test('collab --help exposes top-level commands', () => {
   assert.match(result.stdout, /up/);
   assert.match(result.stdout, /seed/);
   assert.match(result.stdout, /doctor/);
+  assert.match(result.stdout, /upgrade/);
 });
 
 test('compose, infra, and mcp commands expose help examples', () => {
