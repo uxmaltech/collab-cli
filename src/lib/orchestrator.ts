@@ -57,6 +57,36 @@ function detectPlatformHints(stderr: string | undefined): string[] {
     );
   }
 
+  // Docker daemon not running
+  if (/cannot connect to.*docker daemon|is the docker daemon running/i.test(stderr)) {
+    hints.push(
+      'Docker daemon is not running. Start Docker Desktop or run: sudo systemctl start docker',
+    );
+  }
+
+  // Docker registry authentication failure (only in Docker/image contexts)
+  if (
+    /(denied: requested access to the resource|unauthorized: authentication required|pull access denied)/i.test(stderr) &&
+    /(docker|ghcr\.io|image|manifest|pull)/i.test(stderr)
+  ) {
+    hints.push('Docker registry auth failed. Run: docker login ghcr.io');
+  }
+
+  // ARM64 / multi-platform manifest mismatch
+  if (/no matching manifest.*arm64|no matching manifest for.*platform/i.test(stderr)) {
+    hints.push(
+      'Image not available for this platform. Verify the image supports linux/arm64 or rebuild with --platform.',
+    );
+  }
+
+  // Network errors during image pull (only in Docker/image contexts)
+  if (
+    /(network.*unreachable|timeout.*pull|dial tcp.*connection refused)/i.test(stderr) &&
+    /(docker|image|pull|manifest|registry)/i.test(stderr)
+  ) {
+    hints.push('Network error pulling images. Check internet connection and DNS settings.');
+  }
+
   return hints;
 }
 
@@ -112,8 +142,12 @@ export async function runOrchestration(
 
   if (options.resume && completed.size > 0) {
     options.logger.info(
-      `Resuming workflow '${options.workflowId}' with ${completed.size} completed stage(s).`,
+      `Resuming '${options.workflowId}': ${completed.size}/${stages.length} stages complete.`,
     );
+    for (const stage of stages) {
+      const status = completed.has(stage.id) ? '[done]' : '[pending]';
+      options.logger.info(`  ${status} ${stage.title}`);
+    }
   }
 
   const total = stages.length;

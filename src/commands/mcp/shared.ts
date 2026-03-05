@@ -1,34 +1,35 @@
 import path from 'node:path';
 
 import type { CollabConfig } from '../../lib/config';
-import type { Executor } from '../../lib/executor';
-import { CliError } from '../../lib/errors';
-import type { Logger } from '../../lib/logger';
-import { ensureCommandAvailable, ensureFileExists } from '../../lib/preconditions';
+import type { ComposeRunOptions, ComposeServiceSelection } from '../../lib/compose-paths';
 import { getComposeFilePaths, selectMcpComposeFile } from '../../lib/compose-paths';
 import { runDockerCompose } from '../../lib/docker-compose';
+import { CliError } from '../../lib/errors';
+import type { Executor } from '../../lib/executor';
+import type { Logger } from '../../lib/logger';
+import { ensureCommandAvailable, ensureFileExists } from '../../lib/preconditions';
 import {
   dryRunHealthOptions,
   loadRuntimeEnv,
   logServiceHealth,
   waitForMcpHealth,
-  type ServiceHealthOptions,
 } from '../../lib/service-health';
 
-export interface McpSelection {
-  filePath: string;
-  source: 'consolidated' | 'split';
-}
+/** @deprecated Use {@link ComposeServiceSelection} directly. */
+export type McpSelection = ComposeServiceSelection;
 
-export interface McpRunOptions {
-  health?: ServiceHealthOptions;
-}
+/** @deprecated Use {@link ComposeRunOptions} directly. */
+export type McpRunOptions = ComposeRunOptions;
 
+/**
+ * Resolves the compose file to use for the MCP service.
+ * Prefers an explicit `--file` flag, then falls back to compose-paths resolution.
+ */
 export function resolveMcpComposeFile(
   config: CollabConfig,
   outputDirectory: string | undefined,
   explicitFile: string | undefined,
-): McpSelection {
+): ComposeServiceSelection {
   if (explicitFile) {
     const filePath = path.resolve(config.workspaceDir, explicitFile);
     return { filePath, source: 'split' };
@@ -43,13 +44,17 @@ export function resolveMcpComposeFile(
   };
 }
 
+/**
+ * Runs a docker compose action for the MCP service.
+ * When the action is `'up'`, waits for health checks to pass.
+ */
 export async function runMcpCompose(
   logger: Logger,
   executor: Executor,
   config: CollabConfig,
-  selection: McpSelection,
+  selection: ComposeServiceSelection,
   action: 'up' | 'stop' | 'ps',
-  options: McpRunOptions = {},
+  options: ComposeRunOptions = {},
 ): Promise<void> {
   ensureCommandAvailable('docker', { dryRun: executor.dryRun });
   if (!executor.dryRun) {

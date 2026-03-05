@@ -4,7 +4,7 @@ import { createCommandContext } from '../lib/command-context';
 import { checkEcosystemCompatibility } from '../lib/ecosystem';
 import { parseMode } from '../lib/mode';
 import { runOrchestration } from '../lib/orchestrator';
-import type { ServiceHealthOptions } from '../lib/service-health';
+import { parseHealthOptions } from '../lib/parsers';
 import { resolveInfraComposeFile, runInfraCompose } from './infra/shared';
 import { resolveMcpComposeFile, runMcpCompose } from './mcp/shared';
 
@@ -16,23 +16,6 @@ interface UpOptions {
   retries?: string;
   retryDelayMs?: string;
   resume?: boolean;
-}
-
-function toNumber(value: string | undefined, fallback: number): number {
-  if (!value) {
-    return fallback;
-  }
-
-  const parsed = Number.parseInt(value, 10);
-  return Number.isNaN(parsed) ? fallback : parsed;
-}
-
-function healthOptions(options: UpOptions): ServiceHealthOptions {
-  return {
-    timeoutMs: toNumber(options.timeoutMs, 5_000),
-    retries: toNumber(options.retries, 15),
-    retryDelayMs: toNumber(options.retryDelayMs, 2_000),
-  };
 }
 
 export function registerUpCommand(program: Command): void {
@@ -64,7 +47,7 @@ Examples:
         return;
       }
 
-      const health = healthOptions(options);
+      const health = parseHealthOptions(options);
 
       await runOrchestration(
         {

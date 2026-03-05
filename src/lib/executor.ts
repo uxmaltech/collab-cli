@@ -6,29 +6,43 @@ import { CliError, CommandExecutionError } from './errors';
 import type { Logger } from './logger';
 import { toShellCommand } from './shell';
 
+/** Options for {@link Executor.run}. */
 export interface CommandRunOptions {
+  /** Override the working directory for this command. */
   cwd?: string;
+  /** If true (default), throw on non-zero exit. Set false to ignore failures. */
   check?: boolean;
+  /** If true, only log the command in verbose mode. */
   verboseOnly?: boolean;
 }
 
+/** Result returned by {@link Executor.run}. */
 export interface CommandRunResult {
   status: number;
   stdout: string;
   stderr: string;
   command: string;
+  /** True when the command was skipped due to `--dry-run`. */
   simulated: boolean;
 }
 
+/** Options for {@link Executor.writeFile}. */
 export interface WriteFileOptions {
+  /** Human-readable label shown in dry-run output. */
   description?: string;
 }
 
+/** Construction options for {@link Executor}. */
 export interface ExecutorOptions {
   dryRun: boolean;
   cwd: string;
 }
 
+/**
+ * Central side-effect executor.
+ * All file writes and subprocess calls go through this class so that
+ * `--dry-run` can suppress them while still logging what *would* happen.
+ */
 export class Executor {
   readonly dryRun: boolean;
   readonly cwd: string;

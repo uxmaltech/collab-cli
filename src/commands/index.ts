@@ -8,7 +8,9 @@ import { registerInitCommand } from './init';
 import { registerMcpCommand } from './mcp';
 import { registerSeedCommand } from './seed';
 import { registerUpCommand } from './up';
+import { registerUninstallCommand } from './uninstall';
 import { registerUpdateCanonsCommand } from './update-canons';
+import { registerUpgradeCommand } from './upgrade';
 
 export function registerCommands(program: Command): void {
   registerInitCommand(program);
@@ -20,4 +22,6 @@ export function registerCommands(program: Command): void {
   registerSeedCommand(program);
   registerDoctorCommand(program);
   registerUpdateCanonsCommand(program);
+  registerUpgradeCommand(program);
+  registerUninstallCommand(program);
 }
