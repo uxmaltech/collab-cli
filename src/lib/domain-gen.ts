@@ -414,5 +414,5 @@ export function parseDomainGenerationResponse(raw: string): DomainGenerationResu
 }
 
 function asArray<T>(value: unknown): T[] {
-  return Array.isArray(value) ? value : [];
+  return Array.isArray(value) ? (value as T[]) : [];
 }

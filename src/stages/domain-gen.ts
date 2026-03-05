@@ -26,7 +26,7 @@ import {
   triggerGraphSeed,
   type IngestDocument,
 } from '../lib/mcp-client';
-import type { OrchestrationStage, StageContext } from '../lib/orchestrator';
+import type { OrchestrationStage } from '../lib/orchestrator';
 import { getEnabledProviders } from '../lib/providers';
 import { scanRepository } from '../lib/repo-scanner';
 import { loadRuntimeEnv } from '../lib/service-health';
