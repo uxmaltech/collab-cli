@@ -22,7 +22,7 @@ graph TD
 
     CORE -- MCP tools --> MCP
     CORE -- "Epic + Stories" --> GH[GitHub Issues]
-    GH -- "GOV-R-001 → merge → Phase 5" --> BCA[collab-app-architecture<br><i>application canon</i>]
+    GH -- "GOV-R-002 → merge → GOV-R-003" --> BCA[collab-app-architecture<br><i>application canon</i>]
     BCA -- ingest --> MCP
 
     style CLI fill:#4a9eff,stroke:#2b7de9,color:#fff
