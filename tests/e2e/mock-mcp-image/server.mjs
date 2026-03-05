@@ -52,6 +52,26 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // ── HTTP API endpoints used by graph-seed and canon-ingest stages ──
+
+  if (req.method === 'POST' && req.url === '/api/v1/seed/graph') {
+    sendJson(res, 200, {
+      nodes_created: 0,
+      edges_created: 0,
+    });
+    return;
+  }
+
+  if (req.method === 'POST' && req.url === '/api/v1/ingest') {
+    sendJson(res, 200, {
+      ingested: 0,
+      skipped: 0,
+    });
+    return;
+  }
+
+  // ── MCP JSON-RPC endpoint ──
+
   if (req.method === 'POST' && req.url === '/mcp') {
     let payload = {};
     try {
