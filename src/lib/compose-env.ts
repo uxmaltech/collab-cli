@@ -8,9 +8,10 @@ export function ensureComposeEnvFile(
   logger: Logger,
   executor?: Executor,
   overrides?: EnvMap,
+  defaults: EnvMap = COMPOSE_ENV_DEFAULTS,
 ): EnvMap {
   const existing = readEnvFile(envFilePath);
-  const merged = mergeEnvWithDefaults(existing, COMPOSE_ENV_DEFAULTS);
+  const merged = mergeEnvWithDefaults(existing, defaults);
 
   if (overrides) {
     for (const [key, value] of Object.entries(overrides)) {

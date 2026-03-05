@@ -64,6 +64,7 @@ export async function runMcpCompose(
     files: [selection.filePath],
     arguments: [...args, ...serviceScope],
     cwd: config.workspaceDir,
+    projectName: config.compose.projectName,
   });
 
   if (action !== 'up') {

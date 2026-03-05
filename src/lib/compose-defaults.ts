@@ -27,3 +27,22 @@ export const COMPOSE_ENV_DEFAULTS: EnvMap = {
 };
 
 export const COMPOSE_ENV_ORDER = Object.keys(COMPOSE_ENV_DEFAULTS);
+
+/**
+ * Returns compose env defaults with workspace-scoped resource names.
+ * Prefixes network, volume, and project names with the workspace name
+ * to avoid collisions between workspaces running simultaneously.
+ */
+export function scopedComposeDefaults(workspaceName: string): EnvMap {
+  const slug = workspaceName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  const prefix = slug ? `collab-${slug}` : 'collab';
+
+  return {
+    ...COMPOSE_ENV_DEFAULTS,
+    COLLAB_NETWORK: `${prefix}-network`,
+    QDRANT_VOLUME: `${prefix}-qdrant-data`,
+    NEBULA_METAD_VOLUME: `${prefix}-nebula-metad0`,
+    NEBULA_STORAGED_VOLUME: `${prefix}-nebula-storaged0`,
+    MCP_VOLUME: `${prefix}-mcp-data`,
+  };
+}

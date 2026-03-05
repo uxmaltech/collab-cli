@@ -66,6 +66,7 @@ export async function runInfraCompose(
     files: [selection.filePath],
     arguments: [...args, ...services],
     cwd: config.workspaceDir,
+    projectName: config.compose.projectName,
   });
 
   if (action !== 'up') {

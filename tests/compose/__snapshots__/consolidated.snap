@@ -1,7 +1,7 @@
 services:
   qdrant:
     image: ${QDRANT_IMAGE}
-    container_name: collab-qdrant
+
     ports:
       - "${QDRANT_PORT}:6333"
     volumes:
@@ -11,7 +11,7 @@ services:
 
   metad0:
     image: "vesoft/nebula-metad:${NEBULA_VERSION}"
-    container_name: nebula-metad0
+
     ports:
       - "${NEBULA_METAD_PORT}:9559"
       - "${NEBULA_METAD_HTTP_PORT}:19559"
@@ -30,7 +30,7 @@ services:
 
   storaged0:
     image: "vesoft/nebula-storaged:${NEBULA_VERSION}"
-    container_name: nebula-storaged0
+
     depends_on:
       - metad0
     ports:
@@ -51,7 +51,7 @@ services:
 
   graphd:
     image: "vesoft/nebula-graphd:${NEBULA_VERSION}"
-    container_name: nebula-graphd
+
     depends_on:
       - metad0
       - storaged0
@@ -71,7 +71,7 @@ services:
 
   mcp:
     image: ${MCP_IMAGE}
-    container_name: collab-mcp
+
     depends_on:
       - qdrant
       - graphd

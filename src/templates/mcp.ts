@@ -1,7 +1,7 @@
 export const mcpTemplate = `services:
   mcp:
     image: \${MCP_IMAGE}
-    container_name: collab-mcp
+
     ports:
       - "\${MCP_PORT}:\${MCP_CONTAINER_PORT}"
     environment:

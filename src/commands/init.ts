@@ -7,12 +7,13 @@ import { createCommandContext } from '../lib/command-context';
 import { assertComposeFilesValid } from '../lib/compose-validator';
 import {
   defaultCollabConfig,
-  discoverRepos,
-  isWorkspaceRoot,
+  deriveWorkspaceName,
+  detectWorkspaceLayout,
   resolveRepoConfigs,
   serializeUserConfig,
   type CanonsConfig,
   type CollabConfig,
+  type WorkspaceType,
 } from '../lib/config';
 import { checkEcosystemCompatibility } from '../lib/ecosystem';
 import { generateComposeFiles } from '../lib/compose-renderer';
@@ -382,40 +383,64 @@ function buildConfigStage(
 // Workspace helpers
 // ────────────────────────────────────────────────────────────────
 
+interface WorkspaceResolution {
+  name: string;
+  type: WorkspaceType;
+  repos: string[];
+}
+
 function parseRepos(value: string | undefined): string[] | null {
   if (!value) return null;
   return value.split(',').map((r) => r.trim()).filter(Boolean);
 }
 
-async function resolveWorkspaceRepos(
+async function resolveWorkspace(
   workspaceDir: string,
   options: InitOptions,
   logger: Logger,
-): Promise<string[] | null> {
-  // Explicit --repos flag takes priority
+): Promise<WorkspaceResolution | null> {
+  const name = deriveWorkspaceName(workspaceDir);
+
+  // Explicit --repos flag takes priority → always multi-repo
   const explicit = parseRepos(options.repos);
   if (explicit && explicit.length > 0) {
     logger.info(`Workspace mode: ${explicit.length} repo(s) specified: ${explicit.join(', ')}`);
-    return explicit;
+    return { name, type: 'multi-repo', repos: explicit };
   }
 
-  // Auto-discover when cwd looks like a workspace root
-  if (isWorkspaceRoot(workspaceDir)) {
-    const discovered = discoverRepos(workspaceDir);
+  // Auto-detect workspace layout
+  const layout = detectWorkspaceLayout(workspaceDir);
 
+  if (layout) {
     if (options.yes) {
-      logger.info(`Workspace auto-detected: ${discovered.length} repo(s) found: ${discovered.join(', ')}`);
-      return discovered;
+      logger.info(
+        `Workspace auto-detected (${layout.type}): ${layout.repos.length} repo(s) found: ${layout.repos.join(', ')}`,
+      );
+      return { name, type: layout.type, repos: layout.repos };
     }
 
-    // Interactive: let user confirm/select repos
-    const selected = await promptMultiSelect(
-      'This directory contains multiple git repositories. Select repos to include:',
-      discovered.map((r) => ({ value: r, label: r })),
-      discovered,
-    );
+    // Interactive: for multi-repo let user confirm/select repos
+    if (layout.type === 'multi-repo') {
+      const selected = await promptMultiSelect(
+        'This directory contains multiple git repositories. Select repos to include:',
+        layout.repos.map((r) => ({ value: r, label: r })),
+        layout.repos,
+      );
 
-    return selected.length > 0 ? selected : null;
+      if (selected.length === 0) return null;
+      return { name, type: 'multi-repo', repos: selected };
+    }
+
+    // mono-repo auto-detected
+    logger.info(`Mono-repo workspace detected: ${layout.repos.join(', ')}`);
+    return { name, type: 'mono-repo', repos: layout.repos };
+  }
+
+  // No repos found
+  if (options.yes) {
+    // Non-interactive with no repos → treat cwd as mono-repo
+    logger.info('No repos discovered; initializing as mono-repo workspace.');
+    return { name, type: 'mono-repo', repos: ['.'] };
   }
 
   return null;
@@ -940,19 +965,23 @@ Examples:
       };
 
       // ── Workspace detection ───────────────────────────────────
-      const repos = await resolveWorkspaceRepos(
+      const ws = await resolveWorkspace(
         context.config.workspaceDir,
         options,
         context.logger,
       );
 
-      if (repos && repos.length > 0) {
+      if (ws) {
         // ── WORKSPACE MODE ────────────────────────────────────
-        effectiveConfig.workspace = { repos };
+        effectiveConfig.workspace = { name: ws.name, type: ws.type, repos: ws.repos };
+        effectiveConfig.compose = {
+          ...effectiveConfig.compose,
+          projectName: `collab-${ws.name}`,
+        };
         const repoConfigs = resolveRepoConfigs(effectiveConfig);
 
         // Phase W — workspace-level stages
-        context.logger.phaseHeader('Workspace Setup', `${repos.length} repositories`);
+        context.logger.phaseHeader('Workspace Setup', `${ws.repos.length} repositories (${ws.type})`);
 
         const workspaceStages = buildWorkspaceStages(
           effectiveConfig, context.executor, context.logger,
@@ -1052,12 +1081,15 @@ Examples:
         { label: 'Providers', value: providerLabel },
       ];
 
-      if (repos && repos.length > 0) {
-        summaryEntries.splice(1, 0, { label: 'Workspace repos', value: repos.join(', ') });
+      if (ws) {
+        summaryEntries.splice(1, 0,
+          { label: 'Workspace', value: `${ws.name} (${ws.type})` },
+          { label: 'Repos', value: ws.repos.join(', ') },
+        );
       }
 
       if (selections.mode === 'indexed') {
-        summaryEntries.splice(repos ? 2 : 1, 0, { label: 'Compose mode', value: selections.composeMode });
+        summaryEntries.splice(ws ? 3 : 1, 0, { label: 'Compose mode', value: selections.composeMode });
       }
 
       context.logger.summaryFooter(summaryEntries);
