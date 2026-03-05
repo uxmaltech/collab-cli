@@ -1,5 +1,6 @@
 import type { Command } from 'commander';
 
+import { registerCanonCommand } from './canon';
 import { registerComposeCommand } from './compose';
 import { registerDoctorCommand } from './doctor';
 import { registerInfraCommand } from './infra';
@@ -11,6 +12,7 @@ import { registerUpdateCanonsCommand } from './update-canons';
 
 export function registerCommands(program: Command): void {
   registerInitCommand(program);
+  registerCanonCommand(program);
   registerComposeCommand(program);
   registerInfraCommand(program);
   registerMcpCommand(program);
