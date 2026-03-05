@@ -1,27 +1,35 @@
+import {
+  getMcpBaseUrl,
+  resolveMcpApiKey,
+  resolveMcpHttpTimeoutMs,
+  triggerGraphSeed,
+} from '../lib/mcp-client';
+import { loadRuntimeEnv } from '../lib/service-health';
 import type { OrchestrationStage } from '../lib/orchestrator';
-
-/** Container name for the MCP service — matches the compose template. */
-const MCP_CONTAINER = 'collab-mcp';
 
 export const graphSeedStage: OrchestrationStage = {
   id: 'graph-seed',
   title: 'Seed NebulaGraph knowledge graph',
   recovery: [
-    'Ensure MCP and NebulaGraph containers are running.',
+    'Ensure MCP service is running and accessible.',
     'Run collab init --resume to retry graph seeding.',
   ],
-  run: (ctx) => {
+  run: async (ctx) => {
     if (ctx.executor.dryRun) {
-      ctx.logger.info('[dry-run] Would seed NebulaGraph with canonical knowledge graph.');
+      ctx.logger.info('[dry-run] Would seed NebulaGraph with canonical knowledge graph via HTTP.');
       return;
     }
 
-    ctx.logger.info('Seeding NebulaGraph with canonical architecture graph...');
+    ctx.logger.info('Seeding NebulaGraph with canonical architecture graph via HTTP...');
 
-    // Use `docker exec` directly against the well-known container name so the
-    // command succeeds regardless of which compose project started the container.
-    ctx.executor.run('docker', ['exec', MCP_CONTAINER, 'node', 'scripts/seed-graph.mjs']);
+    const baseUrl = getMcpBaseUrl(ctx.config);
+    const env = loadRuntimeEnv(ctx.config);
+    const apiKey = resolveMcpApiKey(env);
+    const timeoutMs = resolveMcpHttpTimeoutMs(env);
 
-    ctx.logger.info('NebulaGraph seeding complete.');
+    const result = await triggerGraphSeed(baseUrl, apiKey, timeoutMs);
+    ctx.logger.info(
+      `NebulaGraph seeding complete: ${result.nodes_created} nodes, ${result.edges_created} edges.`,
+    );
   },
 };

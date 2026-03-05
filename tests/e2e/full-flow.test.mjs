@@ -76,7 +76,7 @@ test(
       }
 
       const initResult = safeRunCli(
-        ['--cwd', workspace, 'init', '--yes', '--mode', 'indexed', '--timeout-ms', '3000', '--retries', '40'],
+        ['--cwd', workspace, 'init', '--yes', '--business-canon', 'none', '--mode', 'indexed', '--timeout-ms', '3000', '--retries', '40'],
         workspace,
         300_000,
       );

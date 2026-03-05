@@ -29,6 +29,10 @@
 - Validate help output and error paths for new commands.
 - Keep tests deterministic and independent from network access by default.
 
+## Language Policy
+- All documentation, README files, code comments, and canon entries MUST be written in English.
+- No translations, localized variants, or bilingual files are permitted in any UxmalTech repository.
+
 ## Anti-patterns
 - Duplicating the same parsing or formatting logic across command files.
 - Embedding business workflows directly in `bin/` scripts.

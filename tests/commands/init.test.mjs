@@ -36,6 +36,7 @@ test('init --yes accepts explicit flags in non-interactive mode', () => {
       '--dry-run',
       'init',
       '--yes',
+      '--business-canon', 'none',
       '--mode',
       'indexed',
       '--compose-mode',
@@ -58,7 +59,7 @@ test('init --yes --mode file-only has no compose or MCP stages', () => {
   const env = createFakeDockerEnv();
 
   const result = runCli(
-    ['--cwd', workspace, '--dry-run', 'init', '--yes', '--mode', 'file-only'],
+    ['--cwd', workspace, '--dry-run', 'init', '--yes', '--business-canon', 'none', '--mode', 'file-only'],
     {
       cwd: workspace,
       env,

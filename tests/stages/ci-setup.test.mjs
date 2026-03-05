@@ -12,7 +12,7 @@ test('ci-setup generates both workflows in indexed mode (dry-run)', () => {
   const env = createFakeDockerEnv();
 
   const result = runCli(
-    ['--cwd', workspace, '--dry-run', 'init', '--yes', '--mode', 'indexed'],
+    ['--cwd', workspace, '--dry-run', 'init', '--yes', '--business-canon', 'none', '--mode', 'indexed'],
     { cwd: workspace, env },
   );
 
@@ -32,7 +32,7 @@ test('ci-setup skips with --skip-ci flag (dry-run)', () => {
   const env = createFakeDockerEnv();
 
   const result = runCli(
-    ['--cwd', workspace, '--dry-run', 'init', '--yes', '--mode', 'file-only', '--skip-ci'],
+    ['--cwd', workspace, '--dry-run', 'init', '--yes', '--business-canon', 'none', '--mode', 'file-only', '--skip-ci'],
     { cwd: workspace, env },
   );
 
@@ -48,7 +48,7 @@ test('ci-setup stage appears in file-only output (dry-run)', () => {
   const env = createFakeDockerEnv();
 
   const result = runCli(
-    ['--cwd', workspace, '--dry-run', 'init', '--yes', '--mode', 'file-only'],
+    ['--cwd', workspace, '--dry-run', 'init', '--yes', '--business-canon', 'none', '--mode', 'file-only'],
     { cwd: workspace, env },
   );
 

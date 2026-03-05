@@ -20,7 +20,7 @@ test('repo-analysis skips when no providers are enabled (dry-run)', () => {
   env.PATH = [fakeBinDir, nodeBinDir, '/usr/bin', '/bin'].join(':');
 
   const result = runCli(
-    ['--cwd', workspace, '--dry-run', 'init', '--yes', '--mode', 'file-only'],
+    ['--cwd', workspace, '--dry-run', 'init', '--yes', '--business-canon', 'none', '--mode', 'file-only'],
     { cwd: workspace, env },
   );
 
@@ -43,7 +43,7 @@ test('repo-analysis skips with --skip-analysis flag (dry-run)', () => {
 
   const result = runCli(
     [
-      '--cwd', workspace, '--dry-run', 'init', '--yes',
+      '--cwd', workspace, '--dry-run', 'init', '--yes', '--business-canon', 'none',
       '--mode', 'file-only', '--providers', 'codex', '--skip-analysis',
     ],
     { cwd: workspace, env },
@@ -65,7 +65,7 @@ test('repo-analysis stage appears in dry-run output', () => {
 
   const result = runCli(
     [
-      '--cwd', workspace, '--dry-run', 'init', '--yes',
+      '--cwd', workspace, '--dry-run', 'init', '--yes', '--business-canon', 'none',
       '--mode', 'file-only', '--providers', 'codex',
     ],
     { cwd: workspace, env },

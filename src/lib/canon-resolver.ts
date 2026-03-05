@@ -3,6 +3,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
+import type { CollabConfig } from './config';
+
 const CANON_REPO_NAME = 'collab-architecture';
 const CANONS_SUBDIR = 'canons';
 
@@ -144,6 +146,137 @@ export function copyCanonContent(targetDir: string, log?: (msg: string) => void)
 
   let totalFiles = 0;
 
+  for (const dir of CANON_COPY_DIRS) {
+    const src = path.join(sourceDir, dir);
+    const dest = path.join(targetDir, dir);
+
+    if (!fs.existsSync(src)) {
+      continue;
+    }
+
+    fs.cpSync(src, dest, { recursive: true });
+    const fileCount = countFiles(dest);
+    totalFiles += fileCount;
+    print(`  Copied ${dir}/ (${fileCount} files)`);
+  }
+
+  for (const file of CANON_COPY_ROOT_FILES) {
+    const src = path.join(sourceDir, file);
+    const dest = path.join(targetDir, file);
+
+    if (!fs.existsSync(src)) {
+      continue;
+    }
+
+    fs.copyFileSync(src, dest);
+    totalFiles++;
+    print(`  Copied ${file}`);
+  }
+
+  return totalFiles;
+}
+
+// ────────────────────────────────────────────────────────────────
+// Business canon support
+// ────────────────────────────────────────────────────────────────
+
+/**
+ * Returns true if the config has a business canon configured.
+ */
+export function isBusinessCanonConfigured(config: CollabConfig): boolean {
+  return !!config.canons?.business?.repo;
+}
+
+/**
+ * Returns the local directory where the business canon is cloned.
+ */
+export function getBusinessCanonDir(config: CollabConfig): string {
+  const canon = config.canons?.business;
+  if (!canon) {
+    throw new Error('No business canon configured.');
+  }
+
+  const repoName = canon.repo.split('/').pop() ?? canon.repo;
+  const collabHome = process.env.COLLAB_HOME ?? path.join(os.homedir(), '.collab');
+  return path.join(collabHome, CANONS_SUBDIR, repoName);
+}
+
+/**
+ * Clones or pulls the business canon repository.
+ * Uses the workspace GitHub token if available, otherwise falls back to default git credentials.
+ */
+export function syncBusinessCanon(
+  config: CollabConfig,
+  log?: (msg: string) => void,
+  token?: string,
+): boolean {
+  const canon = config.canons?.business;
+  if (!canon) {
+    return false;
+  }
+
+  const canonsDir = getBusinessCanonDir(config);
+  const parentDir = path.dirname(canonsDir);
+  const print = log ?? console.log;
+  const branch = canon.branch || 'main';
+
+  // Build repo URL — inject token for private repo access if available
+  let repoUrl: string;
+  if (token) {
+    repoUrl = `https://x-access-token:${token}@github.com/${canon.repo}.git`;
+  } else {
+    repoUrl = `https://github.com/${canon.repo}.git`;
+  }
+
+  try {
+    if (fs.existsSync(path.join(canonsDir, '.git'))) {
+      print(`Updating business canon in ${canonsDir}...`);
+      execFileSync('git', ['-C', canonsDir, 'fetch', 'origin', branch], {
+        stdio: ['ignore', 'pipe', 'inherit'],
+      });
+      execFileSync('git', ['-C', canonsDir, 'checkout', branch], {
+        stdio: ['ignore', 'pipe', 'inherit'],
+      });
+      execFileSync('git', ['-C', canonsDir, 'reset', '--hard', `origin/${branch}`], {
+        stdio: ['ignore', 'pipe', 'inherit'],
+      });
+    } else {
+      print(`Cloning business canon into ${canonsDir}...`);
+      fs.mkdirSync(parentDir, { recursive: true });
+      execFileSync(
+        'git',
+        ['clone', '--branch', branch, '--single-branch', repoUrl, canonsDir],
+        { stdio: ['ignore', 'inherit', 'inherit'] },
+      );
+    }
+    return true;
+  } catch (err) {
+    print(`Failed to sync business canon: ${String(err)}`);
+    return false;
+  }
+}
+
+/**
+ * Copies the business canon content to a target directory.
+ * Copies all directories and root files found in the canon.
+ */
+export function copyBusinessCanonContent(
+  config: CollabConfig,
+  targetDir: string,
+  log?: (msg: string) => void,
+): number {
+  const sourceDir = getBusinessCanonDir(config);
+  const print = log ?? (() => {});
+
+  if (!fs.existsSync(sourceDir)) {
+    throw new Error(`Business canon source not found at ${sourceDir}. Run syncBusinessCanon() first.`);
+  }
+
+  fs.mkdirSync(targetDir, { recursive: true });
+
+  let totalFiles = 0;
+
+  // Copy same directories as framework canon (where they exist)
   for (const dir of CANON_COPY_DIRS) {
     const src = path.join(sourceDir, dir);
     const dest = path.join(targetDir, dir);

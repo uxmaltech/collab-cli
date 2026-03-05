@@ -8,10 +8,32 @@ export interface ComposePathConfig {
   consolidatedFile: string;
   infraFile: string;
   mcpFile: string;
+  /** Docker Compose project name for workspace isolation (e.g. "collab-ecommerce"). */
+  projectName?: string;
 }
 
+export type WorkspaceType = 'multi-repo' | 'mono-repo';
+
 export interface WorkspaceConfig {
+  /** Human-readable workspace identifier (e.g. "ecommerce", "analytics"). */
+  name: string;
+  /** Workspace topology: mono-repo (single repo) or multi-repo (multiple repos). */
+  type: WorkspaceType;
+  /** Repo directory names relative to the workspace root. */
   repos: string[];
+}
+
+export interface CanonConfig {
+  /** GitHub repo slug: "owner/repo" */
+  repo: string;
+  /** Branch to track */
+  branch: string;
+  /** Local copy directory name under docs/architecture/ */
+  localDir: string;
+}
+
+export interface CanonsConfig {
+  business?: CanonConfig;
 }
 
 export interface RepoConfig {
@@ -35,6 +57,14 @@ export interface CollabConfig {
   aiDir: string;
   assistants?: AssistantsConfig;
   workspace?: WorkspaceConfig;
+  canons?: CanonsConfig;
+}
+
+/** Raw config that may come from an older version without workspace metadata. */
+interface RawWorkspaceConfig {
+  name?: string;
+  type?: WorkspaceType;
+  repos?: string[];
 }
 
 interface RawCollabConfig {
@@ -43,7 +73,8 @@ interface RawCollabConfig {
   mode?: string;
   architectureDir?: string;
   assistants?: AssistantsConfig;
-  workspace?: WorkspaceConfig;
+  workspace?: RawWorkspaceConfig;
+  canons?: CanonsConfig;
 }
 
 const DEFAULT_COMPOSE_PATHS: ComposePathConfig = {
@@ -90,6 +121,8 @@ export function loadCollabConfig(cwd = process.cwd()): CollabConfig {
     ? path.resolve(defaults.workspaceDir, raw.architectureDir)
     : defaults.architectureDir;
 
+  const workspace = migrateWorkspaceConfig(raw.workspace, defaults.workspaceDir);
+
   return {
     ...defaults,
     mode: parseMode(raw.mode, defaults.mode),
@@ -98,13 +131,15 @@ export function loadCollabConfig(cwd = process.cwd()): CollabConfig {
       consolidatedFile: raw.compose?.consolidatedFile ?? defaults.compose.consolidatedFile,
       infraFile: raw.compose?.infraFile ?? defaults.compose.infraFile,
       mcpFile: raw.compose?.mcpFile ?? defaults.compose.mcpFile,
+      projectName: raw.compose?.projectName ?? (workspace ? `collab-${workspace.name}` : undefined),
     },
     architectureDir,
     uxmaltechDir: path.join(architectureDir, 'uxmaltech'),
     repoDir: path.join(architectureDir, 'repo'),
     aiDir: path.join(defaults.workspaceDir, 'docs', 'ai'),
     assistants: raw.assistants,
-    workspace: raw.workspace,
+    workspace,
+    canons: raw.canons,
   };
 }
 
@@ -125,6 +160,10 @@ export function serializeUserConfig(config: CollabConfig): string {
 
   if (config.workspace) {
     data.workspace = config.workspace;
+  }
+
+  if (config.canons) {
+    data.canons = config.canons;
   }
 
   return JSON.stringify(data, null, 2);
@@ -177,11 +216,80 @@ export function discoverRepos(workspaceDir: string): string[] {
 
 /**
  * Returns true when the directory looks like a workspace root:
- * no `.git/` of its own and at least two child git repos.
+ * no `.git/` of its own and at least one child git repo.
  */
 export function isWorkspaceRoot(dir: string): boolean {
   const hasOwnGit = fs.existsSync(path.join(dir, '.git'));
   if (hasOwnGit) return false;
 
-  return discoverRepos(dir).length >= 2;
+  return discoverRepos(dir).length >= 1;
+}
+
+/**
+ * Derives a slugified workspace name from a directory path.
+ */
+export function deriveWorkspaceName(dir: string): string {
+  return path.basename(path.resolve(dir))
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '') || 'workspace';
+}
+
+/** Workspace detection result. */
+export interface WorkspaceLayout {
+  type: WorkspaceType;
+  repos: string[];
+}
+
+/**
+ * Detects the workspace layout of a directory.
+ *
+ * - If the directory is itself a git repo → mono-repo with repos=["."]
+ * - If it has ≥2 child git repos → multi-repo
+ * - If it has exactly 1 child git repo → mono-repo
+ * - If it has 0 child git repos → null (caller decides)
+ */
+export function detectWorkspaceLayout(dir: string): WorkspaceLayout | null {
+  // Case 1: current directory IS a git repo
+  if (fs.existsSync(path.join(dir, '.git'))) {
+    return { type: 'mono-repo', repos: ['.'] };
+  }
+
+  // Case 2: scan for child repos
+  const childRepos = discoverRepos(dir);
+
+  if (childRepos.length >= 2) {
+    return { type: 'multi-repo', repos: childRepos };
+  }
+
+  if (childRepos.length === 1) {
+    return { type: 'mono-repo', repos: childRepos };
+  }
+
+  // No repos found — caller must decide
+  return null;
+}
+
+/**
+ * Migrates an older workspace config (repos-only) to the full format
+ * with name and type fields. Returns undefined if no workspace data.
+ */
+function migrateWorkspaceConfig(
+  raw: RawWorkspaceConfig | undefined,
+  workspaceDir: string,
+): WorkspaceConfig | undefined {
+  if (!raw || !Array.isArray(raw.repos)) {
+    return undefined;
+  }
+
+  const repos = raw.repos.filter((r): r is string => typeof r === 'string' && r.length > 0);
+  if (repos.length === 0) {
+    return undefined;
+  }
+
+  return {
+    name: raw.name || deriveWorkspaceName(workspaceDir),
+    type: raw.type || (repos.length >= 2 ? 'multi-repo' : 'mono-repo'),
+    repos,
+  };
 }

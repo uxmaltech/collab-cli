@@ -12,7 +12,7 @@ test('indexed mode runs canon-sync instead of canon-scaffold (dry-run)', () => {
   const env = createFakeDockerEnv();
 
   const result = runCli(
-    ['--cwd', workspace, '--dry-run', 'init', '--yes', '--mode', 'indexed'],
+    ['--cwd', workspace, '--dry-run', 'init', '--yes', '--business-canon', 'none', '--mode', 'indexed'],
     { cwd: workspace, env },
   );
 
@@ -32,7 +32,7 @@ test('indexed mode has repo-scaffold, agent-skills-setup, and graph-seed (dry-ru
   const env = createFakeDockerEnv();
 
   const result = runCli(
-    ['--cwd', workspace, '--dry-run', 'init', '--yes', '--mode', 'indexed'],
+    ['--cwd', workspace, '--dry-run', 'init', '--yes', '--business-canon', 'none', '--mode', 'indexed'],
     { cwd: workspace, env },
   );
 
@@ -60,7 +60,7 @@ test('file-only mode runs canon-sync and repo-scaffold (dry-run)', () => {
   const env = createFakeDockerEnv();
 
   const result = runCli(
-    ['--cwd', workspace, '--dry-run', 'init', '--yes', '--mode', 'file-only'],
+    ['--cwd', workspace, '--dry-run', 'init', '--yes', '--business-canon', 'none', '--mode', 'file-only'],
     { cwd: workspace, env },
   );
 
@@ -80,7 +80,7 @@ test('file-only pipeline does not contain indexed-only stages (dry-run)', () => 
   const env = createFakeDockerEnv();
 
   const result = runCli(
-    ['--cwd', workspace, '--dry-run', 'init', '--yes', '--mode', 'file-only'],
+    ['--cwd', workspace, '--dry-run', 'init', '--yes', '--business-canon', 'none', '--mode', 'file-only'],
     { cwd: workspace, env },
   );
 
@@ -106,7 +106,7 @@ test('file-only mode has agent-skills-setup stage (dry-run)', () => {
   const env = createFakeDockerEnv();
 
   const result = runCli(
-    ['--cwd', workspace, '--dry-run', 'init', '--yes', '--mode', 'file-only'],
+    ['--cwd', workspace, '--dry-run', 'init', '--yes', '--business-canon', 'none', '--mode', 'file-only'],
     { cwd: workspace, env },
   );
 

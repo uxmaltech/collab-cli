@@ -18,7 +18,7 @@ test('assistant-setup stage appears in init flow', () => {
 
   // Use --yes for non-interactive, which auto-detects OPENAI_API_KEY
   const result = runCli(
-    ['--cwd', workspace, '--dry-run', 'init', '--yes', '--mode', 'file-only'],
+    ['--cwd', workspace, '--dry-run', 'init', '--yes', '--business-canon', 'none', '--mode', 'file-only'],
     { cwd: workspace, env },
   );
 
@@ -39,7 +39,7 @@ test('init --yes --providers codex configures codex with api-key', () => {
   };
 
   const result = runCli(
-    ['--cwd', workspace, '--dry-run', 'init', '--yes', '--providers', 'codex', '--mode', 'file-only'],
+    ['--cwd', workspace, '--dry-run', 'init', '--yes', '--business-canon', 'none', '--providers', 'codex', '--mode', 'file-only'],
     { cwd: workspace, env },
   );
 
@@ -62,7 +62,7 @@ test('init --yes --providers codex,claude configures multiple providers', () => 
 
   const result = runCli(
     [
-      '--cwd', workspace, '--dry-run', 'init', '--yes',
+      '--cwd', workspace, '--dry-run', 'init', '--yes', '--business-canon', 'none',
       '--providers', 'codex,claude', '--mode', 'file-only',
     ],
     { cwd: workspace, env },
@@ -81,7 +81,7 @@ test('init --yes auto-detects providers from environment', () => {
   };
 
   const result = runCli(
-    ['--cwd', workspace, '--dry-run', 'init', '--yes', '--mode', 'file-only'],
+    ['--cwd', workspace, '--dry-run', 'init', '--yes', '--business-canon', 'none', '--mode', 'file-only'],
     { cwd: workspace, env },
   );
 
@@ -106,7 +106,7 @@ test('init --yes with no env vars and no CLIs skips assistant-setup gracefully',
   env.PATH = [fakeBinDir, nodeBinDir, '/usr/bin', '/bin'].join(':');
 
   const result = runCli(
-    ['--cwd', workspace, '--dry-run', 'init', '--yes', '--mode', 'file-only'],
+    ['--cwd', workspace, '--dry-run', 'init', '--yes', '--business-canon', 'none', '--mode', 'file-only'],
     { cwd: workspace, env },
   );
 
@@ -124,7 +124,7 @@ test('init --providers with invalid provider name fails', () => {
   const env = createFakeDockerEnv();
 
   const result = runCli(
-    ['--cwd', workspace, '--dry-run', 'init', '--yes', '--providers', 'invalid', '--mode', 'file-only'],
+    ['--cwd', workspace, '--dry-run', 'init', '--yes', '--business-canon', 'none', '--providers', 'invalid', '--mode', 'file-only'],
     { cwd: workspace, env },
   );
 
@@ -141,7 +141,7 @@ test('config persists assistants after setup', () => {
 
   // Run with actual file writes (no --dry-run) but use file-only mode to skip docker
   const result = runCli(
-    ['--cwd', workspace, 'init', '--yes', '--providers', 'codex', '--mode', 'file-only', '--skip-analysis'],
+    ['--cwd', workspace, 'init', '--yes', '--business-canon', 'none', '--providers', 'codex', '--mode', 'file-only', '--skip-analysis'],
     { cwd: workspace, env },
   );
 
@@ -170,14 +170,14 @@ test('resume skips assistant-setup when already completed', () => {
 
   // First run
   const first = runCli(
-    ['--cwd', workspace, 'init', '--yes', '--providers', 'codex', '--mode', 'file-only', '--skip-analysis'],
+    ['--cwd', workspace, 'init', '--yes', '--business-canon', 'none', '--providers', 'codex', '--mode', 'file-only', '--skip-analysis'],
     { cwd: workspace, env },
   );
   assert.equal(first.status, 0, `initial CLI failed: ${first.stderr}`);
 
   // Second run with --resume
   const result = runCli(
-    ['--cwd', workspace, 'init', '--yes', '--resume', '--mode', 'file-only', '--skip-analysis'],
+    ['--cwd', workspace, 'init', '--yes', '--business-canon', 'none', '--resume', '--mode', 'file-only', '--skip-analysis'],
     { cwd: workspace, env },
   );
 

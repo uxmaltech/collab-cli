@@ -7,6 +7,16 @@ import type { Logger } from './logger';
 
 export type ServiceHealthOptions = HealthRetryOptions;
 
+/**
+ * Default health-check options used by standalone canon-rebuild stages
+ * that need to verify MCP reachability before calling API endpoints.
+ */
+export const REBUILD_HEALTH_OPTIONS: ServiceHealthOptions = {
+  timeoutMs: 5_000,
+  retries: 3,
+  retryDelayMs: 1_000,
+};
+
 export interface ServiceHealthSummary {
   ok: boolean;
   checks: string[];

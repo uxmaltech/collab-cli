@@ -7,18 +7,21 @@ import { createCommandContext } from '../lib/command-context';
 import { assertComposeFilesValid } from '../lib/compose-validator';
 import {
   defaultCollabConfig,
-  discoverRepos,
-  isWorkspaceRoot,
+  deriveWorkspaceName,
+  detectWorkspaceLayout,
   resolveRepoConfigs,
   serializeUserConfig,
+  type CanonsConfig,
   type CollabConfig,
+  type WorkspaceType,
 } from '../lib/config';
 import { checkEcosystemCompatibility } from '../lib/ecosystem';
 import { generateComposeFiles } from '../lib/compose-renderer';
 import { CliError } from '../lib/errors';
 import { parseMode, type CollabMode } from '../lib/mode';
 import { runOrchestration, runPerRepoOrchestration, type OrchestrationStage } from '../lib/orchestrator';
-import { promptChoice, promptMultiSelect } from '../lib/prompt';
+import { loadGitHubAuth, isGitHubAuthValid, runGitHubDeviceFlow, storeGitHubToken } from '../lib/github-auth';
+import { promptChoice, promptMultiSelect, promptText } from '../lib/prompt';
 import { assertPreflightChecks, runPreflightChecks } from '../lib/preflight';
 import { ensureWritableDirectory } from '../lib/preconditions';
 import { resolveInfraComposeFile, runInfraCompose } from './infra/shared';
@@ -33,6 +36,8 @@ import { repoAnalysisStage } from '../stages/repo-analysis';
 import { repoAnalysisFileOnlyStage } from '../stages/repo-analysis-fileonly';
 import { agentSkillsSetupStage } from '../stages/agent-skills-setup';
 import { ciSetupStage } from '../stages/ci-setup';
+import { buildFileOnlyDomainPipeline, buildIndexedDomainPipeline } from '../stages/domain-gen';
+import { isBusinessCanonConfigured } from '../lib/canon-resolver';
 import { getEnabledProviders, PROVIDER_DEFAULTS, type ProviderKey } from '../lib/providers';
 import type { Executor } from '../lib/executor';
 import type { Logger } from '../lib/logger';
@@ -46,6 +51,7 @@ interface InitOptions {
   composeMode?: string;
   outputDir?: string;
   repos?: string;
+  repo?: string;
   skipMcpSnippets?: boolean;
   skipAnalysis?: boolean;
   skipCi?: boolean;
@@ -53,6 +59,8 @@ interface InitOptions {
   retries?: string;
   retryDelayMs?: string;
   providers?: string;
+  businessCanon?: string;
+  githubToken?: string;
 }
 
 interface WizardSelection {
@@ -207,6 +215,122 @@ function renderMcpSnippet(provider: ProviderKey, config: CollabConfig): { filena
 }
 
 // ────────────────────────────────────────────────────────────────
+// GitHub auth & business canon helpers
+// ────────────────────────────────────────────────────────────────
+
+function buildGitHubAuthStage(
+  effectiveConfig: CollabConfig,
+  logger: Logger,
+  options: InitOptions,
+): OrchestrationStage {
+  return {
+    id: 'github-auth',
+    title: 'Authorize GitHub access',
+    recovery: [
+      'Set COLLAB_GITHUB_CLIENT_ID env var if OAuth App is not configured.',
+      'Use --github-token <token> to provide a token directly.',
+      'Run collab init --resume after fixing GitHub access.',
+    ],
+    run: async () => {
+      // Skip if no business canon is configured — GitHub auth is only needed for private repos
+      if (!effectiveConfig.canons?.business) {
+        logger.info('No business canon configured; skipping GitHub authorization.');
+        return;
+      }
+
+      // Check for pre-existing valid token
+      const existing = loadGitHubAuth(effectiveConfig.collabDir);
+      if (existing) {
+        const valid = await isGitHubAuthValid(existing);
+        if (valid) {
+          logger.info('GitHub authorization already configured and valid.');
+          return;
+        }
+        logger.info('Existing GitHub token is invalid or expired. Re-authorizing...');
+      }
+
+      // --github-token flag: store directly
+      if (options.githubToken) {
+        storeGitHubToken(effectiveConfig.collabDir, options.githubToken);
+        logger.info('GitHub token stored from --github-token flag.');
+        return;
+      }
+
+      // --yes without token: fail
+      if (options.yes) {
+        throw new CliError(
+          'GitHub authorization required. Use --github-token <token> in non-interactive mode.',
+        );
+      }
+
+      // Interactive: run Device Flow
+      await runGitHubDeviceFlow(effectiveConfig.collabDir, (msg) => logger.info(msg));
+    },
+  };
+}
+
+function parseBusinessCanonOption(value: string | undefined): CanonsConfig | undefined {
+  if (!value || value === 'none' || value === 'skip') {
+    return undefined;
+  }
+
+  if (!value.includes('/')) {
+    throw new CliError(
+      `Invalid business canon format "${value}". Use "owner/repo" or "none" to skip.`,
+    );
+  }
+
+  return {
+    business: {
+      repo: value,
+      branch: 'main',
+      localDir: 'business',
+    },
+  };
+}
+
+async function resolveBusinessCanon(
+  options: InitOptions,
+  logger: Logger,
+): Promise<CanonsConfig | undefined> {
+  // CLI flag takes priority
+  if (options.businessCanon) {
+    return parseBusinessCanonOption(options.businessCanon);
+  }
+
+  // --yes without --business-canon: mandatory error
+  if (options.yes) {
+    throw new CliError(
+      '--business-canon is required with --yes. Use --business-canon owner/repo or --business-canon none.',
+    );
+  }
+
+  // Interactive prompt
+  const repo = await promptText(
+    'Business architecture canon repo (owner/repo, empty to skip):',
+  );
+
+  if (!repo) {
+    logger.info('No business canon configured.');
+    return undefined;
+  }
+
+  if (!repo.includes('/')) {
+    throw new CliError(`Invalid format "${repo}". Use "owner/repo".`);
+  }
+
+  const branch = await promptText('Business canon branch:', 'main');
+
+  return {
+    business: {
+      repo,
+      branch: branch || 'main',
+      localDir: 'business',
+    },
+  };
+}
+
+// ────────────────────────────────────────────────────────────────
 // Shared inline stages used by both pipelines
 // ────────────────────────────────────────────────────────────────
 
@@ -259,40 +383,65 @@ function buildConfigStage(
 // Workspace helpers
 // ────────────────────────────────────────────────────────────────
 
+interface WorkspaceResolution {
+  name: string;
+  type: WorkspaceType;
+  repos: string[];
+}
+
 function parseRepos(value: string | undefined): string[] | null {
   if (!value) return null;
   return value.split(',').map((r) => r.trim()).filter(Boolean);
 }
 
-async function resolveWorkspaceRepos(
+async function resolveWorkspace(
   workspaceDir: string,
   options: InitOptions,
   logger: Logger,
-): Promise<string[] | null> {
+): Promise<WorkspaceResolution | null> {
+  const name = deriveWorkspaceName(workspaceDir);
+
   // Explicit --repos flag takes priority
   const explicit = parseRepos(options.repos);
   if (explicit && explicit.length > 0) {
+    const type = explicit.length >= 2 ? 'multi-repo' : 'mono-repo';
     logger.info(`Workspace mode: ${explicit.length} repo(s) specified: ${explicit.join(', ')}`);
-    return explicit;
+    return { name, type, repos: explicit };
   }
 
-  // Auto-discover when cwd looks like a workspace root
-  if (isWorkspaceRoot(workspaceDir)) {
-    const discovered = discoverRepos(workspaceDir);
+  // Auto-detect workspace layout
+  const layout = detectWorkspaceLayout(workspaceDir);
 
+  if (layout) {
     if (options.yes) {
-      logger.info(`Workspace auto-detected: ${discovered.length} repo(s) found: ${discovered.join(', ')}`);
-      return discovered;
+      logger.info(
+        `Workspace auto-detected (${layout.type}): ${layout.repos.length} repo(s) found: ${layout.repos.join(', ')}`,
+      );
+      return { name, type: layout.type, repos: layout.repos };
     }
 
-    // Interactive: let user confirm/select repos
-    const selected = await promptMultiSelect(
-      'This directory contains multiple git repositories. Select repos to include:',
-      discovered.map((r) => ({ value: r, label: r })),
-      discovered,
-    );
+    // Interactive: for multi-repo let user confirm/select repos
+    if (layout.type === 'multi-repo') {
+      const selected = await promptMultiSelect(
+        'This directory contains multiple git repositories. Select repos to include:',
+        layout.repos.map((r) => ({ value: r, label: r })),
+        layout.repos,
+      );
 
-    return selected.length > 0 ? selected : null;
+      if (selected.length === 0) return null;
+      return { name, type: 'multi-repo', repos: selected };
+    }
+
+    // mono-repo auto-detected
+    logger.info(`Mono-repo workspace detected: ${layout.repos.join(', ')}`);
+    return { name, type: 'mono-repo', repos: layout.repos };
+  }
+
+  // No repos found
+  if (options.yes) {
+    // Non-interactive with no repos → treat cwd as mono-repo
+    logger.info('No repos discovered; initializing as mono-repo workspace.');
+    return { name, type: 'mono-repo', repos: ['.'] };
   }
 
   return null;
@@ -312,6 +461,7 @@ function buildWorkspaceStages(
   return [
     buildPreflightStage(executor, logger),
     buildConfigStage(effectiveConfig, executor, logger, configExistedBefore, options.force),
+    buildGitHubAuthStage(effectiveConfig, logger, options),
     assistantSetupStage,
     canonSyncStage,
   ];
@@ -461,17 +611,18 @@ function buildFileOnlyPipeline(
     buildPreflightStage(executor, logger),                     // 1
     buildConfigStage(effectiveConfig, executor, logger,
       configExistedBefore, options.force),                     // 2
-    assistantSetupStage,                                       // 3
-    canonSyncStage,                                            // 4
-    repoScaffoldStage,                                         // 5
-    repoAnalysisFileOnlyStage,                                 // 6
-    ciSetupStage,                                              // 7
-    agentSkillsSetupStage,                                     // 8
+    buildGitHubAuthStage(effectiveConfig, logger, options),    // 3
+    assistantSetupStage,                                       // 4
+    canonSyncStage,                                            // 5
+    repoScaffoldStage,                                         // 6
+    repoAnalysisFileOnlyStage,                                 // 7
+    ciSetupStage,                                              // 8
+    agentSkillsSetupStage,                                     // 9
   ];
 }
 
 // ────────────────────────────────────────────────────────────────
-// Indexed pipeline (14 stages)
+// Indexed pipeline (15 stages)
 // ────────────────────────────────────────────────────────────────
 
 function buildIndexedPipeline(
@@ -487,12 +638,13 @@ function buildIndexedPipeline(
     buildPreflightStage(executor, logger),                     // 1
     buildConfigStage(effectiveConfig, executor, logger,
       configExistedBefore, options.force),                     // 2
-    assistantSetupStage,                                       // 3
-    canonSyncStage,                                            // 4
-    repoScaffoldStage,                                         // 5
-    repoAnalysisStage,                                         // 6
-    ciSetupStage,                                              // 7
-    agentSkillsSetupStage,                                     // 8
+    buildGitHubAuthStage(effectiveConfig, logger, options),    // 3
+    assistantSetupStage,                                       // 4
+    canonSyncStage,                                            // 5
+    repoScaffoldStage,                                         // 6
+    repoAnalysisStage,                                         // 7
+    ciSetupStage,                                              // 8
+    agentSkillsSetupStage,                                     // 9
 
     // Phase B — Infrastructure + Phase C — Ingestion  (9-14)
     ...buildInfraStages(effectiveConfig, executor, logger, options, composeMode),
@@ -562,6 +714,152 @@ async function runInfraOnly(
 }
 
 // ────────────────────────────────────────────────────────────────
+// Repo domain generation  (collab init --repo=<package>)
+// ────────────────────────────────────────────────────────────────
+
+/**
+ * Resolves and validates the path to a repository package.
+ *
+ * Resolution order:
+ *   1. Absolute path → use directly
+ *   2. Relative path from workspace dir → resolve
+ *   3. Name within workspace → join with workspaceDir
+ *
+ * @throws {CliError} When the path is not found or is not a directory.
+ */
+function resolveRepoPath(repoValue: string, config: CollabConfig): string {
+  const isDirectory = (p: string): boolean => {
+    try {
+      return fs.statSync(p).isDirectory();
+    } catch {
+      return false;
+    }
+  };
+
+  // 1. Absolute path
+  if (path.isAbsolute(repoValue)) {
+    if (!fs.existsSync(repoValue)) {
+      throw new CliError(`Repository path not found: ${repoValue}`);
+    }
+    if (!isDirectory(repoValue)) {
+      throw new CliError(`Repository path is not a directory: ${repoValue}`);
+    }
+    return repoValue;
+  }
+
+  // 2. Relative path from workspace dir (respects --cwd)
+  const fromCwd = path.resolve(config.workspaceDir, repoValue);
+  if (isDirectory(fromCwd)) {
+    return fromCwd;
+  }
+
+  // 3. Name within workspace
+  const fromWorkspace = path.join(config.workspaceDir, repoValue);
+  if (isDirectory(fromWorkspace)) {
+    return fromWorkspace;
+  }
+
+  throw new CliError(
+    `Repository "${repoValue}" not found.\n` +
+      `Searched:\n` +
+      `  - ${fromCwd}\n` +
+      `  - ${fromWorkspace}\n` +
+      `Provide an absolute path, a relative path from cwd, or a repo name within your workspace.`,
+  );
+}
+
+async function runRepoDomainGeneration(
+  context: { config: CollabConfig; executor: Executor; logger: Logger },
+  options: InitOptions,
+): Promise<void> {
+  const repoValue = options.repo!;
+
+  // Build a minimal config — reuse existing if available
+  const effectiveConfig: CollabConfig = {
+    ...defaultCollabConfig(context.config.workspaceDir),
+    ...context.config,
+  };
+
+  // Resolve business canon if passed via flag (but don't require it for file-only)
+  const canons = options.businessCanon ? parseBusinessCanonOption(options.businessCanon) : undefined;
+  if (canons) {
+    effectiveConfig.canons = canons;
+  }
+
+  // Store GitHub token if provided (required for indexed push/sync)
+  if (options.githubToken) {
+    if (context.executor.dryRun) {
+      context.logger.info('[dry-run] Would store GitHub token from --github-token flag.');
+    } else {
+      storeGitHubToken(effectiveConfig.collabDir, options.githubToken);
+      context.logger.info('GitHub token stored from --github-token flag.');
+    }
+  }
+
+  // Resolve mode
+  let mode: CollabMode;
+  if (options.mode) {
+    mode = parseMode(options.mode);
+  } else if (options.yes) {
+    mode = 'file-only';
+  } else {
+    mode = await promptChoice(
+      'Select domain generation mode:',
+      [
+        { value: 'file-only', label: 'file-only (write domain files to local repo only)' },
+        { value: 'indexed', label: 'indexed (write to business canon + ingest into MCP)' },
+      ],
+      'file-only',
+    );
+  }
+
+  // Validate prerequisites
+  if (mode === 'indexed' && !isBusinessCanonConfigured(effectiveConfig)) {
+    throw new CliError(
+      'Business canon is required for indexed mode. ' +
+        'Use --business-canon owner/repo to configure it, or use --mode file-only.',
+    );
+  }
+
+  // Resolve repo path
+  const repoPath = resolveRepoPath(repoValue, effectiveConfig);
+  const repoName = path.basename(repoPath);
+
+  context.logger.phaseHeader('Domain Generation', `${repoName} (${mode})`);
+
+  // Build pipeline
+  const stages = mode === 'file-only'
+    ? buildFileOnlyDomainPipeline()
+    : buildIndexedDomainPipeline();
+
+  // Execute
+  await runOrchestration(
+    {
+      workflowId: 'init:repo-domain',
+      config: effectiveConfig,
+      executor: context.executor,
+      logger: context.logger,
+      resume: options.resume,
+      mode: `${mode} (repo domain)`,
+      stageOptions: {
+        _repoPath: repoPath,
+        yes: options.yes,
+        providers: options.providers,
+      },
+    },
+    stages,
+  );
+
+  // Summary
+  context.logger.phaseHeader('Domain Generation Complete');
+  context.logger.summaryFooter([
+    { label: 'Mode', value: mode },
+    { label: 'Repository', value: repoName },
+    { label: 'Dry-run', value: context.executor.dryRun ? 'yes' : 'no' },
+  ]);
+}
+
+// ────────────────────────────────────────────────────────────────
 // Command registration
 // ────────────────────────────────────────────────────────────────
 
@@ -577,10 +875,13 @@ export function registerInitCommand(program: Command): void {
     .option('--compose-mode <mode>', 'Compose mode: consolidated|split')
     .option('--output-dir <directory>', 'Directory used to write compose outputs')
     .option('--repos <list>', 'Comma-separated repo directories for workspace mode')
+    .option('--repo <package>', 'Generate domain definition from package analysis')
     .option('--skip-mcp-snippets', 'Skip MCP client config snippet generation')
     .option('--skip-analysis', 'Skip AI-powered repository analysis stage')
     .option('--skip-ci', 'Skip CI workflow generation')
     .option('--providers <list>', 'Comma-separated AI provider list (codex,claude,gemini,copilot)')
+    .option('--business-canon <owner/repo>', 'Business canon repo (owner/repo or "none" to skip)')
+    .option('--github-token <token>', 'GitHub token for non-interactive mode')
     .option('--timeout-ms <ms>', 'Per-check timeout in milliseconds', '5000')
     .option('--retries <count>', 'Health check retries', '15')
     .option('--retry-delay-ms <ms>', 'Delay between retries in milliseconds', '2000')
@@ -593,6 +894,8 @@ Examples:
   collab init --yes --mode file-only
   collab init --yes --mode indexed
   collab init --repos api,web,shared --yes
+  collab init --repo collab-chat-ai-pkg --mode file-only
+  collab init --repo collab-chat-ai-pkg --mode indexed
   collab init --resume
   collab init infra
   collab init infra --resume
@@ -610,6 +913,23 @@ Examples:
 
       if (phase) {
         throw new CliError(`Unknown init phase "${phase}". Available phases: infra`);
+      }
+
+      // ── Repo domain generation: collab init --repo <pkg> ───
+      if (options.repo) {
+        await runRepoDomainGeneration(context, options);
+
+        // Ecosystem compatibility checks (same as full wizard)
+        const compatibility = await checkEcosystemCompatibility(context.config, {
+          dryRun: context.executor.dryRun,
+        });
+        for (const check of compatibility) {
+          const prefix = check.ok ? '[PASS]' : '[WARN]';
+          context.logger.result(`${prefix} ${check.id}: ${check.detail}`);
+          if (!check.ok && check.fix) context.logger.result(`       fix: ${check.fix}`);
+        }
+
+        return;
       }
 
       // ── Full wizard flow ────────────────────────────────────
@@ -631,6 +951,12 @@ Examples:
         mode: preserveExisting ? context.config.mode : selections.mode,
       };
 
+      // ── Step 2: Business canon configuration ──────────────────
+      const canons = await resolveBusinessCanon(options, context.logger);
+      if (canons) {
+        effectiveConfig.canons = canons;
+      }
+
       const stageOptions: Record<string, unknown> = {
         yes: options.yes,
         providers: options.providers,
@@ -640,19 +966,28 @@ Examples:
       };
 
       // ── Workspace detection ───────────────────────────────────
-      const repos = await resolveWorkspaceRepos(
-        context.config.workspaceDir,
-        options,
-        context.logger,
-      );
+      // Prefer persisted workspace config when it exists (unless
+      // --force or explicit --repos override is provided).
+      const ws =
+        !options.force && !options.repos && context.config.workspace
+          ? context.config.workspace
+          : await resolveWorkspace(
+              context.config.workspaceDir,
+              options,
+              context.logger,
+            );
 
-      if (repos && repos.length > 0) {
+      if (ws) {
         // ── WORKSPACE MODE ────────────────────────────────────
-        effectiveConfig.workspace = { repos };
+        effectiveConfig.workspace = { name: ws.name, type: ws.type, repos: ws.repos };
+        effectiveConfig.compose = {
+          ...effectiveConfig.compose,
+          projectName: `collab-${ws.name}`,
+        };
         const repoConfigs = resolveRepoConfigs(effectiveConfig);
 
         // Phase W — workspace-level stages
-        context.logger.phaseHeader('Workspace Setup', `${repos.length} repositories`);
+        context.logger.phaseHeader('Workspace Setup', `${ws.repos.length} repositories (${ws.type})`);
 
         const workspaceStages = buildWorkspaceStages(
           effectiveConfig, context.executor, context.logger,
@@ -752,12 +1087,15 @@ Examples:
         { label: 'Providers', value: providerLabel },
       ];
 
-      if (repos && repos.length > 0) {
-        summaryEntries.splice(1, 0, { label: 'Workspace repos', value: repos.join(', ') });
+      if (ws) {
+        summaryEntries.splice(1, 0,
+          { label: 'Workspace', value: `${ws.name} (${ws.type})` },
+          { label: 'Repos', value: ws.repos.join(', ') },
+        );
       }
 
       if (selections.mode === 'indexed') {
-        summaryEntries.splice(repos ? 2 : 1, 0, { label: 'Compose mode', value: selections.composeMode });
+        summaryEntries.splice(ws ? 3 : 1, 0, { label: 'Compose mode', value: selections.composeMode });
       }
 
       context.logger.summaryFooter(summaryEntries);
