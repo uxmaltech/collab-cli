@@ -10,6 +10,7 @@ permissions:
   pull-requests: read
   checks: read
   statuses: read
+  actions: write
 
 concurrency:
   group: promote-main-ff-${{ github.event.pull_request.number }}
@@ -107,3 +108,10 @@ jobs:
           fi
 
           git push origin origin/development:refs/heads/main
+
+      - name: Trigger auto-release
+        # GITHUB_TOKEN pushes don't trigger on:push workflows.
+        # Use workflow_dispatch (which IS allowed) to chain to auto-release.
+        run: gh workflow run auto-release.yml --ref main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

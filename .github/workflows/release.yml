@@ -4,6 +4,9 @@ on:
   push:
     tags:
       - "v*.*.*"
+  # Allow auto-release to trigger this via gh workflow run --ref <tag>.
+  # GITHUB_TOKEN tag pushes don't fire on:push, but CAN fire workflow_dispatch.
+  workflow_dispatch:
 
 jobs:
   validate:
