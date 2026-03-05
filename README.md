@@ -1,12 +1,12 @@
 # collab-cli
 
-CLI de orquestación para workflows colaborativos con arquitectura canónica. Gestiona el ciclo completo: desde el setup inicial de un repositorio hasta la infraestructura Docker, configuración de proveedores IA, y sincronización del canon arquitectónico.
+Orchestration CLI for collaborative workflows with canonical architecture. Manages the complete lifecycle: from initial repository setup to Docker infrastructure, AI provider configuration, and architectural canon synchronization.
 
-## Ecosistema Collab
+## Collab Ecosystem
 
 ```mermaid
 graph TD
-    DEV[Desarrollador] --> CLI[collab-cli<br><i>infraestructura</i>]
+    DEV[Developer] --> CLI[collab-cli<br><i>infrastructure</i>]
 
     subgraph APP["collab-laravel-app"]
         CHAT[collab-chat-ai-pkg]
@@ -16,35 +16,35 @@ graph TD
 
     DEV --> APP
 
-    CLI -- canon-sync --> CA[collab-architecture<br><i>canon framework</i>]
+    CLI -- canon-sync --> CA[collab-architecture<br><i>framework canon</i>]
     CLI -- docker compose up --> MCP[collab-architecture-mcp<br><i>NebulaGraph · Qdrant</i>]
     CA -- seed + ingest --> MCP
 
     CORE -- MCP tools --> MCP
     CORE -- "Epic + Stories" --> GH[GitHub Issues]
-    GH -- "GOV-R-001 → merge → Phase 5" --> BCA[collab-app-architecture<br><i>canon aplicación</i>]
+    GH -- "GOV-R-001 → merge → Phase 5" --> BCA[collab-app-architecture<br><i>application canon</i>]
     BCA -- ingest --> MCP
 
     style CLI fill:#4a9eff,stroke:#2b7de9,color:#fff
     style APP fill:#e8f4f8,stroke:#4a9eff
 ```
 
-| Repositorio | Rol | Relación con este repo |
-|-------------|-----|----------------------|
-| **`collab-cli`** | **Orquestador CLI** | **Este repo — interfaz de usuario que orquesta todo** |
-| [`collab-architecture`](https://github.com/uxmaltech/collab-architecture) | Fuente de verdad | Provee reglas, patrones y decisiones canónicas |
-| [`collab-architecture-mcp`](https://github.com/uxmaltech/collab-architecture-mcp) | Servidor MCP | Expone el canon como grafo + vectores a los agentes IA |
+| Repository | Role | Relation to this repo |
+|------------|------|----------------------|
+| **`collab-cli`** | **Orchestrator CLI** | **This repo — user interface that orchestrates everything** |
+| [`collab-architecture`](https://github.com/uxmaltech/collab-architecture) | Source of truth | Provides canonical rules, patterns, and decisions |
+| [`collab-architecture-mcp`](https://github.com/uxmaltech/collab-architecture-mcp) | MCP server | Exposes the canon as graph + vectors to AI agents |
 
-## Requisitos previos
+## Prerequisites
 
-| Requisito | Versión | Notas |
-|-----------|---------|-------|
-| Node.js | >= 20 | Requerido |
-| npm | >= 10 | Requerido |
-| git | cualquiera | Requerido para install script |
-| Docker | cualquiera | Solo modo indexed |
+| Requirement | Version | Notes |
+|-------------|---------|-------|
+| Node.js | >= 20 | Required |
+| npm | >= 10 | Required |
+| git | any | Required for install script |
+| Docker | any | Indexed mode only |
 
-## Instalación
+## Installation
 
 **npm (global):**
 ```bash
@@ -52,7 +52,7 @@ npm install -g @uxmaltech/collab-cli
 collab --version
 ```
 
-**npx (efímero):**
+**npx (ephemeral):**
 ```bash
 npx @uxmaltech/collab-cli --help
 ```
@@ -62,158 +62,158 @@ npx @uxmaltech/collab-cli --help
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/uxmaltech/collab-cli/main/install.sh)"
 ```
 
-**Desarrollo local:**
+**Local development:**
 ```bash
 npm install && npm run build
 bin/collab --help
 ```
 
-**Desinstalar:**
+**Uninstall:**
 ```bash
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/uxmaltech/collab-cli/main/uninstall.sh)"
 ```
 
-## Inicio rápido
+## Quick start
 
 ```bash
-collab init                          # wizard interactivo
-collab init --yes                    # modo automático (file-only, defaults)
-collab init --yes --mode indexed     # automático con infraestructura Docker
-collab init --resume                 # retomar desde la última etapa fallida
+collab init                          # interactive wizard
+collab init --yes                    # automatic mode (file-only, defaults)
+collab init --yes --mode indexed     # automatic with Docker infrastructure
+collab init --resume                 # resume from last failed stage
 ```
 
-## Modos de operación
+## Operation modes
 
-| Aspecto | File-only | Indexed |
-|---------|-----------|---------|
-| **Descripción** | Agentes leen `.md` directamente | Agentes consultan NebulaGraph + Qdrant vía MCP |
-| **Docker** | No requerido | Requerido (Qdrant, NebulaGraph, MCP server) |
-| **MCP** | No | Sí — endpoint `http://127.0.0.1:7337/mcp` |
-| **Etapas del wizard** | 8 | 14 |
-| **Caso de uso** | Proyectos pequeños, sin Docker, inicio rápido | Ecosistemas multi-repo, canons grandes |
+| Aspect | File-only | Indexed |
+|--------|-----------|---------|
+| **Description** | Agents read `.md` files directly | Agents query NebulaGraph + Qdrant via MCP |
+| **Docker** | Not required | Required (Qdrant, NebulaGraph, MCP server) |
+| **MCP** | No | Yes — endpoint `http://127.0.0.1:7337/mcp` |
+| **Wizard stages** | 8 | 14 |
+| **Use case** | Small projects, no Docker, quick start | Multi-repo ecosystems, large canons |
 
-**Heurística de transición:** Considerar modo indexed cuando el canon supera ~50,000 tokens (~375 archivos).
+**Transition heuristic:** Consider indexed mode when the canon exceeds ~50,000 tokens (~375 files).
 
-## Comandos
+## Commands
 
-| Comando | Descripción |
+| Command | Description |
 |---------|-------------|
-| `collab init` | Wizard de onboarding (setup completo) |
-| `collab compose generate` | Generar archivos docker-compose (consolidated \| split) |
-| `collab compose validate` | Validar archivos compose via `docker compose config` |
-| `collab infra up\|down\|status` | Gestionar servicios de infraestructura (Qdrant + NebulaGraph) |
-| `collab mcp start\|stop\|status` | Gestionar servicio MCP runtime |
-| `collab up` | Pipeline completo de startup (infra → MCP) |
-| `collab seed` | Preflight check de infraestructura antes de seeding |
-| `collab doctor` | Diagnóstico del sistema, config, salud y versiones |
-| `collab update-canons` | Descargar/actualizar canon desde GitHub |
+| `collab init` | Onboarding wizard (complete setup) |
+| `collab compose generate` | Generate docker-compose files (consolidated \| split) |
+| `collab compose validate` | Validate compose files via `docker compose config` |
+| `collab infra up\|down\|status` | Manage infrastructure services (Qdrant + NebulaGraph) |
+| `collab mcp start\|stop\|status` | Manage MCP runtime service |
+| `collab up` | Full startup pipeline (infra → MCP) |
+| `collab seed` | Preflight check for infrastructure before seeding |
+| `collab doctor` | System diagnostics: config, health, and versions |
+| `collab update-canons` | Download/update canon from GitHub |
 
-## Opciones globales
+## Global options
 
-| Opción | Descripción |
+| Option | Description |
 |--------|-------------|
-| `--cwd <path>` | Directorio de trabajo para operaciones collab |
-| `--dry-run` | Preview de acciones sin efectos secundarios |
-| `--verbose` | Logging detallado de comandos |
-| `--quiet` | Reducir output a resultados y errores |
-| `-v, --version` | Mostrar versión del CLI |
+| `--cwd <path>` | Working directory for collab operations |
+| `--dry-run` | Preview actions without side effects |
+| `--verbose` | Detailed command logging |
+| `--quiet` | Reduce output to results and errors only |
+| `-v, --version` | Show CLI version |
 
-## Proveedores IA
+## AI providers
 
-| Provider | Env var | Detección CLI | Modelos default |
-|----------|---------|---------------|-----------------|
+| Provider | Env var | CLI detection | Default models |
+|----------|---------|---------------|----------------|
 | Codex (OpenAI) | `OPENAI_API_KEY` | `codex` | o3-pro, gpt-4.1, o4-mini |
 | Claude (Anthropic) | `ANTHROPIC_API_KEY` | `claude` | claude-sonnet-4, claude-opus-4 |
 | Gemini (Google) | `GOOGLE_AI_API_KEY` | `gemini` | gemini-2.5-pro, gemini-2.5-flash |
-| Copilot (GitHub) | — | `gh` | Backend de GitHub Copilot |
+| Copilot (GitHub) | — | `gh` | GitHub Copilot backend |
 
-**Auto-detección:** Los providers se detectan automáticamente si su env var está configurada o su CLI está en PATH.
+**Auto-detection:** Providers are detected automatically if their env var is set or their CLI is in PATH.
 
-**Snippets MCP:** Durante `collab init`, se generan archivos de configuración MCP por provider (`claude-mcp-config.json`, `gemini-mcp-config.json`) para conectar agentes al servidor MCP.
+**MCP snippets:** During `collab init`, MCP configuration files are generated per provider (`claude-mcp-config.json`, `gemini-mcp-config.json`) to connect agents to the MCP server.
 
-## Pipeline del wizard (`collab init`)
+## Wizard pipeline (`collab init`)
 
-### File-only (8 etapas)
+### File-only (8 stages)
 
 1. Preflight checks (docker, node, npm, git)
 2. Environment setup (`.collab/config.json`)
-3. Assistant setup (configuración de providers IA)
-4. Canon sync (descarga collab-architecture desde GitHub)
-5. Repo scaffold (estructura `docs/architecture` y `docs/ai`)
-6. Repo analysis (análisis básico de estructura y dependencias)
-7. CI setup (templates GitHub Actions)
-8. Agent skills setup (registro de skills y prompts)
+3. Assistant setup (AI provider configuration)
+4. Canon sync (download collab-architecture from GitHub)
+5. Repo scaffold (`docs/architecture` and `docs/ai` structure)
+6. Repo analysis (basic structure and dependency analysis)
+7. CI setup (GitHub Actions templates)
+8. Agent skills setup (skills and prompts registration)
 
-### Indexed (14 etapas)
+### Indexed (14 stages)
 
-**Fase A — Setup local (etapas 1-8):** Igual que file-only, pero el análisis de repo usa IA.
+**Phase A — Local setup (stages 1-8):** Same as file-only, but repo analysis uses AI.
 
-**Fase B — Infraestructura (etapas 9-11):**
+**Phase B — Infrastructure (stages 9-11):**
 
-9. Compose generation (docker-compose.yml o archivos split)
+9. Compose generation (docker-compose.yml or split files)
 10. Infra startup (Qdrant + NebulaGraph via Docker)
-11. MCP startup (servicio MCP + health checks)
+11. MCP startup (MCP service + health checks)
 
-**Fase C — Ingestion (etapas 12-14):**
+**Phase C — Ingestion (stages 12-14):**
 
-12. MCP client config (snippets para providers)
-13. Graph seeding (inicializar grafo con datos de arquitectura)
-14. Canon ingest (ingestar collab-architecture en Qdrant/Nebula)
+12. MCP client config (provider snippets)
+13. Graph seeding (initialize graph with architecture data)
+14. Canon ingest (ingest collab-architecture into Qdrant/Nebula)
 
-**Flags útiles:**
-- `--resume` — retomar desde la última etapa incompleta
-- `--force` — sobreescribir config existente
-- `--skip-analysis` — saltar análisis de código
-- `--skip-ci` — saltar generación de CI
-- `--providers codex,claude` — especificar providers
+**Useful flags:**
+- `--resume` — resume from last incomplete stage
+- `--force` — overwrite existing config
+- `--skip-analysis` — skip code analysis
+- `--skip-ci` — skip CI generation
+- `--providers codex,claude` — specify providers
 
-## Modo workspace
+## Workspace mode
 
-Para ecosistemas multi-repo, collab-cli detecta automáticamente la raíz del workspace y permite seleccionar repositorios:
+For multi-repo ecosystems, collab-cli automatically detects the workspace root and allows repository selection:
 
 ```bash
 collab init --repos repo-a,repo-b,repo-c
 ```
 
-Cuando se ejecuta desde un directorio que contiene múltiples repos, el wizard presenta la selección de repositorios interactivamente.
+When run from a directory containing multiple repos, the wizard presents repository selection interactively.
 
-## Desarrollo local
+## Local development
 
-| Script | Descripción |
+| Script | Description |
 |--------|-------------|
-| `npm run build` | Compilar TypeScript a `dist/` |
-| `npm run lint` | ESLint sobre `src/**/*.ts` |
+| `npm run build` | Compile TypeScript to `dist/` |
+| `npm run lint` | ESLint on `src/**/*.ts` |
 | `npm run format` | Prettier (check) |
-| `npm run format:write` | Prettier (escribir) |
-| `npm test` | Build + ejecutar tests |
-| `npm run test:e2e` | E2E con Docker (`collab init --mode indexed` → MCP tool call) |
-| `npm run typecheck` | TypeScript sin emit |
-| `npm run pack:dry-run` | Verificar contenido del paquete npm |
+| `npm run format:write` | Prettier (write) |
+| `npm test` | Build + run tests |
+| `npm run test:e2e` | E2E with Docker (`collab init --mode indexed` → MCP tool call) |
+| `npm run typecheck` | TypeScript without emit |
+| `npm run pack:dry-run` | Verify npm package contents |
 
-## Estructura del proyecto
+## Project structure
 
 ```
-bin/                     # entrypoint ejecutable (bin/collab)
+bin/                     # executable entrypoint (bin/collab)
 src/
-  cli.ts                 # entry point principal, registra comandos
-  commands/              # jerarquía de comandos (init, compose, infra, mcp, up, seed, doctor)
-  lib/                   # utilidades compartidas (config, orchestrator, health, providers, executor)
-  stages/                # etapas del pipeline (preflight, canon-sync, repo-analysis, graph-seed...)
-  templates/             # templates de compose y CI
-tests/                   # tests de integración y orquestación
-scripts/                 # scripts auxiliares (test runner)
+  cli.ts                 # main entry point, registers commands
+  commands/              # command hierarchy (init, compose, infra, mcp, up, seed, doctor)
+  lib/                   # shared utilities (config, orchestrator, health, providers, executor)
+  stages/                # pipeline stages (preflight, canon-sync, repo-analysis, graph-seed...)
+  templates/             # compose and CI templates
+tests/                   # integration and orchestration tests
+scripts/                 # auxiliary scripts (test runner)
 docs/
-  release.md             # estrategia de distribución y versioning
-  ai/                    # contexto para agentes IA (brief, domain map, module map)
-  architecture/          # conocimiento arquitectónico
-ecosystem.manifest.json  # rangos de compatibilidad cross-repo
+  release.md             # distribution and versioning strategy
+  ai/                    # AI agent context (brief, domain map, module map)
+  architecture/          # architectural knowledge
+ecosystem.manifest.json  # cross-repo compatibility ranges
 ```
 
-## Gobernanza y releases
+## Governance and releases
 
-- [CONTRIBUTING](CONTRIBUTING.md) — reglas de contribución y política de idioma
-- [Release strategy](docs/release.md) — distribución, SemVer, CI pinning, rollback
+- [CONTRIBUTING](CONTRIBUTING.md) — contribution rules and language policy
+- [Release strategy](docs/release.md) — distribution, SemVer, CI pinning, rollback
 
-## Licencia
+## License
 
 MIT
