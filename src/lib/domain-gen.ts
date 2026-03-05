@@ -419,6 +419,7 @@ export function buildDomainGenPrompt(repoCtx: RepoContext): { system: string; us
 /**
  * Parses the AI response into a DomainGenerationResult.
  * Handles JSON wrapped in markdown code fences.
+ * Validates required fields and nested element shapes, failing fast on malformed data.
  */
 export function parseDomainGenerationResponse(raw: string): DomainGenerationResult {
   const jsonStr = extractJson(raw);
@@ -437,15 +438,25 @@ export function parseDomainGenerationResponse(raw: string): DomainGenerationResu
     domainSlug: parsed.domainSlug as string,
     prefix: parsed.prefix as string,
     summary: parsed.summary as string,
-    principles: asArray(parsed.principles),
-    rules: asArray(parsed.rules),
-    antiPatterns: asArray(parsed.antiPatterns),
-    glossary: asArray(parsed.glossary),
-    patterns: asArray(parsed.patterns),
-    technologies: asArray(parsed.technologies),
+    principles: validateArray(parsed.principles, 'principles', ['id', 'text']),
+    rules: validateArray(parsed.rules, 'rules', ['id', 'text']),
+    antiPatterns: validateArray(parsed.antiPatterns, 'antiPatterns', ['id', 'description']),
+    glossary: validateArray(parsed.glossary, 'glossary', ['term', 'definition']),
+    patterns: validateArray(parsed.patterns, 'patterns', ['id', 'name']),
+    technologies: validateArray(parsed.technologies, 'technologies', ['name', 'summary']),
   };
 }
 
-function asArray<T>(value: unknown): T[] {
-  return Array.isArray(value) ? (value as T[]) : [];
+/**
+ * Validates an array field from the AI response, filtering out malformed entries
+ * and ensuring each element has the required string fields.
+ */
+function validateArray<T>(value: unknown, fieldName: string, requiredKeys: string[]): T[] {
+  if (!Array.isArray(value)) return [];
+
+  return value.filter((item): item is T => {
+    if (typeof item !== 'object' || item === null) return false;
+    const obj = item as Record<string, unknown>;
+    return requiredKeys.every((key) => typeof obj[key] === 'string' && obj[key] !== '');
+  });
 }

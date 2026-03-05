@@ -692,14 +692,6 @@ async function runInfraOnly(
 // ────────────────────────────────────────────────────────────────
 
 /**
- * Resolves the path to a repository package.
- *
- * Resolution order:
- *   1. Absolute path → use directly
- *   2. Relative path from cwd → resolve
- *   3. Name within workspace → join with workspaceDir
- */
-/**
  * Resolves and validates the path to a repository package.
  *
  * Resolution order:
@@ -770,8 +762,12 @@ async function runRepoDomainGeneration(
 
   // Store GitHub token if provided (required for indexed push/sync)
   if (options.githubToken) {
-    storeGitHubToken(effectiveConfig.collabDir, options.githubToken);
-    context.logger.info('GitHub token stored from --github-token flag.');
+    if (context.executor.dryRun) {
+      context.logger.info('[dry-run] Would store GitHub token from --github-token flag.');
+    } else {
+      storeGitHubToken(effectiveConfig.collabDir, options.githubToken);
+      context.logger.info('GitHub token stored from --github-token flag.');
+    }
   }
 
   // Resolve mode
