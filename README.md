@@ -97,7 +97,7 @@ collab init --resume                 # resume from last failed stage
 | **Description** | Agents read `.md` files directly | Agents query NebulaGraph + Qdrant via MCP |
 | **Docker** | Not required | Required (Qdrant, NebulaGraph, MCP server) |
 | **MCP** | No | Yes — endpoint `http://127.0.0.1:7337/mcp` |
-| **Wizard stages** | 8 | 14 |
+| **Wizard stages** | 8 | 15 |
 | **Use case** | Small projects, no Docker, quick start | Multi-repo ecosystems, large canons |
 
 **Transition heuristic:** Consider indexed mode when the canon exceeds ~50,000 tokens (~375 files).
@@ -114,6 +114,7 @@ collab init --resume                 # resume from last failed stage
 | `collab up` | Full startup pipeline (infra → MCP) |
 | `collab seed` | Preflight check for infrastructure before seeding |
 | `collab doctor` | System diagnostics: config, health, and versions |
+| `collab end` | Finalize work: create PR with governance references and canon sync |
 | `collab update-canons` | Download/update canon from GitHub |
 
 ## Global options
@@ -152,27 +153,29 @@ collab init --resume                 # resume from last failed stage
 7. CI setup (GitHub Actions templates)
 8. Agent skills setup (skills and prompts registration)
 
-### Indexed (14 stages)
+### Indexed (15 stages)
 
 **Phase A — Local setup (stages 1-8):** Same as file-only, but repo analysis uses AI.
 
-**Phase B — Infrastructure (stages 9-11):**
+**Phase B — Infrastructure (stages 9-12):**
 
 9. Compose generation (docker-compose.yml or split files)
 10. Infra startup (Qdrant + NebulaGraph via Docker)
 11. MCP startup (MCP service + health checks)
+12. GitHub setup (branch model, protections, CI workflows)
 
-**Phase C — Ingestion (stages 12-14):**
+**Phase C — Ingestion (stages 13-15):**
 
-12. MCP client config (provider snippets)
-13. Graph seeding (initialize graph with architecture data)
-14. Canon ingest (ingest collab-architecture into Qdrant/Nebula)
+13. MCP client config (provider snippets)
+14. Graph seeding (initialize graph with architecture data)
+15. Canon ingest (ingest collab-architecture into Qdrant/Nebula)
 
 **Useful flags:**
 - `--resume` — resume from last incomplete stage
 - `--force` — overwrite existing config
 - `--skip-analysis` — skip code analysis
 - `--skip-ci` — skip CI generation
+- `--skip-github-setup` — skip GitHub branch model and workflow configuration
 - `--providers codex,claude` — specify providers
 
 ## Workspace mode
@@ -184,6 +187,22 @@ collab init --repos repo-a,repo-b,repo-c
 ```
 
 When run from a directory containing multiple repos, the wizard presents repository selection interactively.
+
+## Finalizing work (`collab end`)
+
+Create a pull request with governance references and optional canon sync:
+
+```bash
+collab end                              # create PR from current branch to development
+collab end --dry-run                    # preview PR without creating it
+collab end --title "feat: add login"    # override PR title
+collab end --base development           # specify target branch (default: development)
+collab end --skip-canon-sync            # skip canon sync PR generation
+```
+
+**Context detection:** Automatically parses issue numbers from branch names (e.g., `feature/42-add-login` links to issue #42). In indexed mode, the PR body includes GOV-R-001 phase checklist and governance references.
+
+**Canon sync (indexed mode):** When architecture changes are detected (`docs/architecture/`), a separate PR is created in the business-canon repo to complete Phase 5 (Canon Sync) of GOV-R-001.
 
 ## Local development
 
