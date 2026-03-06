@@ -20,8 +20,8 @@ export function registerUpgradeCommand(program: Command): void {
       'after',
       `
 Examples:
-  collab upgrade            # Upgrade to the latest version
-  collab upgrade --check    # Check for updates without installing
+  collab upgrade              # Upgrade to the latest version
+  collab upgrade --check      # Check for updates without installing
 `,
     )
     .action(async (options: UpgradeOptions) => {
