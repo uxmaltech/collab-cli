@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { DEFAULT_INFRA_TYPE, type InfraType, parseInfraType } from './infra-type';
 import { DEFAULT_MODE, type CollabMode, parseMode } from './mode';
 import type { AssistantsConfig } from './providers';
 
@@ -50,11 +51,13 @@ export interface CollabConfig {
   stateFile: string;
   envFile: string;
   mode: CollabMode;
+  infraType: InfraType;
   compose: ComposePathConfig;
   architectureDir: string;
   uxmaltechDir: string;
   repoDir: string;
   aiDir: string;
+  mcpUrl?: string;
   assistants?: AssistantsConfig;
   workspace?: WorkspaceConfig;
   canons?: CanonsConfig;
@@ -71,6 +74,8 @@ interface RawCollabConfig {
   compose?: Partial<ComposePathConfig>;
   envFile?: string;
   mode?: string;
+  infraType?: string;
+  mcpUrl?: string;
   architectureDir?: string;
   assistants?: AssistantsConfig;
   workspace?: RawWorkspaceConfig;
@@ -95,6 +100,7 @@ export function defaultCollabConfig(cwd = process.cwd()): CollabConfig {
     stateFile: path.join(collabDir, 'state.json'),
     envFile: path.join(workspaceDir, '.env'),
     mode: DEFAULT_MODE,
+    infraType: DEFAULT_INFRA_TYPE,
     compose: { ...DEFAULT_COMPOSE_PATHS },
     architectureDir,
     uxmaltechDir: path.join(architectureDir, 'uxmaltech'),
@@ -123,9 +129,13 @@ export function loadCollabConfig(cwd = process.cwd()): CollabConfig {
 
   const workspace = migrateWorkspaceConfig(raw.workspace, defaults.workspaceDir);
 
+  const infraType = parseInfraType(raw.infraType, defaults.infraType);
+
   return {
     ...defaults,
     mode: parseMode(raw.mode, defaults.mode),
+    infraType,
+    mcpUrl: infraType === 'remote' && raw.mcpUrl ? raw.mcpUrl : undefined,
     envFile: raw.envFile ? path.resolve(defaults.workspaceDir, raw.envFile) : defaults.envFile,
     compose: {
       consolidatedFile: raw.compose?.consolidatedFile ?? defaults.compose.consolidatedFile,
@@ -153,6 +163,15 @@ export function serializeUserConfig(config: CollabConfig): string {
     compose: config.compose,
     envFile: path.relative(config.workspaceDir, config.envFile),
   };
+
+  // Only persist infraType when it differs from the default (local).
+  if (config.infraType && config.infraType !== 'local') {
+    data.infraType = config.infraType;
+  }
+
+  if (config.mcpUrl) {
+    data.mcpUrl = config.mcpUrl;
+  }
 
   if (config.assistants) {
     data.assistants = config.assistants;

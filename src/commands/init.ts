@@ -18,6 +18,7 @@ import {
 import { checkEcosystemCompatibility } from '../lib/ecosystem';
 import { generateComposeFiles } from '../lib/compose-renderer';
 import { CliError } from '../lib/errors';
+import { parseInfraType, validateMcpUrl, type InfraType } from '../lib/infra-type';
 import { parseMode, type CollabMode } from '../lib/mode';
 import { parseNumber } from '../lib/parsers';
 import { runOrchestration, runPerRepoOrchestration, type OrchestrationStage } from '../lib/orchestrator';
@@ -42,7 +43,7 @@ import { isBusinessCanonConfigured } from '../lib/canon-resolver';
 import { getEnabledProviders, PROVIDER_DEFAULTS, type ProviderKey } from '../lib/providers';
 import type { Executor } from '../lib/executor';
 import type { Logger } from '../lib/logger';
-import { loadRuntimeEnv, waitForInfraHealth, waitForMcpHealth, logServiceHealth } from '../lib/service-health';
+import { dryRunHealthOptions, loadRuntimeEnv, waitForInfraHealth, waitForMcpHealth, logServiceHealth } from '../lib/service-health';
 
 interface InitOptions {
   force?: boolean;
@@ -50,6 +51,8 @@ interface InitOptions {
   resume?: boolean;
   mode?: string;
   composeMode?: string;
+  infraType?: string;
+  mcpUrl?: string;
   outputDir?: string;
   repos?: string;
   repo?: string;
@@ -67,6 +70,8 @@ interface InitOptions {
 interface WizardSelection {
   mode: CollabMode;
   composeMode: ComposeMode;
+  infraType: InfraType;
+  mcpUrl?: string;
 }
 
 function parseComposeMode(value: string | undefined, fallback: ComposeMode = 'consolidated'): ComposeMode {
@@ -97,10 +102,12 @@ function inferComposeMode(config: CollabConfig): ComposeMode {
 async function resolveWizardSelection(
   options: InitOptions,
   config: CollabConfig,
+  logger: Logger,
 ): Promise<WizardSelection> {
   const defaults: WizardSelection = {
     mode: parseMode(options.mode, config.mode),
     composeMode: parseComposeMode(options.composeMode, inferComposeMode(config)),
+    infraType: parseInfraType(options.infraType, config.infraType),
   };
 
   if (options.yes) {
@@ -109,10 +116,25 @@ async function resolveWizardSelection(
         'Info: Non-interactive mode defaults to file-only. Use --mode indexed for graph/vector features.\n',
       );
     }
+
+    const mode: CollabMode = options.mode ? parseMode(options.mode) : 'file-only';
+    const infraType = mode === 'indexed'
+      ? parseInfraType(options.infraType, 'local')
+      : 'local' as InfraType;
+
+    let mcpUrl: string | undefined;
+    if (infraType === 'remote') {
+      if (!options.mcpUrl) {
+        throw new CliError('--mcp-url is required with --infra-type remote in non-interactive mode.');
+      }
+      mcpUrl = validateMcpUrl(options.mcpUrl);
+    }
+
     return {
-      ...defaults,
-      mode: options.mode ? parseMode(options.mode) : 'file-only',
+      mode,
       composeMode: options.composeMode ? parseComposeMode(options.composeMode) : 'consolidated',
+      infraType,
+      mcpUrl,
     };
   }
 
@@ -127,10 +149,35 @@ async function resolveWizardSelection(
         defaults.mode,
       );
 
-  // Skip compose-mode prompt when mode is file-only — no Docker/MCP
-  // infrastructure is used, so compose configuration is irrelevant.
+  // ── Indexed-only: infrastructure type selection ─────────────
+  let infraType: InfraType = 'local';
+  let mcpUrl: string | undefined;
+
+  if (mode === 'indexed') {
+    logger.phaseHeader('collab init', 'Infrastructure');
+
+    infraType = options.infraType
+      ? parseInfraType(options.infraType)
+      : await promptChoice(
+          'Infrastructure type:',
+          [
+            { value: 'local', label: 'local (Docker Compose)' },
+            { value: 'remote', label: 'remote (connect to existing MCP server)' },
+          ],
+          defaults.infraType,
+        );
+
+    if (infraType === 'remote') {
+      const rawUrl = options.mcpUrl
+        ?? await promptText('MCP server base URL:', 'http://127.0.0.1:7337');
+      mcpUrl = validateMcpUrl(rawUrl);
+    }
+  }
+
+  // Skip compose-mode prompt when mode is file-only or infra is remote —
+  // Docker Compose configuration is only relevant for local infrastructure.
   const composeMode =
-    mode === 'file-only'
+    mode === 'file-only' || infraType === 'remote'
       ? parseComposeMode(options.composeMode, 'consolidated')
       : options.composeMode
         ? parseComposeMode(options.composeMode)
@@ -146,12 +193,16 @@ async function resolveWizardSelection(
   return {
     mode,
     composeMode,
+    infraType,
+    mcpUrl,
   };
 }
 
 function renderMcpSnippet(provider: ProviderKey, config: CollabConfig): { filename: string; content: string } | null {
   const workspace = config.workspaceDir;
-  const mcpUrl = 'http://127.0.0.1:7337/mcp';
+  const mcpUrl = config.mcpUrl
+    ? `${config.mcpUrl}/mcp`
+    : 'http://127.0.0.1:7337/mcp';
 
   switch (provider) {
     case 'codex':
@@ -596,6 +647,83 @@ function buildInfraStages(
 }
 
 // ────────────────────────────────────────────────────────────────
+// Remote infra stages (no Docker — connect to existing MCP)
+// ────────────────────────────────────────────────────────────────
+
+function buildRemoteInfraStages(
+  effectiveConfig: CollabConfig,
+  executor: Executor,
+  logger: Logger,
+  options: InitOptions,
+  mcpUrl: string,
+): OrchestrationStage[] {
+  const health = dryRunHealthOptions(executor, {
+    timeoutMs: parseNumber(options.timeoutMs, 5_000),
+    retries: parseNumber(options.retries, 15),
+    retryDelayMs: parseNumber(options.retryDelayMs, 2_000),
+  });
+
+  return [
+    {
+      id: 'mcp-health-check',
+      title: 'Verify remote MCP service health',
+      recovery: [
+        'Check that the remote MCP server is running and accessible.',
+        'Verify the --mcp-url value points to a healthy MCP endpoint.',
+        'Run collab init --resume after fixing remote connectivity.',
+      ],
+      run: async () => {
+        const parsed = new URL(mcpUrl);
+        const env: Record<string, string> = {
+          MCP_HOST: parsed.hostname,
+          MCP_PORT: parsed.port || (parsed.protocol === 'https:' ? '443' : '80'),
+        };
+        const probe = await waitForMcpHealth(env, health);
+        if (!probe.ok) {
+          throw new CliError(`Remote MCP is not healthy at ${mcpUrl}: ${probe.errors.join(', ')}`);
+        }
+        logServiceHealth(logger, 'remote MCP health', probe);
+      },
+    },
+    {
+      id: 'mcp-client-config',
+      title: 'Generate MCP client config snippets',
+      recovery: [
+        'Verify permissions in .collab directory.',
+        'Run collab init --resume to regenerate MCP config snippets.',
+      ],
+      run: () => {
+        if (options.skipMcpSnippets) {
+          logger.info('Skipping MCP snippet generation by user choice.');
+          return;
+        }
+
+        const enabled = getEnabledProviders(effectiveConfig);
+        if (enabled.length === 0) {
+          logger.info('No providers configured; skipping MCP snippet generation.');
+          return;
+        }
+
+        for (const provider of enabled) {
+          const snippet = renderMcpSnippet(provider, effectiveConfig);
+          if (!snippet) continue;
+          const target = path.join(effectiveConfig.collabDir, snippet.filename);
+          executor.writeFile(target, snippet.content, {
+            description: `write ${PROVIDER_DEFAULTS[provider].label} MCP config snippet`,
+          });
+        }
+
+        logger.info(
+          `Generated MCP snippets for: ${enabled.map((k) => PROVIDER_DEFAULTS[k].label).join(', ')}`,
+        );
+      },
+    },
+    graphSeedStage,
+    canonIngestStage,
+  ];
+}
+
+// ────────────────────────────────────────────────────────────────
 // File-only pipeline (8 stages)
 // ────────────────────────────────────────────────────────────────
 
@@ -631,22 +759,28 @@ function buildIndexedPipeline(
   configExistedBefore: boolean,
   options: InitOptions,
   composeMode: ComposeMode,
+  infraType: InfraType = 'local',
+  mcpUrl?: string,
 ): OrchestrationStage[] {
+  const infraStages = infraType === 'remote' && mcpUrl
+    ? buildRemoteInfraStages(effectiveConfig, executor, logger, options, mcpUrl)
+    : buildInfraStages(effectiveConfig, executor, logger, options, composeMode);
+
   return [
     // Phase A — Local setup (shared with file-only)
-    buildPreflightStage(executor, logger, 'indexed'),          // 1
+    buildPreflightStage(executor, logger, infraType === 'local' ? 'indexed' : undefined),
     buildConfigStage(effectiveConfig, executor, logger,
-      configExistedBefore, options.force),                     // 2
-    buildGitHubAuthStage(effectiveConfig, logger, options),    // 3
-    assistantSetupStage,                                       // 4
-    canonSyncStage,                                            // 5
-    repoScaffoldStage,                                         // 6
-    repoAnalysisStage,                                         // 7
-    ciSetupStage,                                              // 8
-    agentSkillsSetupStage,                                     // 9
+      configExistedBefore, options.force),
+    buildGitHubAuthStage(effectiveConfig, logger, options),
+    assistantSetupStage,
+    canonSyncStage,
+    repoScaffoldStage,
+    repoAnalysisStage,
+    ciSetupStage,
+    agentSkillsSetupStage,
 
-    // Phase B — Infrastructure + Phase C — Ingestion  (9-14)
-    ...buildInfraStages(effectiveConfig, executor, logger, options, composeMode),
+    // Phase B — Infrastructure + Phase C — Ingestion
+    ...infraStages,
   ];
 }
 
@@ -677,17 +811,26 @@ async function runInfraOnly(
     );
   }
 
+  const infraType = parseInfraType(options.infraType, effectiveConfig.infraType);
+  let mcpUrl: string | undefined;
+
+  if (infraType === 'remote') {
+    if (!options.mcpUrl && !effectiveConfig.mcpUrl) {
+      throw new CliError('--mcp-url is required for remote infrastructure.');
+    }
+    mcpUrl = options.mcpUrl ? validateMcpUrl(options.mcpUrl) : effectiveConfig.mcpUrl;
+    effectiveConfig.infraType = infraType;
+    effectiveConfig.mcpUrl = mcpUrl;
+  }
+
   const composeMode = parseComposeMode(options.composeMode, inferComposeMode(effectiveConfig));
+  const infraLabel = infraType === 'remote' ? 'Remote MCP services' : 'Docker + MCP services';
 
-  context.logger.phaseHeader('Infrastructure', 'Docker + MCP services');
+  context.logger.phaseHeader('Infrastructure', infraLabel);
 
-  const infraStages = buildInfraStages(
-    effectiveConfig,
-    context.executor,
-    context.logger,
-    options,
-    composeMode,
-  );
+  const infraStages = infraType === 'remote' && mcpUrl
+    ? buildRemoteInfraStages(effectiveConfig, context.executor, context.logger, options, mcpUrl)
+    : buildInfraStages(effectiveConfig, context.executor, context.logger, options, composeMode);
 
   await runOrchestration(
     {
@@ -696,7 +839,7 @@ async function runInfraOnly(
       executor: context.executor,
       logger: context.logger,
       resume: options.resume,
-      mode: 'indexed (infra)',
+      mode: `indexed (infra ${infraType})`,
       stageOptions: { outputDir: options.outputDir },
     },
     infraStages,
@@ -704,12 +847,19 @@ async function runInfraOnly(
 
   // Summary
   context.logger.phaseHeader('Infrastructure Ready');
-  context.logger.summaryFooter([
-    { label: 'Phase', value: 'infra only' },
-    { label: 'Compose mode', value: composeMode },
+  const summaryEntries = [
+    { label: 'Phase', value: `infra ${infraType}` },
     { label: 'Dry-run', value: context.executor.dryRun ? 'yes' : 'no' },
     { label: 'Config', value: effectiveConfig.configFile },
-  ]);
+  ];
+
+  if (infraType === 'remote' && mcpUrl) {
+    summaryEntries.splice(1, 0, { label: 'MCP URL', value: mcpUrl });
+  } else {
+    summaryEntries.splice(1, 0, { label: 'Compose mode', value: composeMode });
+  }
+
+  context.logger.summaryFooter(summaryEntries);
 }
 
 // ────────────────────────────────────────────────────────────────
@@ -872,6 +1022,8 @@ export function registerInitCommand(program: Command): void {
     .option('--resume', 'Resume from the last incomplete wizard stage')
     .option('--mode <mode>', 'Wizard mode: file-only|indexed')
     .option('--compose-mode <mode>', 'Compose mode: consolidated|split')
+    .option('--infra-type <type>', 'Infrastructure type: local|remote (indexed mode only)')
+    .option('--mcp-url <url>', 'MCP server base URL for remote infrastructure')
     .option('--output-dir <directory>', 'Directory used to write compose outputs')
     .option('--repos <list>', 'Comma-separated repo directories for workspace mode')
     .option('--repo <package>', 'Generate domain definition from package analysis')
@@ -895,6 +1047,7 @@ Examples:
   collab init --repos api,web,shared --yes
   collab init --repo collab-chat-ai-pkg --mode file-only
   collab init --repo collab-chat-ai-pkg --mode indexed
+  collab init --yes --mode indexed --infra-type remote --mcp-url http://my-server:7337 --business-canon none
   collab init --resume
   collab init infra
   collab init infra --resume
@@ -941,13 +1094,15 @@ Examples:
       // ── Step 1: Configuration wizard ────────────────────────
       context.logger.phaseHeader('collab init', 'Configuration');
 
-      const selections = await resolveWizardSelection(options, context.config);
+      const selections = await resolveWizardSelection(options, context.config, context.logger);
       const preserveExisting = configExistedBefore && !options.force;
 
       const effectiveConfig: CollabConfig = {
         ...defaultCollabConfig(context.config.workspaceDir),
         ...context.config,
         mode: preserveExisting ? context.config.mode : selections.mode,
+        infraType: preserveExisting ? context.config.infraType : selections.infraType,
+        mcpUrl: preserveExisting ? context.config.mcpUrl : selections.mcpUrl,
       };
 
       // ── Step 2: Business canon configuration ──────────────────
@@ -1029,12 +1184,20 @@ Examples:
 
         // Phase I — infra stages (indexed only)
         if (selections.mode === 'indexed') {
-          context.logger.phaseHeader('Infrastructure', 'Docker + MCP services');
+          const infraLabel = selections.infraType === 'remote'
+            ? 'Remote MCP services'
+            : 'Docker + MCP services';
+          context.logger.phaseHeader('Infrastructure', infraLabel);
 
-          const infraStages = buildInfraStages(
-            effectiveConfig, context.executor, context.logger,
-            options, selections.composeMode,
-          );
+          const infraStages = selections.infraType === 'remote' && selections.mcpUrl
+            ? buildRemoteInfraStages(
+                effectiveConfig, context.executor, context.logger,
+                options, selections.mcpUrl,
+              )
+            : buildInfraStages(
+                effectiveConfig, context.executor, context.logger,
+                options, selections.composeMode,
+              );
 
           await runOrchestration(
             {
@@ -1055,7 +1218,7 @@ Examples:
 
         const stages = selections.mode === 'file-only'
           ? buildFileOnlyPipeline(effectiveConfig, context.executor, context.logger, configExistedBefore, options)
-          : buildIndexedPipeline(effectiveConfig, context.executor, context.logger, configExistedBefore, options, selections.composeMode);
+          : buildIndexedPipeline(effectiveConfig, context.executor, context.logger, configExistedBefore, options, selections.composeMode, selections.infraType, selections.mcpUrl);
 
         await runOrchestration(
           {
@@ -1094,7 +1257,12 @@ Examples:
       }
 
       if (selections.mode === 'indexed') {
-        summaryEntries.splice(ws ? 3 : 1, 0, { label: 'Compose mode', value: selections.composeMode });
+        summaryEntries.push({ label: 'Infrastructure', value: selections.infraType });
+        if (selections.infraType === 'remote' && selections.mcpUrl) {
+          summaryEntries.push({ label: 'MCP URL', value: selections.mcpUrl });
+        } else {
+          summaryEntries.push({ label: 'Compose mode', value: selections.composeMode });
+        }
       }
 
       context.logger.summaryFooter(summaryEntries);

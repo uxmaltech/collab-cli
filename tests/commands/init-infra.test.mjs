@@ -45,8 +45,8 @@ test('init infra runs only infrastructure stages (dry-run)', () => {
   assert.ok(!result.stdout.includes('Write local collab configuration'), 'should not have env-setup');
   assert.ok(!result.stdout.includes('Generate project architecture scaffold'), 'should not have repo-scaffold');
 
-  // Summary should indicate infra only
-  assert.ok(result.stdout.includes('infra only'), 'summary should show infra-only phase');
+  // Summary should indicate infra local
+  assert.ok(result.stdout.includes('infra local'), 'summary should show infra-only phase');
 });
 
 test('init infra bootstraps config on fresh host (dry-run)', () => {
@@ -66,8 +66,8 @@ test('init infra bootstraps config on fresh host (dry-run)', () => {
   assert.ok(result.stdout.includes('Start infrastructure services'), 'should have infra-start');
   assert.ok(result.stdout.includes('Start MCP service'), 'should have mcp-start');
 
-  // Summary indicates infra only
-  assert.ok(result.stdout.includes('infra only'), 'summary should show infra-only phase');
+  // Summary indicates infra local
+  assert.ok(result.stdout.includes('infra local'), 'summary should show infra-only phase');
 });
 
 test('init infra with existing file-only config overrides to indexed (dry-run)', () => {
@@ -82,7 +82,7 @@ test('init infra with existing file-only config overrides to indexed (dry-run)',
 
   assert.equal(result.status, 0, `stderr: ${result.stderr}`);
   assert.ok(result.stdout.includes('Start infrastructure services'), 'should run infra stages');
-  assert.ok(result.stdout.includes('infra only'), 'summary should show infra-only phase');
+  assert.ok(result.stdout.includes('infra local'), 'summary should show infra-only phase');
 });
 
 test('init with unknown phase fails with helpful error', () => {
