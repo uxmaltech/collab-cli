@@ -108,7 +108,7 @@ PROTECTION
 
 | Repo | development | main |
 |------|-------------|------|
-| collab-cli | validate(20), validate(22), integration | validate(20), validate(22), integration, e2e, check-source-branch |
+| collab-cli | validate(20), validate(22), integration | validate(20), validate(22), integration, check-source-branch |
 | collab-architecture-mcp | lint-build-test, integration | lint-build-test, integration |
 | collab-core-pkg | — | — |
 | collab-chat-ai-pkg | — | — |

@@ -117,7 +117,6 @@ git push origin development
 |----------|---------|---------|
 | `ci.yml` | Push/PR to `development` | Lint, build, test (Node 20 & 22) |
 | `integration.yml` | Push/PR to `development` | Integration tests + package validation |
-| `e2e-main-pr.yml` | PR to `main` | E2E tests with Docker and MCP |
 | `guard-issues.yml` | Issue opened | Verify author is collaborator |
 | `promote-main-ff.yml` | PR review on `main` | Fast-forward `main` to `development` |
 | `auto-release.yml` | Push to `main` | Patch bump, tag, sync `development` |
@@ -132,14 +131,6 @@ npm test
 ```
 
 Uses Node.js built-in test runner (`node:test`). Tests are in `tests/` and require a prior build.
-
-### E2E Tests
-
-```bash
-npm run test:e2e
-```
-
-Requires Docker. Spins up a mock MCP server and runs a full init-to-tool-call flow.
 
 ### Writing Tests
 
