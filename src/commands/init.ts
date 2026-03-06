@@ -718,7 +718,7 @@ async function resolveWorkspace(
   // No repos found
   if (isIndexed) {
     throw new CliError(
-      'Indexed mode requires a multi-repo workspace with at least 2 repos.\n' +
+      'Indexed mode requires a multi-repo workspace with at least 1 governed repo.\n' +
         'No git repositories found in the workspace directory.\n' +
         'Clone your repos from GitHub and re-run.',
     );
@@ -1133,23 +1133,7 @@ async function runRepoDomainGeneration(
     ...context.config,
   };
 
-  // Resolve business canon if passed via flag (but don't require it for file-only)
-  const canons = options.businessCanon ? parseBusinessCanonOption(options.businessCanon, effectiveConfig.mode) : undefined;
-  if (canons) {
-    effectiveConfig.canons = canons;
-  }
-
-  // Store GitHub token if provided (required for indexed push/sync)
-  if (options.githubToken) {
-    if (context.executor.dryRun) {
-      context.logger.info('[dry-run] Would store GitHub token from --github-token flag.');
-    } else {
-      storeGitHubToken(effectiveConfig.collabDir, options.githubToken);
-      context.logger.info('GitHub token stored from --github-token flag.');
-    }
-  }
-
-  // Resolve mode
+  // Resolve mode early so parseBusinessCanonOption gets the correct mode context
   let mode: CollabMode;
   if (options.mode) {
     mode = parseMode(options.mode);
@@ -1164,6 +1148,22 @@ async function runRepoDomainGeneration(
       ],
       'file-only',
     );
+  }
+
+  // Resolve business canon if passed via flag (but don't require it for file-only)
+  const canons = options.businessCanon ? parseBusinessCanonOption(options.businessCanon, mode) : undefined;
+  if (canons) {
+    effectiveConfig.canons = canons;
+  }
+
+  // Store GitHub token if provided (required for indexed push/sync)
+  if (options.githubToken) {
+    if (context.executor.dryRun) {
+      context.logger.info('[dry-run] Would store GitHub token from --github-token flag.');
+    } else {
+      storeGitHubToken(effectiveConfig.collabDir, options.githubToken);
+      context.logger.info('GitHub token stored from --github-token flag.');
+    }
   }
 
   // Validate prerequisites
@@ -1374,7 +1374,9 @@ Examples:
         );
 
         // ── Indexed mode: validate all repos are GitHub repos with access ──
-        if (selections.mode === 'indexed' && !context.executor.dryRun) {
+        if (selections.mode === 'indexed' && context.executor.dryRun) {
+          context.logger.info('[dry-run] Would validate GitHub remotes and token access for workspace repos.');
+        } else if (selections.mode === 'indexed') {
           context.logger.phaseHeader('Repository Validation', 'GitHub access');
           const auth = loadGitHubAuth(effectiveConfig.collabDir);
           if (!auth) {

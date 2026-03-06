@@ -155,6 +155,6 @@ export async function validateWorkspaceRepos(
     );
   }
 
-  logger.info(`Found ${valid.length} governed repo(s): ${valid.map((v) => v).join(', ')}`);
+  logger.info(`Found ${valid.length} governed repo(s): ${valid.join(', ')}`);
   return valid;
 }

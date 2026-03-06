@@ -5,22 +5,7 @@ import test from 'node:test';
 
 import { runCli } from '../helpers/cli.mjs';
 import { createFakeDockerEnv } from '../helpers/fake-docker.mjs';
-import { makeTempWorkspace } from '../helpers/workspace.mjs';
-
-/**
- * Creates a workspace with N child repos (directories with .git/).
- */
-function makeMultiRepoWorkspace(repoNames) {
-  const workspace = makeTempWorkspace();
-  for (const name of repoNames) {
-    fs.mkdirSync(path.join(workspace, name, '.git'), { recursive: true });
-    fs.writeFileSync(
-      path.join(workspace, name, 'package.json'),
-      JSON.stringify({ name, version: '1.0.0' }),
-    );
-  }
-  return workspace;
-}
+import { makeTempWorkspace, makeMultiRepoWorkspace } from '../helpers/workspace.mjs';
 
 test('indexed rejects --business-canon none', () => {
   const workspace = makeMultiRepoWorkspace(['svc1', 'svc2']);
