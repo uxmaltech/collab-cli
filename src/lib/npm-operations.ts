@@ -5,6 +5,7 @@ import { resolveCommandPath } from './shell';
 
 const NPM_PACKAGE = '@uxmaltech/collab-cli';
 const PERMISSION_ERROR = /EACCES|permission denied/i;
+const EEXIST_ERROR = /EEXIST|file already exists/i;
 
 /**
  * Resolves the npm binary path or writes an error and returns null.
@@ -23,24 +24,40 @@ export function requireNpm(): string | null {
  */
 export function npmGlobalInstall(npmPath: string, version: string): boolean {
   const spec = `${NPM_PACKAGE}@${version}`;
-  try {
-    execFileSync(npmPath, ['install', '-g', spec], {
-      stdio: 'inherit',
-      timeout: 60_000,
-    });
-    return true;
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (PERMISSION_ERROR.test(message)) {
-      process.stderr.write(
-        red(`${CROSS} Permission denied. Try:\n`) +
-        `  sudo npm install -g ${spec}\n`,
-      );
-    } else {
-      process.stderr.write(red(`${CROSS} Install failed: ${message}\n`));
+
+  // Try without --force first, then retry with --force on EEXIST
+  for (const force of [false, true]) {
+    try {
+      const args = force
+        ? ['install', '-g', '--force', spec]
+        : ['install', '-g', spec];
+      execFileSync(npmPath, args, {
+        stdio: 'inherit',
+        timeout: 60_000,
+      });
+      return true;
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+
+      // EEXIST: bin symlink collision — retry once with --force
+      if (!force && EEXIST_ERROR.test(message)) {
+        process.stderr.write('Retrying with --force to overwrite existing bin link...\n');
+        continue;
+      }
+
+      if (PERMISSION_ERROR.test(message)) {
+        process.stderr.write(
+          red(`${CROSS} Permission denied. Try:\n`) +
+          `  sudo npm install -g ${spec}\n`,
+        );
+      } else {
+        process.stderr.write(red(`${CROSS} Install failed: ${message}\n`));
+      }
+      return false;
     }
-    return false;
   }
+
+  return false;
 }
 
 /**
