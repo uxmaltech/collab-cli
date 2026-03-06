@@ -80,9 +80,16 @@ test(
       const canonRepo = process.env.COLLAB_E2E_CANON || 'uxmaltech/collab-architecture';
       const canonToken = process.env.COLLAB_E2E_GITHUB_TOKEN || '';
 
-      // Create minimal multi-repo workspace structure for indexed mode
-      fs.mkdirSync(path.join(workspace, 'test-repo', '.git'), { recursive: true });
-      fs.mkdirSync(path.join(workspace, 'test-repo-2', '.git'), { recursive: true });
+      // Create minimal multi-repo workspace with real git repos and GitHub remotes.
+      // Indexed mode validates GitHub access for each repo, so they need real origins.
+      for (const repoName of ['test-repo', 'test-repo-2']) {
+        const repoDir = path.join(workspace, repoName);
+        fs.mkdirSync(repoDir, { recursive: true });
+        spawnSync('git', ['init'], { cwd: repoDir, stdio: 'ignore' });
+        spawnSync('git', ['remote', 'add', 'origin', `https://github.com/${canonRepo}.git`], {
+          cwd: repoDir, stdio: 'ignore',
+        });
+      }
 
       const initArgs = [
         '--cwd', workspace, 'init', '--yes',
