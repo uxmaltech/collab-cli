@@ -42,6 +42,7 @@
 ## Shared Libraries
 - `src/lib/config.ts`: workspace config loading and defaults (includes project mode).
 - `src/lib/mode.ts`: mode parsing and defaults (`file-only`, `indexed`).
+- `src/lib/infra-type.ts`: infrastructure type parsing (`local`, `remote`) and MCP URL validation.
 - `src/lib/command-context.ts`: global options → command context translation.
 - `src/lib/executor.ts`: side-effect executor with dry-run support.
 - `src/lib/logger.ts`: shared logging abstraction and verbosity controls.

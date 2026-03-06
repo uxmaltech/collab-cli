@@ -92,6 +92,12 @@ export function resolveMcpApiKey(env: Record<string, string | undefined>): strin
 }
 
 export function getMcpBaseUrl(config: CollabConfig): string {
+  // Remote infra: use the explicitly configured URL.
+  if (config.mcpUrl) {
+    return config.mcpUrl;
+  }
+
+  // Local infra: derive from .env or defaults.
   const env = loadRuntimeEnv(config);
   const host = env.MCP_HOST || '127.0.0.1';
   const port = env.MCP_PORT || '7337';
