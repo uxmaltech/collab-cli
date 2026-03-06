@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 import { Command } from 'commander';
@@ -18,6 +19,7 @@ import {
 import { checkEcosystemCompatibility } from '../lib/ecosystem';
 import { generateComposeFiles } from '../lib/compose-renderer';
 import { CliError } from '../lib/errors';
+import { searchGitHubRepos } from '../lib/github-search';
 import { parseInfraType, validateMcpUrl, type InfraType } from '../lib/infra-type';
 import { parseMode, type CollabMode } from '../lib/mode';
 import { parseNumber } from '../lib/parsers';
@@ -282,9 +284,10 @@ function buildGitHubAuthStage(
       'Run collab init --resume after fixing GitHub access.',
     ],
     run: async () => {
-      // Skip if no business canon is configured — GitHub auth is only needed for private repos
-      if (!effectiveConfig.canons?.business) {
-        logger.info('No business canon configured; skipping GitHub authorization.');
+      // Skip if no business canon or local source — GitHub auth only needed for remote repos
+      const canon = effectiveConfig.canons?.business;
+      if (!canon || canon.source === 'local') {
+        logger.info('No GitHub canon configured; skipping GitHub authorization.');
         return;
       }
 
@@ -319,14 +322,43 @@ function buildGitHubAuthStage(
   };
 }
 
+const LOCAL_PATH_RE = /^[/~.]/;
+
+/**
+ * Expands `~`, resolves to absolute, and validates the path is an existing directory.
+ * Throws CliError on failure.
+ */
+function resolveLocalCanonPath(rawPath: string): string {
+  const resolved = path.resolve(rawPath.replace(/^~/, os.homedir()));
+  if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) {
+    throw new CliError(`Not a valid directory: ${resolved}`);
+  }
+  return resolved;
+}
+
 function parseBusinessCanonOption(value: string | undefined): CanonsConfig | undefined {
   if (!value || value === 'none' || value === 'skip') {
     return undefined;
   }
 
+  // Detect local path: starts with /, ./, ../, or ~
+  if (LOCAL_PATH_RE.test(value)) {
+    const resolved = resolveLocalCanonPath(value);
+    return {
+      business: {
+        repo: `local/${path.basename(resolved)}`,
+        branch: 'local',
+        localDir: 'business',
+        source: 'local',
+        localPath: resolved,
+      },
+    };
+  }
+
+  // GitHub repo: must contain /
   if (!value.includes('/')) {
     throw new CliError(
-      `Invalid business canon format "${value}". Use "owner/repo" or "none" to skip.`,
+      `Invalid business canon format "${value}". Use "owner/repo", a local path, or "none" to skip.`,
     );
   }
 
@@ -335,12 +367,14 @@ function parseBusinessCanonOption(value: string | undefined): CanonsConfig | und
       repo: value,
       branch: 'main',
       localDir: 'business',
+      source: 'github',
     },
   };
 }
 
 async function resolveBusinessCanon(
   options: InitOptions,
+  config: CollabConfig,
   logger: Logger,
 ): Promise<CanonsConfig | undefined> {
   // CLI flag takes priority
@@ -351,33 +385,124 @@ async function resolveBusinessCanon(
   // --yes without --business-canon: mandatory error
   if (options.yes) {
     throw new CliError(
-      '--business-canon is required with --yes. Use --business-canon owner/repo or --business-canon none.',
+      '--business-canon is required with --yes. Use --business-canon owner/repo, --business-canon /local/path, or --business-canon none.',
     );
   }
 
-  // Interactive prompt
-  const repo = await promptText(
-    'Business architecture canon repo (owner/repo, empty to skip):',
+  // Interactive: choose source
+  const source = await promptChoice(
+    'Business canon source:',
+    [
+      { value: 'github', label: 'GitHub repository (search and select)' },
+      { value: 'local', label: 'Local directory' },
+      { value: 'skip', label: 'Skip (no business canon)' },
+    ],
+    'skip',
   );
 
-  if (!repo) {
+  if (source === 'skip') {
     logger.info('No business canon configured.');
     return undefined;
   }
 
-  if (!repo.includes('/')) {
-    throw new CliError(`Invalid format "${repo}". Use "owner/repo".`);
+  if (source === 'local') {
+    return resolveLocalBusinessCanon(logger);
   }
 
-  const branch = await promptText('Business canon branch:', 'main');
+  return resolveGitHubBusinessCanon(config, logger);
+}
+
+async function resolveLocalBusinessCanon(logger: Logger): Promise<CanonsConfig> {
+  const rawPath = await promptText('Local canon directory path:');
+  if (!rawPath) {
+    throw new CliError('Path is required for local canon.');
+  }
+
+  const resolved = resolveLocalCanonPath(rawPath);
+  const dirName = path.basename(resolved);
+  logger.info(`Using local canon at ${resolved}`);
+
+  return {
+    business: {
+      repo: `local/${dirName}`,
+      branch: 'local',
+      localDir: 'business',
+      source: 'local',
+      localPath: resolved,
+    },
+  };
+}
+
+async function resolveGitHubBusinessCanon(
+  config: CollabConfig,
+  logger: Logger,
+): Promise<CanonsConfig> {
+  // Ensure GitHub auth
+  const token = await ensureGitHubAuth(config.collabDir, logger);
+
+  // Search loop
+  let repo: string | undefined;
+  let defaultBranch = 'main';
+
+  while (!repo) {
+    const query = await promptText('Search GitHub repositories:');
+    if (!query) {
+      throw new CliError('Search query is required.');
+    }
+
+    const results = await searchGitHubRepos(query, token, 8);
+
+    if (results.items.length === 0) {
+      logger.info(`No repositories found for "${query}". Try a different search.`);
+      continue;
+    }
+
+    logger.info(`Found ${results.items.length} results (of ${results.totalCount} total):`);
+
+    const choices = results.items.map((r) => ({
+      value: r.fullName,
+      label: `${r.fullName}${r.private ? ' \u{1F512}' : ''}${r.description ? ` — ${r.description}` : ''}`,
+    }));
+    choices.push({ value: '__search_again__', label: '\u21BB Search again' });
+
+    const selected = await promptChoice('Select repository:', choices, choices[0].value);
+    if (selected === '__search_again__') {
+      continue;
+    }
+
+    repo = selected;
+    defaultBranch =
+      results.items.find((r) => r.fullName === selected)?.defaultBranch ?? 'main';
+  }
+
+  const branch = await promptText('Branch:', defaultBranch);
 
   return {
     business: {
       repo,
-      branch: branch || 'main',
+      branch: branch || defaultBranch,
       localDir: 'business',
+      source: 'github',
     },
   };
+}
+
+async function ensureGitHubAuth(collabDir: string, logger: Logger): Promise<string> {
+  const existing = loadGitHubAuth(collabDir);
+  if (existing) {
+    const valid = await isGitHubAuthValid(existing);
+    if (valid) {
+      return existing.token;
+    }
+    logger.info('Existing GitHub token expired. Re-authorizing...');
+  }
+
+  await runGitHubDeviceFlow(collabDir, (msg) => logger.info(msg));
+  const auth = loadGitHubAuth(collabDir);
+  if (!auth) {
+    throw new CliError('GitHub authorization failed.');
+  }
+  return auth.token;
 }
 
 // ────────────────────────────────────────────────────────────────
@@ -1031,7 +1156,7 @@ export function registerInitCommand(program: Command): void {
     .option('--skip-analysis', 'Skip AI-powered repository analysis stage')
     .option('--skip-ci', 'Skip CI workflow generation')
     .option('--providers <list>', 'Comma-separated AI provider list (codex,claude,gemini,copilot)')
-    .option('--business-canon <owner/repo>', 'Business canon repo (owner/repo or "none" to skip)')
+    .option('--business-canon <value>', 'Business canon: owner/repo, /local/path, or "none" to skip')
     .option('--github-token <token>', 'GitHub token for non-interactive mode')
     .option('--timeout-ms <ms>', 'Per-check timeout in milliseconds', '5000')
     .option('--retries <count>', 'Health check retries', '15')
@@ -1106,7 +1231,7 @@ Examples:
       };
 
       // ── Step 2: Business canon configuration ──────────────────
-      const canons = await resolveBusinessCanon(options, context.logger);
+      const canons = await resolveBusinessCanon(options, effectiveConfig, context.logger);
       if (canons) {
         effectiveConfig.canons = canons;
       }

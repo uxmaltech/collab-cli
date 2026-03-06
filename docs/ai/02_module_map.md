@@ -77,7 +77,8 @@
 - `src/lib/model-listing.ts`: model listing and selection.
 - `src/lib/cli-detection.ts`: CLI tool detection (codex, claude, gemini, gh).
 - `src/lib/providers.ts`: AI provider configuration.
-- `src/lib/canon-resolver.ts`: canon repository resolution.
+- `src/lib/github-search.ts`: GitHub repository search API wrapper.
+- `src/lib/canon-resolver.ts`: canon repository resolution (GitHub + local source).
 - `src/lib/canon-scaffold.ts`: canon structure generation templates.
 - `src/lib/repo-scanner.ts`: repository structure scanner.
 - `src/lib/repo-analysis-helpers.ts`: code analysis helper utilities.
