@@ -47,6 +47,11 @@ function readManifest(): EcosystemManifest {
   return manifest;
 }
 
+/** Returns the required MCP contract version range from the ecosystem manifest. */
+export function getMcpContractRange(): string {
+  return readManifest().collabArchitectureMcpContractRange;
+}
+
 function readCliVersion(): string {
   const packagePath = path.resolve(__dirname, '../../package.json');
   const pkg = readJsonFile<{ version?: string }>(packagePath);

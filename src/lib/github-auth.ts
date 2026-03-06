@@ -12,9 +12,9 @@ const AUTH_FILENAME = 'github-auth.json';
 
 /**
  * Client ID for the collab-cli GitHub OAuth App.
- * Override with COLLAB_GITHUB_CLIENT_ID env var until the app is registered.
+ * Override with COLLAB_GITHUB_CLIENT_ID env var for custom OAuth apps.
  */
-const DEFAULT_CLIENT_ID = process.env.COLLAB_GITHUB_CLIENT_ID ?? '';
+const DEFAULT_CLIENT_ID = process.env.COLLAB_GITHUB_CLIENT_ID ?? 'Ov23liocAEoUmWO39r5B';
 
 const DEVICE_CODE_URL = 'https://github.com/login/device/code';
 const ACCESS_TOKEN_URL = 'https://github.com/login/oauth/access_token';

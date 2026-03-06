@@ -78,6 +78,7 @@
 - `src/lib/cli-detection.ts`: CLI tool detection (codex, claude, gemini, gh).
 - `src/lib/providers.ts`: AI provider configuration.
 - `src/lib/github-search.ts`: GitHub repository search API wrapper.
+- `src/lib/mcp-contract.ts`: MCP server /health probe and contract version validation.
 - `src/lib/canon-resolver.ts`: canon repository resolution (GitHub + local source).
 - `src/lib/canon-scaffold.ts`: canon structure generation templates.
 - `src/lib/repo-scanner.ts`: repository structure scanner.
