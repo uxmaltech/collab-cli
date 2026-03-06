@@ -203,10 +203,11 @@ export function getBusinessCanonDir(config: CollabConfig): string {
     return canon.localPath;
   }
 
-  // GitHub source: cached clone
+  // GitHub source: cached clone (namespaced under 'business/' to avoid
+  // collision with the framework canon, which also lives in canons/).
   const repoName = canon.repo.split('/').pop() ?? canon.repo;
   const collabHome = process.env.COLLAB_HOME ?? path.join(os.homedir(), '.collab');
-  return path.join(collabHome, CANONS_SUBDIR, repoName);
+  return path.join(collabHome, CANONS_SUBDIR, 'business', repoName);
 }
 
 /**
