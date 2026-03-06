@@ -51,7 +51,7 @@ Examples:
         return;
       }
 
-      // ── Perform the upgrade ────────────────────────────────────
+      // ── Perform the upgrade ──────────────────────────────────────
       const npmPath = requireNpm();
       if (!npmPath) {
         throw new CliError('npm not found in PATH. Install Node.js/npm first.');
