@@ -10,33 +10,25 @@ import { makeTempWorkspace } from '../helpers/workspace.mjs';
 test('init interactive flow prompts in expected order', () => {
   const workspace = makeTempWorkspace();
   const env = createFakeDockerEnv();
-  // Inputs: 2=indexed, \n=default compose mode
-  // Use --infra-type and --business-canon flags to limit interactive prompts to 2,
+  // Inputs: 1=file-only, \n=accept default
+  // Use --business-canon flag to limit interactive prompts to 2,
   // avoiding a Node.js limitation where ≥3 sequential readline interfaces on piped
   // stdin can hang (the pipe's readable state is not reliably restored after close).
-  const input = '2\n\n';
+  // Note: indexed mode now requires a GitHub business canon, so we test with file-only.
+  const input = '1\n';
 
   const result = runCli(
-    ['--cwd', workspace, '--dry-run', 'init', '--infra-type', 'local', '--business-canon', 'none'],
+    ['--cwd', workspace, '--dry-run', 'init', '--business-canon', 'none'],
     { cwd: workspace, env, input },
   );
 
   assert.equal(result.status, 0, result.stderr);
 
   const modePrompt = result.stdout.indexOf('Select setup mode:');
-  const composePrompt = result.stdout.indexOf('Select compose generation mode:');
-
   assert.ok(modePrompt >= 0, 'mode prompt missing');
-  assert.ok(composePrompt > modePrompt, 'compose prompt should come after mode');
-
-  // Infra type prompt should NOT appear when --infra-type is passed via CLI flag
-  assert.ok(
-    !result.stdout.includes('Infrastructure type:'),
-    'infra type prompt should be skipped when --infra-type flag is given',
-  );
 });
 
-test('init --yes accepts explicit flags in non-interactive mode', () => {
+test('init --yes accepts explicit flags in non-interactive mode (file-only)', () => {
   const workspace = makeTempWorkspace();
   const env = createFakeDockerEnv();
 
@@ -49,10 +41,7 @@ test('init --yes accepts explicit flags in non-interactive mode', () => {
       '--yes',
       '--business-canon', 'none',
       '--mode',
-      'indexed',
-      '--compose-mode',
-      'split',
-      '--skip-mcp-snippets',
+      'file-only',
     ],
     {
       cwd: workspace,
@@ -61,8 +50,7 @@ test('init --yes accepts explicit flags in non-interactive mode', () => {
   );
 
   assert.equal(result.status, 0, result.stderr);
-  assert.ok(result.stdout.includes('indexed'), 'summary should show indexed mode');
-  assert.match(result.stdout, /Skipping MCP snippet generation by user choice/i);
+  assert.ok(result.stdout.includes('file-only'), 'summary should show file-only mode');
 });
 
 test('init --yes --mode file-only has no compose or MCP stages', () => {
@@ -95,13 +83,20 @@ test('init --yes --infra-type remote uses remote stages and skips Docker', () =>
   const workspace = makeTempWorkspace();
   const env = createFakeDockerEnv();
 
+  // Indexed mode requires GitHub business canon — use owner/repo + fake token.
+  // Create 2 child repos so workspace detection finds a multi-repo layout.
+  fs.mkdirSync(path.join(workspace, 'svc1', '.git'), { recursive: true });
+  fs.mkdirSync(path.join(workspace, 'svc2', '.git'), { recursive: true });
+
   const result = runCli(
     [
       '--cwd', workspace, '--dry-run', 'init', '--yes',
       '--mode', 'indexed',
       '--infra-type', 'remote',
       '--mcp-url', 'http://my-server:7337',
-      '--business-canon', 'none',
+      '--business-canon', 'uxmaltech/collab-architecture',
+      '--github-token', 'fake-token-for-test',
+      '--repos', 'svc1,svc2',
     ],
     { cwd: workspace, env },
   );
@@ -125,12 +120,18 @@ test('init --yes --infra-type remote without --mcp-url fails', () => {
   const workspace = makeTempWorkspace();
   const env = createFakeDockerEnv();
 
+  // Indexed mode requires GitHub business canon
+  fs.mkdirSync(path.join(workspace, 'svc1', '.git'), { recursive: true });
+  fs.mkdirSync(path.join(workspace, 'svc2', '.git'), { recursive: true });
+
   const result = runCli(
     [
       '--cwd', workspace, '--dry-run', 'init', '--yes',
       '--mode', 'indexed',
       '--infra-type', 'remote',
-      '--business-canon', 'none',
+      '--business-canon', 'uxmaltech/collab-architecture',
+      '--github-token', 'fake-token-for-test',
+      '--repos', 'svc1,svc2',
     ],
     { cwd: workspace, env },
   );
