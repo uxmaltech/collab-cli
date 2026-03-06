@@ -25,39 +25,61 @@ export function requireNpm(): string | null {
 export function npmGlobalInstall(npmPath: string, version: string): boolean {
   const spec = `${NPM_PACKAGE}@${version}`;
 
-  // Try without --force first, then retry with --force on EEXIST
-  for (const force of [false, true]) {
-    try {
-      const args = force
-        ? ['install', '-g', '--force', spec]
-        : ['install', '-g', spec];
-      execFileSync(npmPath, args, {
-        stdio: 'inherit',
-        timeout: 60_000,
-      });
-      return true;
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error);
+  // First attempt: pipe stderr so we can inspect it for EEXIST
+  try {
+    execFileSync(npmPath, ['install', '-g', spec], {
+      stdio: ['inherit', 'inherit', 'pipe'],
+      timeout: 60_000,
+    });
+    return true;
+  } catch (firstError: unknown) {
+    // Extract stderr from the failed child process
+    const stderr = extractStderr(firstError);
 
-      // EEXIST: bin symlink collision — retry once with --force
-      if (!force && EEXIST_ERROR.test(message)) {
-        process.stderr.write('Retrying with --force to overwrite existing bin link...\n');
-        continue;
-      }
-
-      if (PERMISSION_ERROR.test(message)) {
-        process.stderr.write(
-          red(`${CROSS} Permission denied. Try:\n`) +
-          `  sudo npm install -g ${spec}\n`,
-        );
-      } else {
-        process.stderr.write(red(`${CROSS} Install failed: ${message}\n`));
-      }
+    if (!EEXIST_ERROR.test(stderr)) {
+      // Not an EEXIST error — report and bail
+      process.stderr.write(stderr);
+      reportInstallError(spec, firstError);
       return false;
     }
+
+    // EEXIST: bin symlink collision — retry with --force
+    process.stderr.write('Bin link conflict detected, retrying with --force...\n');
   }
 
-  return false;
+  // Second attempt with --force (stdio: inherit for full visibility)
+  try {
+    execFileSync(npmPath, ['install', '-g', '--force', spec], {
+      stdio: 'inherit',
+      timeout: 60_000,
+    });
+    return true;
+  } catch (error: unknown) {
+    reportInstallError(spec, error);
+    return false;
+  }
+}
+
+function extractStderr(error: unknown): string {
+  if (error && typeof error === 'object' && 'stderr' in error) {
+    const buf = (error as { stderr: Buffer | string }).stderr;
+    return typeof buf === 'string' ? buf : buf?.toString('utf8') ?? '';
+  }
+  return '';
+}
+
+function reportInstallError(spec: string, error: unknown): void {
+  const message = error instanceof Error ? error.message : String(error);
+  const stderr = extractStderr(error);
+
+  if (PERMISSION_ERROR.test(message) || PERMISSION_ERROR.test(stderr)) {
+    process.stderr.write(
+      red(`${CROSS} Permission denied. Try:\n`) +
+      `  sudo npm install -g ${spec}\n`,
+    );
+  } else {
+    process.stderr.write(red(`${CROSS} Install failed: ${message}\n`));
+  }
 }
 
 /**
