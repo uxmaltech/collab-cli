@@ -190,7 +190,7 @@ export function isBusinessCanonConfigured(config: CollabConfig): boolean {
 /**
  * Returns the local directory where the business canon lives.
  * For local canons this is the user-provided path; for GitHub canons
- * it's the cached clone under `~/.collab/canons/<repo>`.
+ * it's a git clone at the workspace root: `<workspace>/<repoName>/`.
  */
 export function getBusinessCanonDir(config: CollabConfig): string {
   const canon = config.canons?.business;
@@ -203,11 +203,10 @@ export function getBusinessCanonDir(config: CollabConfig): string {
     return canon.localPath;
   }
 
-  // GitHub source: cached clone (namespaced under 'business/' to avoid
-  // collision with the framework canon, which also lives in canons/).
+  // GitHub source: cloned at the workspace root as a sibling repo
+  // (e.g. <workspace>/collab-app-architecture/).
   const repoName = canon.repo.split('/').pop() ?? canon.repo;
-  const collabHome = process.env.COLLAB_HOME ?? path.join(os.homedir(), '.collab');
-  return path.join(collabHome, CANONS_SUBDIR, 'business', repoName);
+  return path.join(config.workspaceDir, repoName);
 }
 
 /**
