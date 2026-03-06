@@ -42,6 +42,7 @@ import { repoAnalysisStage } from '../stages/repo-analysis';
 import { repoAnalysisFileOnlyStage } from '../stages/repo-analysis-fileonly';
 import { agentSkillsSetupStage } from '../stages/agent-skills-setup';
 import { ciSetupStage } from '../stages/ci-setup';
+import { githubSetupStage } from '../stages/github-setup';
 import { buildFileOnlyDomainPipeline, buildIndexedDomainPipeline } from '../stages/domain-gen';
 import { isBusinessCanonConfigured } from '../lib/canon-resolver';
 import { getEnabledProviders, PROVIDER_DEFAULTS, type ProviderKey } from '../lib/providers';
@@ -63,6 +64,7 @@ interface InitOptions {
   skipMcpSnippets?: boolean;
   skipAnalysis?: boolean;
   skipCi?: boolean;
+  skipGithubSetup?: boolean;
   timeoutMs?: string;
   retries?: string;
   retryDelayMs?: string;
@@ -879,6 +881,7 @@ function buildInfraStages(
     },
     graphSeedStage,
     canonIngestStage,
+    githubSetupStage,
   ];
 }
 
@@ -956,6 +959,7 @@ function buildRemoteInfraStages(
     },
     graphSeedStage,
     canonIngestStage,
+    githubSetupStage,
   ];
 }
 
@@ -1234,6 +1238,7 @@ export function registerInitCommand(program: Command): void {
     .option('--skip-mcp-snippets', 'Skip MCP client config snippet generation')
     .option('--skip-analysis', 'Skip AI-powered repository analysis stage')
     .option('--skip-ci', 'Skip CI workflow generation')
+    .option('--skip-github-setup', 'Skip GitHub branch model and workflow configuration')
     .option('--providers <list>', 'Comma-separated AI provider list (codex,claude,gemini,copilot)')
     .option('--business-canon <value>', 'Business canon: owner/repo, /local/path, or "none" to skip')
     .option('--github-token <token>', 'GitHub token for non-interactive mode')
@@ -1329,6 +1334,7 @@ Examples:
         outputDir: options.outputDir,
         skipAnalysis: options.skipAnalysis,
         skipCi: options.skipCi,
+        skipGithubSetup: options.skipGithubSetup,
       };
 
       // ── Workspace detection ───────────────────────────────────
