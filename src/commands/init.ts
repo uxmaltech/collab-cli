@@ -25,6 +25,7 @@ import { probeMcpContract } from '../lib/mcp-contract';
 import { parseMode, type CollabMode } from '../lib/mode';
 import { parseNumber } from '../lib/parsers';
 import { runOrchestration, runPerRepoOrchestration, type OrchestrationStage } from '../lib/orchestrator';
+import { validateWorkspaceRepos } from '../lib/github-api';
 import { loadGitHubAuth, isGitHubAuthValid, runGitHubDeviceFlow, storeGitHubToken } from '../lib/github-auth';
 import { promptChoice, promptMultiSelect, promptText } from '../lib/prompt';
 import { assertPreflightChecks, runPreflightChecks } from '../lib/preflight';
@@ -41,6 +42,7 @@ import { repoAnalysisStage } from '../stages/repo-analysis';
 import { repoAnalysisFileOnlyStage } from '../stages/repo-analysis-fileonly';
 import { agentSkillsSetupStage } from '../stages/agent-skills-setup';
 import { ciSetupStage } from '../stages/ci-setup';
+import { githubSetupStage } from '../stages/github-setup';
 import { buildFileOnlyDomainPipeline, buildIndexedDomainPipeline } from '../stages/domain-gen';
 import { isBusinessCanonConfigured } from '../lib/canon-resolver';
 import { getEnabledProviders, PROVIDER_DEFAULTS, type ProviderKey } from '../lib/providers';
@@ -62,6 +64,7 @@ interface InitOptions {
   skipMcpSnippets?: boolean;
   skipAnalysis?: boolean;
   skipCi?: boolean;
+  skipGithubSetup?: boolean;
   timeoutMs?: string;
   retries?: string;
   retryDelayMs?: string;
@@ -288,7 +291,10 @@ function buildGitHubAuthStage(
       'Run collab init --resume after fixing GitHub access.',
     ],
     run: async () => {
-      // Skip if no business canon or local source — GitHub auth only needed for remote repos
+      // Skip GitHub auth when no GitHub canon is configured.
+      // In indexed mode, a GitHub canon is always required (enforced
+      // by parseBusinessCanonOption), so this check only triggers in
+      // file-only mode or when preserving an existing config.
       const canon = effectiveConfig.canons?.business;
       if (!canon || canon.source === 'local') {
         logger.info('No GitHub canon configured; skipping GitHub authorization.');
@@ -394,7 +400,23 @@ function resolveLocalCanonPath(rawPath: string): string {
   return resolved;
 }
 
-function parseBusinessCanonOption(value: string | undefined): CanonsConfig | undefined {
+function parseBusinessCanonOption(
+  value: string | undefined,
+  mode: CollabMode = 'file-only',
+): CanonsConfig | undefined {
+  if (mode === 'indexed') {
+    if (!value || value === 'none' || value === 'skip') {
+      throw new CliError(
+        'Business canon is required for indexed mode. Use --business-canon owner/repo.',
+      );
+    }
+    if (LOCAL_PATH_RE.test(value)) {
+      throw new CliError(
+        'Local business canon is not supported in indexed mode. Use --business-canon owner/repo (GitHub).',
+      );
+    }
+  }
+
   if (!value || value === 'none' || value === 'skip') {
     return undefined;
   }
@@ -435,19 +457,32 @@ async function resolveBusinessCanon(
   config: CollabConfig,
   logger: Logger,
 ): Promise<CanonsConfig | undefined> {
+  const isIndexed = config.mode === 'indexed';
+
   // CLI flag takes priority
   if (options.businessCanon) {
-    return parseBusinessCanonOption(options.businessCanon);
+    return parseBusinessCanonOption(options.businessCanon, config.mode);
   }
 
   // --yes without --business-canon: mandatory error
   if (options.yes) {
+    if (isIndexed) {
+      throw new CliError(
+        '--business-canon owner/repo is required with --yes in indexed mode.',
+      );
+    }
     throw new CliError(
       '--business-canon is required with --yes. Use --business-canon owner/repo, --business-canon /local/path, or --business-canon none.',
     );
   }
 
-  // Interactive: choose source
+  // Interactive indexed: go straight to GitHub search (no local/skip options)
+  if (isIndexed) {
+    logger.info('Indexed mode requires a GitHub business canon.');
+    return resolveGitHubBusinessCanon(config, logger);
+  }
+
+  // Interactive file-only: choose source
   const source = await promptChoice(
     'Business canon source:',
     [
@@ -631,13 +666,16 @@ async function resolveWorkspace(
   workspaceDir: string,
   options: InitOptions,
   logger: Logger,
+  mode: CollabMode = 'file-only',
 ): Promise<WorkspaceResolution | null> {
   const name = deriveWorkspaceName(workspaceDir);
+  const isIndexed = mode === 'indexed';
 
   // Explicit --repos flag takes priority
   const explicit = parseRepos(options.repos);
   if (explicit && explicit.length > 0) {
-    const type = explicit.length >= 2 ? 'multi-repo' : 'mono-repo';
+    // In indexed mode, always force multi-repo type
+    const type = isIndexed || explicit.length >= 2 ? 'multi-repo' : 'mono-repo';
     logger.info(`Workspace mode: ${explicit.length} repo(s) specified: ${explicit.join(', ')}`);
     return { name, type, repos: explicit };
   }
@@ -646,6 +684,15 @@ async function resolveWorkspace(
   const layout = detectWorkspaceLayout(workspaceDir);
 
   if (layout) {
+    // Indexed mode: reject mono-repo
+    if (isIndexed && layout.type === 'mono-repo') {
+      throw new CliError(
+        'Indexed mode requires a multi-repo workspace (business-canon + at least 1 governed repo).\n' +
+          'Current directory is detected as mono-repo. ' +
+          'Run from a parent directory containing multiple git repositories.',
+      );
+    }
+
     if (options.yes) {
       logger.info(
         `Workspace auto-detected (${layout.type}): ${layout.repos.length} repo(s) found: ${layout.repos.join(', ')}`,
@@ -665,12 +712,20 @@ async function resolveWorkspace(
       return { name, type: 'multi-repo', repos: selected };
     }
 
-    // mono-repo auto-detected
+    // mono-repo auto-detected (file-only only — indexed rejected above)
     logger.info(`Mono-repo workspace detected: ${layout.repos.join(', ')}`);
     return { name, type: 'mono-repo', repos: layout.repos };
   }
 
   // No repos found
+  if (isIndexed) {
+    throw new CliError(
+      'Indexed mode requires a multi-repo workspace with at least 1 governed repo.\n' +
+        'No git repositories found in the workspace directory.\n' +
+        'Clone your repos from GitHub and re-run.',
+    );
+  }
+
   if (options.yes) {
     // Non-interactive with no repos → treat cwd as mono-repo
     logger.info('No repos discovered; initializing as mono-repo workspace.');
@@ -826,6 +881,7 @@ function buildInfraStages(
     },
     graphSeedStage,
     canonIngestStage,
+    githubSetupStage,
   ];
 }
 
@@ -903,6 +959,7 @@ function buildRemoteInfraStages(
     },
     graphSeedStage,
     canonIngestStage,
+    githubSetupStage,
   ];
 }
 
@@ -928,42 +985,6 @@ function buildFileOnlyPipeline(
     repoAnalysisFileOnlyStage,                                 // 7
     ciSetupStage,                                              // 8
     agentSkillsSetupStage,                                     // 9
-  ];
-}
-
-// ────────────────────────────────────────────────────────────────
-// Indexed pipeline (15 stages)
-// ────────────────────────────────────────────────────────────────
-
-function buildIndexedPipeline(
-  effectiveConfig: CollabConfig,
-  executor: Executor,
-  logger: Logger,
-  configExistedBefore: boolean,
-  options: InitOptions,
-  composeMode: ComposeMode,
-  infraType: InfraType = 'local',
-  mcpUrl?: string,
-): OrchestrationStage[] {
-  const infraStages = infraType === 'remote' && mcpUrl
-    ? buildRemoteInfraStages(effectiveConfig, executor, logger, options, mcpUrl)
-    : buildInfraStages(effectiveConfig, executor, logger, options, composeMode);
-
-  return [
-    // Phase A — Local setup (shared with file-only)
-    buildPreflightStage(executor, logger, infraType === 'local' ? 'indexed' : undefined),
-    buildConfigStage(effectiveConfig, executor, logger,
-      configExistedBefore, options.force),
-    buildGitHubAuthStage(effectiveConfig, logger, options),
-    assistantSetupStage,
-    canonSyncStage,
-    repoScaffoldStage,
-    repoAnalysisStage,
-    ciSetupStage,
-    agentSkillsSetupStage,
-
-    // Phase B — Infrastructure + Phase C — Ingestion
-    ...infraStages,
   ];
 }
 
@@ -1116,23 +1137,7 @@ async function runRepoDomainGeneration(
     ...context.config,
   };
 
-  // Resolve business canon if passed via flag (but don't require it for file-only)
-  const canons = options.businessCanon ? parseBusinessCanonOption(options.businessCanon) : undefined;
-  if (canons) {
-    effectiveConfig.canons = canons;
-  }
-
-  // Store GitHub token if provided (required for indexed push/sync)
-  if (options.githubToken) {
-    if (context.executor.dryRun) {
-      context.logger.info('[dry-run] Would store GitHub token from --github-token flag.');
-    } else {
-      storeGitHubToken(effectiveConfig.collabDir, options.githubToken);
-      context.logger.info('GitHub token stored from --github-token flag.');
-    }
-  }
-
-  // Resolve mode
+  // Resolve mode early so parseBusinessCanonOption gets the correct mode context
   let mode: CollabMode;
   if (options.mode) {
     mode = parseMode(options.mode);
@@ -1147,6 +1152,22 @@ async function runRepoDomainGeneration(
       ],
       'file-only',
     );
+  }
+
+  // Resolve business canon if passed via flag (but don't require it for file-only)
+  const canons = options.businessCanon ? parseBusinessCanonOption(options.businessCanon, mode) : undefined;
+  if (canons) {
+    effectiveConfig.canons = canons;
+  }
+
+  // Store GitHub token if provided (required for indexed push/sync)
+  if (options.githubToken) {
+    if (context.executor.dryRun) {
+      context.logger.info('[dry-run] Would store GitHub token from --github-token flag.');
+    } else {
+      storeGitHubToken(effectiveConfig.collabDir, options.githubToken);
+      context.logger.info('GitHub token stored from --github-token flag.');
+    }
   }
 
   // Validate prerequisites
@@ -1217,6 +1238,7 @@ export function registerInitCommand(program: Command): void {
     .option('--skip-mcp-snippets', 'Skip MCP client config snippet generation')
     .option('--skip-analysis', 'Skip AI-powered repository analysis stage')
     .option('--skip-ci', 'Skip CI workflow generation')
+    .option('--skip-github-setup', 'Skip GitHub branch model and workflow configuration')
     .option('--providers <list>', 'Comma-separated AI provider list (codex,claude,gemini,copilot)')
     .option('--business-canon <value>', 'Business canon: owner/repo, /local/path, or "none" to skip')
     .option('--github-token <token>', 'GitHub token for non-interactive mode')
@@ -1295,11 +1317,15 @@ Examples:
       };
 
       // ── Step 2: Business canon configuration ──────────────────
-      context.logger.phaseHeader('collab init', 'Business Canon');
+      // When preserving an existing config (no --force), skip canon
+      // resolution — the existing canon config is already merged.
+      if (!preserveExisting) {
+        context.logger.phaseHeader('collab init', 'Business Canon');
 
-      const canons = await resolveBusinessCanon(options, effectiveConfig, context.logger);
-      if (canons) {
-        effectiveConfig.canons = canons;
+        const canons = await resolveBusinessCanon(options, effectiveConfig, context.logger);
+        if (canons) {
+          effectiveConfig.canons = canons;
+        }
       }
 
       const stageOptions: Record<string, unknown> = {
@@ -1308,6 +1334,7 @@ Examples:
         outputDir: options.outputDir,
         skipAnalysis: options.skipAnalysis,
         skipCi: options.skipCi,
+        skipGithubSetup: options.skipGithubSetup,
       };
 
       // ── Workspace detection ───────────────────────────────────
@@ -1320,6 +1347,7 @@ Examples:
               context.config.workspaceDir,
               options,
               context.logger,
+              selections.mode,
             );
 
       if (ws) {
@@ -1329,7 +1357,6 @@ Examples:
           ...effectiveConfig.compose,
           projectName: `collab-${ws.name}`,
         };
-        const repoConfigs = resolveRepoConfigs(effectiveConfig);
 
         // Phase W — workspace-level stages
         context.logger.phaseHeader('Workspace Setup', `${ws.repos.length} repositories (${ws.type})`);
@@ -1352,7 +1379,31 @@ Examples:
           workspaceStages,
         );
 
+        // ── Indexed mode: validate all repos are GitHub repos with access ──
+        if (selections.mode === 'indexed' && context.executor.dryRun) {
+          context.logger.info('[dry-run] Would validate GitHub remotes and token access for workspace repos.');
+        } else if (selections.mode === 'indexed') {
+          context.logger.phaseHeader('Repository Validation', 'GitHub access');
+          const auth = loadGitHubAuth(effectiveConfig.collabDir);
+          if (!auth) {
+            throw new CliError(
+              'GitHub authorization required but token not found after auth stage.',
+            );
+          }
+
+          const validRepos = await validateWorkspaceRepos(
+            ws.repos,
+            effectiveConfig.workspaceDir,
+            auth.token,
+            context.logger,
+          );
+
+          effectiveConfig.workspace = { ...effectiveConfig.workspace, repos: validRepos };
+          ws.repos = validRepos;
+        }
+
         // Phase R — per-repo stages
+        const repoConfigs = resolveRepoConfigs(effectiveConfig);
         context.logger.phaseHeader('Repository Analysis', `${selections.mode} mode`);
 
         const perRepoStages = buildPerRepoStages(selections.mode);
@@ -1404,12 +1455,17 @@ Examples:
           );
         }
       } else {
-        // ── SINGLE-REPO MODE (unchanged) ──────────────────────
+        // ── SINGLE-REPO MODE ─────────────────────────────────
+        if (selections.mode === 'indexed') {
+          throw new CliError(
+            'Indexed mode requires a multi-repo workspace.\n' +
+              'Run from a workspace directory with multiple git repos, or use --repos to specify repos.',
+          );
+        }
+
         context.logger.phaseHeader('Project Setup', selections.mode);
 
-        const stages = selections.mode === 'file-only'
-          ? buildFileOnlyPipeline(effectiveConfig, context.executor, context.logger, configExistedBefore, options)
-          : buildIndexedPipeline(effectiveConfig, context.executor, context.logger, configExistedBefore, options, selections.composeMode, selections.infraType, selections.mcpUrl);
+        const stages = buildFileOnlyPipeline(effectiveConfig, context.executor, context.logger, configExistedBefore, options);
 
         await runOrchestration(
           {

@@ -5,25 +5,7 @@ import test from 'node:test';
 
 import { runCli } from '../helpers/cli.mjs';
 import { createFakeDockerEnv } from '../helpers/fake-docker.mjs';
-import { makeTempWorkspace } from '../helpers/workspace.mjs';
-
-/**
- * Creates a workspace directory with N child "repos" (directories with .git/).
- * Returns the workspace root path.
- */
-function makeMultiRepoWorkspace(repoNames) {
-  const workspace = makeTempWorkspace();
-  for (const name of repoNames) {
-    const repoDir = path.join(workspace, name);
-    fs.mkdirSync(path.join(repoDir, '.git'), { recursive: true });
-    // Add a minimal package.json so repo-scanner can detect something
-    fs.writeFileSync(
-      path.join(repoDir, 'package.json'),
-      JSON.stringify({ name, version: '1.0.0' }),
-    );
-  }
-  return workspace;
-}
+import { makeTempWorkspace, makeMultiRepoWorkspace } from '../helpers/workspace.mjs';
 
 test('init --repos runs workspace mode with per-repo stages (dry-run)', () => {
   const workspace = makeMultiRepoWorkspace(['api', 'web']);
@@ -55,8 +37,15 @@ test('init --repos indexed workspace has infra phase (dry-run)', () => {
   const workspace = makeMultiRepoWorkspace(['svc1', 'svc2']);
   const env = createFakeDockerEnv();
 
+  // Indexed mode requires GitHub business canon
   const result = runCli(
-    ['--cwd', workspace, '--dry-run', 'init', '--yes', '--business-canon', 'none', '--repos', 'svc1,svc2', '--mode', 'indexed'],
+    [
+      '--cwd', workspace, '--dry-run', 'init', '--yes',
+      '--business-canon', 'uxmaltech/collab-architecture',
+      '--github-token', 'fake-token-for-test',
+      '--repos', 'svc1,svc2',
+      '--mode', 'indexed',
+    ],
     { cwd: workspace, env },
   );
 

@@ -61,6 +61,7 @@ jobs:
       - name: Run E2E full flow
         env:
           COLLAB_E2E_MCP_IMAGE: ${{ steps.resolve_mcp_image.outputs.image }}
+          COLLAB_E2E_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm run test:e2e
 
       - name: Cleanup docker resources

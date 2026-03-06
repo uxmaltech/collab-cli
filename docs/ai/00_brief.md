@@ -11,12 +11,14 @@
 
 ## Core capabilities
 
-- **Wizard onboarding** (`collab init`): 8-stage (file-only) or 14-stage (indexed) pipeline
+- **Wizard onboarding** (`collab init`): 8-stage (file-only) or 15-stage (indexed) pipeline
 - **Infrastructure management**: Docker Compose generation, Qdrant + NebulaGraph lifecycle
 - **MCP server management**: Start/stop/status of the MCP runtime
 - **Canon synchronization**: Download/update canonical architecture from GitHub
 - **AI provider auto-detection**: Codex, Claude, Gemini, Copilot with MCP config generation
 - **Domain generation**: `collab init --repo=<package>` analyzes a repo and generates domain files in the configured architecture repo
+- **GitHub setup** (indexed): Branch model, protection rules, merge strategy, and CI workflows via GitHub API
+- **Work finalization** (`collab end`): PR creation with governance references, GOV-R-001 checklist, and canon sync
 - **Diagnostics**: System health checks, compatibility verification, doctor command
 
 ## Key design principles

@@ -7,6 +7,7 @@
 - `bin/` executable wrappers.
 - `src/commands/` command registration and command handlers.
 - `src/lib/` shared utilities and reusable abstractions.
+- `src/stages/` orchestration pipeline stages.
 - `src/templates/` template assets used by commands.
 - `tests/` automated checks.
 - `.github/workflows/` CI pipelines.
@@ -32,6 +33,8 @@
 ## Language Policy
 - All documentation, README files, code comments, and canon entries MUST be written in English.
 - No translations, localized variants, or bilingual files are permitted in any UxmalTech repository.
+- This includes ALL generated content: templates, CI workflows, issue bodies, PR descriptions, error messages, log messages, and string literals in code.
+- AI-generated content (commits, PRs, issues, code) MUST also be in English — no exceptions.
 
 ## Anti-patterns
 - Duplicating the same parsing or formatting logic across command files.
