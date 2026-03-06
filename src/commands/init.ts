@@ -324,6 +324,18 @@ function buildGitHubAuthStage(
 
 const LOCAL_PATH_RE = /^[/~.]/;
 
+/**
+ * Expands `~`, resolves to absolute, and validates the path is an existing directory.
+ * Throws CliError on failure.
+ */
+function resolveLocalCanonPath(rawPath: string): string {
+  const resolved = path.resolve(rawPath.replace(/^~/, os.homedir()));
+  if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) {
+    throw new CliError(`Not a valid directory: ${resolved}`);
+  }
+  return resolved;
+}
+
 function parseBusinessCanonOption(value: string | undefined): CanonsConfig | undefined {
   if (!value || value === 'none' || value === 'skip') {
     return undefined;
@@ -331,10 +343,7 @@ function parseBusinessCanonOption(value: string | undefined): CanonsConfig | und
 
   // Detect local path: starts with /, ./, ../, or ~
   if (LOCAL_PATH_RE.test(value)) {
-    const resolved = path.resolve(value.replace(/^~/, os.homedir()));
-    if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) {
-      throw new CliError(`Not a valid directory: ${resolved}`);
-    }
+    const resolved = resolveLocalCanonPath(value);
     return {
       business: {
         repo: `local/${path.basename(resolved)}`,
@@ -409,11 +418,7 @@ async function resolveLocalBusinessCanon(logger: Logger): Promise<CanonsConfig> 
     throw new CliError('Path is required for local canon.');
   }
 
-  const resolved = path.resolve(rawPath.replace(/^~/, os.homedir()));
-  if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) {
-    throw new CliError(`Not a valid directory: ${resolved}`);
-  }
-
+  const resolved = resolveLocalCanonPath(rawPath);
   const dirName = path.basename(resolved);
   logger.info(`Using local canon at ${resolved}`);
 

@@ -75,6 +75,11 @@ export async function searchGitHubRepos(
       throw error;
     }
 
+    // AbortController fires when the timeout elapses — surface a clear message
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new CliError(`GitHub search request timed out after ${SEARCH_TIMEOUT_MS / 1000}s.`);
+    }
+
     const message = error instanceof Error ? error.message : String(error);
     throw new CliError(`GitHub search request failed: ${message}`);
   } finally {
