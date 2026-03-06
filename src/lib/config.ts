@@ -24,13 +24,19 @@ export interface WorkspaceConfig {
   repos: string[];
 }
 
+export type CanonSource = 'github' | 'local';
+
 export interface CanonConfig {
-  /** GitHub repo slug: "owner/repo" */
+  /** GitHub repo slug ("owner/repo") or synthetic local identifier ("local/<dir>") */
   repo: string;
-  /** Branch to track */
+  /** Branch to track (only meaningful for github source) */
   branch: string;
   /** Local copy directory name under docs/architecture/ */
   localDir: string;
+  /** Canon source — defaults to 'github' when omitted (backward compat) */
+  source?: CanonSource;
+  /** Absolute path to a local canon directory (only when source === 'local') */
+  localPath?: string;
 }
 
 export interface CanonsConfig {
