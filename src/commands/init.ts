@@ -16,11 +16,12 @@ import {
   type CollabConfig,
   type WorkspaceType,
 } from '../lib/config';
-import { checkEcosystemCompatibility } from '../lib/ecosystem';
+import { checkEcosystemCompatibility, getMcpContractRange } from '../lib/ecosystem';
 import { generateComposeFiles } from '../lib/compose-renderer';
 import { CliError } from '../lib/errors';
 import { searchGitHubRepos } from '../lib/github-search';
 import { parseInfraType, validateMcpUrl, type InfraType } from '../lib/infra-type';
+import { probeMcpContract } from '../lib/mcp-contract';
 import { parseMode, type CollabMode } from '../lib/mode';
 import { parseNumber } from '../lib/parsers';
 import { runOrchestration, runPerRepoOrchestration, type OrchestrationStage } from '../lib/orchestrator';
@@ -105,6 +106,7 @@ async function resolveWizardSelection(
   options: InitOptions,
   config: CollabConfig,
   logger: Logger,
+  dryRun: boolean,
 ): Promise<WizardSelection> {
   const defaults: WizardSelection = {
     mode: parseMode(options.mode, config.mode),
@@ -130,6 +132,7 @@ async function resolveWizardSelection(
         throw new CliError('--mcp-url is required with --infra-type remote in non-interactive mode.');
       }
       mcpUrl = validateMcpUrl(options.mcpUrl);
+      await validateMcpServerContract(mcpUrl, logger, dryRun);
     }
 
     return {
@@ -173,6 +176,7 @@ async function resolveWizardSelection(
       const rawUrl = options.mcpUrl
         ?? await promptText('MCP server base URL:', 'http://127.0.0.1:7337');
       mcpUrl = validateMcpUrl(rawUrl);
+      await validateMcpServerContract(mcpUrl, logger, dryRun);
     }
   }
 
@@ -321,6 +325,60 @@ function buildGitHubAuthStage(
     },
   };
 }
+
+// ────────────────────────────────────────────────────────────────
+// MCP contract validation (single-shot probe at URL-entry time)
+// ────────────────────────────────────────────────────────────────
+
+async function validateMcpServerContract(
+  mcpUrl: string,
+  logger: Logger,
+  dryRun: boolean,
+): Promise<void> {
+  const result = await probeMcpContract(mcpUrl, {
+    contractRange: getMcpContractRange(),
+    dryRun,
+  });
+
+  if (result.skipped) {
+    logger.info('[dry-run] Skipped MCP contract validation.');
+    return;
+  }
+
+  if (!result.ok) {
+    throw new CliError(result.error ?? `MCP contract validation failed for ${mcpUrl}`);
+  }
+
+  const health = result.health!;
+  logger.step(true, `MCP server reachable at ${mcpUrl}`);
+  logger.info(`Server version: ${health.version}`);
+  logger.info(`Contract version: ${health.contractVersion}`);
+
+  const deps = Object.entries(health.dependencies)
+    .map(([name, status]) => `${name} (${status})`)
+    .join(', ');
+  if (deps) {
+    logger.info(`Dependencies: ${deps}`);
+  }
+
+  if (result.contractCompatible === false) {
+    logger.warn(
+      `MCP contract version ${health.contractVersion} may be incompatible ` +
+      `(CLI expects ${getMcpContractRange()}). Some features may not work correctly.`,
+    );
+  }
+
+  const degraded = Object.entries(health.dependencies)
+    .filter(([, status]) => status !== 'up');
+  if (degraded.length > 0) {
+    const names = degraded.map(([name, status]) => `${name} (${status})`).join(', ');
+    logger.warn(`Some MCP dependencies are not fully ready: ${names}`);
+  }
+}
+
+// ────────────────────────────────────────────────────────────────
+// Business canon helpers
+// ────────────────────────────────────────────────────────────────
 
 const LOCAL_PATH_RE = /^[/~.]/;
 
@@ -946,6 +1004,10 @@ async function runInfraOnly(
     mcpUrl = options.mcpUrl ? validateMcpUrl(options.mcpUrl) : effectiveConfig.mcpUrl;
     effectiveConfig.infraType = infraType;
     effectiveConfig.mcpUrl = mcpUrl;
+
+    if (mcpUrl) {
+      await validateMcpServerContract(mcpUrl, context.logger, context.executor.dryRun);
+    }
   }
 
   const composeMode = parseComposeMode(options.composeMode, inferComposeMode(effectiveConfig));
@@ -1219,7 +1281,9 @@ Examples:
       // ── Step 1: Configuration wizard ────────────────────────
       context.logger.phaseHeader('collab init', 'Configuration');
 
-      const selections = await resolveWizardSelection(options, context.config, context.logger);
+      const selections = await resolveWizardSelection(
+        options, context.config, context.logger, context.executor.dryRun,
+      );
       const preserveExisting = configExistedBefore && !options.force;
 
       const effectiveConfig: CollabConfig = {
@@ -1231,6 +1295,8 @@ Examples:
       };
 
       // ── Step 2: Business canon configuration ──────────────────
+      context.logger.phaseHeader('collab init', 'Business Canon');
+
       const canons = await resolveBusinessCanon(options, effectiveConfig, context.logger);
       if (canons) {
         effectiveConfig.canons = canons;
