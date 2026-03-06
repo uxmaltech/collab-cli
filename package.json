@@ -1,6 +1,6 @@
 {
   "name": "@uxmaltech/collab-cli",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "CLI for collaborative architecture and delivery workflows.",
   "private": false,
   "license": "UNLICENSED",
