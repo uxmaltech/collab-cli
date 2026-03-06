@@ -75,11 +75,28 @@ test(
         fs.writeFileSync(path.join(workspace, '.env'), `MCP_IMAGE=${mcpImageOverride}\n`, 'utf8');
       }
 
-      const initResult = safeRunCli(
-        ['--cwd', workspace, 'init', '--yes', '--business-canon', 'none', '--mode', 'indexed', '--timeout-ms', '3000', '--retries', '40'],
-        workspace,
-        300_000,
-      );
+      // Indexed mode requires a GitHub business canon and multi-repo workspace.
+      // For e2e, use COLLAB_E2E_CANON env var or default to uxmaltech/collab-architecture.
+      const canonRepo = process.env.COLLAB_E2E_CANON || 'uxmaltech/collab-architecture';
+      const canonToken = process.env.COLLAB_E2E_GITHUB_TOKEN || '';
+
+      // Create minimal multi-repo workspace structure for indexed mode
+      fs.mkdirSync(path.join(workspace, 'test-repo', '.git'), { recursive: true });
+      fs.mkdirSync(path.join(workspace, 'test-repo-2', '.git'), { recursive: true });
+
+      const initArgs = [
+        '--cwd', workspace, 'init', '--yes',
+        '--business-canon', canonRepo,
+        '--repos', 'test-repo,test-repo-2',
+        '--mode', 'indexed',
+        '--timeout-ms', '3000',
+        '--retries', '40',
+      ];
+      if (canonToken) {
+        initArgs.push('--github-token', canonToken);
+      }
+
+      const initResult = safeRunCli(initArgs, workspace, 300_000);
       assert.equal(
         initResult.status,
         0,

@@ -11,8 +11,18 @@ test('ci-setup generates both workflows in indexed mode (dry-run)', () => {
   const workspace = makeTempWorkspace();
   const env = createFakeDockerEnv();
 
+  // Indexed mode requires GitHub business canon + multi-repo workspace
+  fs.mkdirSync(path.join(workspace, 'svc1', '.git'), { recursive: true });
+  fs.mkdirSync(path.join(workspace, 'svc2', '.git'), { recursive: true });
+
   const result = runCli(
-    ['--cwd', workspace, '--dry-run', 'init', '--yes', '--business-canon', 'none', '--mode', 'indexed'],
+    [
+      '--cwd', workspace, '--dry-run', 'init', '--yes',
+      '--business-canon', 'uxmaltech/collab-architecture',
+      '--github-token', 'fake-token-for-test',
+      '--repos', 'svc1,svc2',
+      '--mode', 'indexed',
+    ],
     { cwd: workspace, env },
   );
 

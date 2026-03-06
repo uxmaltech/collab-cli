@@ -55,8 +55,15 @@ test('init --repos indexed workspace has infra phase (dry-run)', () => {
   const workspace = makeMultiRepoWorkspace(['svc1', 'svc2']);
   const env = createFakeDockerEnv();
 
+  // Indexed mode requires GitHub business canon
   const result = runCli(
-    ['--cwd', workspace, '--dry-run', 'init', '--yes', '--business-canon', 'none', '--repos', 'svc1,svc2', '--mode', 'indexed'],
+    [
+      '--cwd', workspace, '--dry-run', 'init', '--yes',
+      '--business-canon', 'uxmaltech/collab-architecture',
+      '--github-token', 'fake-token-for-test',
+      '--repos', 'svc1,svc2',
+      '--mode', 'indexed',
+    ],
     { cwd: workspace, env },
   );
 
