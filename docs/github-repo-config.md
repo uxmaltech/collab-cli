@@ -145,11 +145,20 @@ promote-main-ff.yml
               └── Creates GitHub Release with .tgz artifact
 ```
 
+### Secrets required
+
+| Secret | Purpose |
+|--------|---------|
+| `RELEASE_PAT` | Fine-Grained PAT with Contents (R/W) + Actions (R/W). Used to bypass branch protection on main and chain workflow_dispatch events. |
+| `NPM_TOKEN` | npm access token for publishing `@uxmaltech/collab-cli` to the registry. |
+
 ### Why workflow_dispatch chaining?
 
 `GITHUB_TOKEN` pushes (branches and tags) do **not** trigger `on: push` workflows.
 However, `GITHUB_TOKEN` **can** trigger `workflow_dispatch` events.
 Each workflow explicitly calls the next via `gh workflow run`.
+The `RELEASE_PAT` is used instead of `GITHUB_TOKEN` for pushes to protected branches (main)
+because `GITHUB_TOKEN` acts as `github-actions[bot]` which is not in the bypass list.
 
 ### Guard workflow
 
