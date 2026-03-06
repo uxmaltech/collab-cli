@@ -14,6 +14,8 @@ export interface CommandRunOptions {
   check?: boolean;
   /** If true, only log the command in verbose mode. */
   verboseOnly?: boolean;
+  /** Pass string content to the child process via stdin. */
+  input?: string;
 }
 
 /** Result returned by {@link Executor.run}. */
@@ -72,6 +74,7 @@ export class Executor {
     const result = spawnSync(commandName, args, {
       cwd: options.cwd ?? this.cwd,
       encoding: 'utf8',
+      ...(options.input !== undefined ? { input: options.input } : {}),
     });
 
     if (result.error) {

@@ -291,16 +291,24 @@ Examples:
 
       // Create implementation PR
       context.logger.info(`Creating PR: ${branch} → ${base}...`);
-      const prResult = execFileSync('gh', [
-        'pr', 'create',
-        '--base', base,
-        '--title', prTitle,
-        '--body', prBody,
-      ], {
-        cwd,
-        encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'pipe'],
-      }).trim();
+      let prResult: string;
+      try {
+        prResult = execFileSync('gh', [
+          'pr', 'create',
+          '--base', base,
+          '--title', prTitle,
+          '--body', prBody,
+        ], {
+          cwd,
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'pipe'],
+        }).trim();
+      } catch {
+        throw new CliError(
+          `Failed to create PR. Ensure you are authenticated with gh CLI.\n` +
+            `Run: gh auth login`,
+        );
+      }
 
       context.logger.info(`PR created: ${prResult}`);
 

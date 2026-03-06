@@ -25,9 +25,9 @@ jobs:
               owner, repo,
               title: 'Canon sync required — ' + context.repo.repo,
               body: '## Canon Sync Required\\n\\n'
-                + 'Merge to \\\`main\\\` en **' + context.repo.owner + '/' + context.repo.repo + '**.\\n\\n'
+                + 'Merge to \\\`main\\\` in **' + context.repo.owner + '/' + context.repo.repo + '**.\\n\\n'
                 + '**Commit:** ' + context.sha + '\\n\\n'
-                + '> Creado automáticamente por canon-sync-trigger.',
+                + '> Created automatically by canon-sync-trigger.',
               labels: ['canon-sync', 'automated'],
             });
 `;

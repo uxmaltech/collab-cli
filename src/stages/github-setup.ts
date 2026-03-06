@@ -88,18 +88,17 @@ export const githubSetupStage: OrchestrationStage = {
           ctx.logger.info(`  canon-sync-trigger.yml already exists for ${rc.name}; skipping.`);
         }
 
-        // CANON_SYNC_PAT secret via gh CLI
+        // CANON_SYNC_PAT secret via gh CLI (passed via stdin for security)
         try {
           ctx.executor.run('gh', [
             'secret', 'set', 'CANON_SYNC_PAT',
-            '-b', token,
             '-R', identity.slug,
-          ], { check: true });
+          ], { check: true, input: token });
           ctx.logger.info(`  Set CANON_SYNC_PAT secret for ${identity.slug}.`);
         } catch {
           ctx.logger.warn(
             `  Could not set CANON_SYNC_PAT for ${identity.slug}.\n` +
-              `  Set it manually: gh secret set CANON_SYNC_PAT -b "<token>" -R ${identity.slug}`,
+              `  Set it manually: gh secret set CANON_SYNC_PAT -R ${identity.slug}`,
           );
         }
       }
