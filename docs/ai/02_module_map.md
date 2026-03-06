@@ -124,5 +124,6 @@
 - `tests/lib/*`: executor, preflight, health-checker, mode/config, orchestration-recovery tests.
 - `tests/stages/*`: stage-level tests (github-setup integration).
 - `tests/templates/*`: CI and canon template unit tests.
+- `tests/e2e/full-flow.test.mjs`: indexed end-to-end flow and MCP tool-call validation.
 - `tests/cli-help.test.mjs`, `tests/compose-generate.test.mjs`, `tests/phase2-workflows.test.mjs`: baseline CLI integration and phase-2 behavior tests.
-- `tests/helpers/*.mjs`: reusable helpers for CLI execution, fake docker, snapshots, config/logger fixtures.
+- `tests/helpers/*.mjs`: reusable helpers for CLI execution, fake docker, snapshots, MCP HTTP, config/logger fixtures.

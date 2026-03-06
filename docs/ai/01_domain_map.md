@@ -59,3 +59,4 @@
 - Template-level snapshot/parameter tests for compose assets.
 - Library unit tests for executor/preflight/orchestrator/health/mode/config behavior.
 - Command tests for interactive wizard and flag validation.
+- E2E full-flow check (indexed init → healthy MCP → MCP tool call) with Docker cleanup.

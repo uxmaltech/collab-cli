@@ -213,6 +213,7 @@ collab end --skip-canon-sync            # skip canon sync PR generation
 | `npm run format` | Prettier (check) |
 | `npm run format:write` | Prettier (write) |
 | `npm test` | Build + run tests |
+| `npm run test:e2e` | E2E with Docker (`collab init --mode indexed` → MCP tool call) |
 | `npm run typecheck` | TypeScript without emit |
 | `npm run pack:dry-run` | Verify npm package contents |
 

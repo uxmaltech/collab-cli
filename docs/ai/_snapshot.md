@@ -14,7 +14,7 @@
 - GitHub setup (indexed): branch model, protection, merge strategy, CI workflows via API
 - Work finalization: `collab end` — PR creation, governance references, canon sync
 - Workspace: multi-repo support with `--repos` flag
-- Test layout: `tests/compose`, `tests/commands`, `tests/lib`
-- CI: non-container checks on push/PR; protected `main` required checks
+- Test layout: `tests/compose`, `tests/commands`, `tests/lib`, `tests/e2e`
+- CI: non-container checks on push/PR; Docker `e2e` only on PRs targeting `main`; protected `main` required checks
 - Governance: `CONTRIBUTING.md` + structured issue template with dependencies section
 - Release: tag-driven `release.yml` (validate, package, npm publish, GitHub release)

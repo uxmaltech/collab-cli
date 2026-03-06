@@ -25,6 +25,7 @@ The CLI should consume those systems through explicit interfaces, not by embeddi
 - Lint: `npm run lint`
 - Format: `npm run format` (check) / `npm run format:write` (fix)
 - Test: `npm test` (build + run tests)
+- E2E: `npm run test:e2e` (requires Docker)
 - Typecheck: `npm run typecheck`
 - Run locally: `bin/collab --help`
 
@@ -39,7 +40,7 @@ src/
   stages/              → Pipeline stages for wizard (10 stages: preflight → canon-ingest)
   lib/                 → Shared utilities (35 modules: config, executor, orchestrator, health, AI, compose, canon...)
   templates/           → Compose topology templates + CI + canon scaffold templates
-tests/                 → compose/, commands/, lib/, helpers/
+tests/                 → compose/, commands/, lib/, e2e/, helpers/
 ecosystem.manifest.json → Cross-repo compatibility ranges
 ```
 

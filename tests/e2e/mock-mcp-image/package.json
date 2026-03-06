@@ -1,0 +1,9 @@
+{
+  "name": "collab-mcp-mock",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Mock MCP image for collab-cli E2E tests",
+  "scripts": {
+    "ingest:v2": "node scripts/ingest-v2.mjs"
+  }
+}
