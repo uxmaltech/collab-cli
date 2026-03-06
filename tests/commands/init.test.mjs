@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
 import test from 'node:test';
 
 import { runCli } from '../helpers/cli.mjs';
@@ -137,5 +139,87 @@ test('init --yes --infra-type remote without --mcp-url fails', () => {
   assert.ok(
     result.stderr.includes('--mcp-url is required'),
     'should report missing --mcp-url',
+  );
+});
+
+test('init --yes --business-canon with local path stores local source', () => {
+  const workspace = makeTempWorkspace();
+  const env = createFakeDockerEnv();
+
+  // Create a local canon directory in the temp workspace
+  const localCanonDir = path.join(workspace, 'my-canon');
+  fs.mkdirSync(localCanonDir, { recursive: true });
+
+  // dry-run to avoid actual canon-sync; verify config write via executor log
+  const result = runCli(
+    [
+      '--cwd', workspace, '--dry-run', 'init', '--yes',
+      '--mode', 'file-only',
+      '--business-canon', localCanonDir,
+    ],
+    { cwd: workspace, env },
+  );
+
+  assert.equal(result.status, 0, `stderr: ${result.stderr}`);
+
+  // In dry-run mode the executor only logs file paths, not JSON content.
+  // Verify local source was correctly detected by checking stage behaviour:
+  // 1. GitHub auth stage should be skipped (proves source === 'local')
+  assert.ok(
+    result.stdout.includes('No GitHub canon configured; skipping GitHub authorization.'),
+    'should skip GitHub auth for local canon',
+  );
+  // 2. Config-write stage should succeed
+  assert.ok(
+    result.stdout.includes('Write local collab configuration'),
+    'config-write stage should have run',
+  );
+});
+
+test('init --yes --business-canon with invalid local path fails', () => {
+  const workspace = makeTempWorkspace();
+  const env = createFakeDockerEnv();
+
+  const result = runCli(
+    [
+      '--cwd', workspace, '--dry-run', 'init', '--yes',
+      '--mode', 'file-only',
+      '--business-canon', '/nonexistent/path/to/canon',
+    ],
+    { cwd: workspace, env },
+  );
+
+  assert.notEqual(result.status, 0, 'should fail with invalid path');
+  assert.ok(
+    result.stderr.includes('Not a valid directory'),
+    'should report invalid directory',
+  );
+});
+
+test('init --yes --business-canon with owner/repo parses as github source in dry-run', () => {
+  const workspace = makeTempWorkspace();
+  const env = createFakeDockerEnv();
+
+  // In --yes mode without --github-token, the pipeline fails at github-auth.
+  // This proves the business canon was parsed correctly (it got past parsing).
+  const result = runCli(
+    [
+      '--cwd', workspace, '--dry-run', 'init', '--yes',
+      '--mode', 'file-only',
+      '--business-canon', 'uxmaltech/collab-architecture',
+    ],
+    { cwd: workspace, env },
+  );
+
+  // The github-auth stage runs and fails because no token — proves the canon was accepted
+  assert.notEqual(result.status, 0, 'should fail at github-auth without token');
+  assert.ok(
+    result.stderr.includes('github-auth'),
+    'should fail at github-auth stage',
+  );
+  // Config-write stage succeeded before the failure
+  assert.ok(
+    result.stdout.includes('Write local collab configuration'),
+    'config-write stage should have run',
   );
 });

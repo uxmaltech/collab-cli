@@ -188,7 +188,9 @@ export function isBusinessCanonConfigured(config: CollabConfig): boolean {
 }
 
 /**
- * Returns the local directory where the business canon is cloned.
+ * Returns the local directory where the business canon lives.
+ * For local canons this is the user-provided path; for GitHub canons
+ * it's the cached clone under `~/.collab/canons/<repo>`.
  */
 export function getBusinessCanonDir(config: CollabConfig): string {
   const canon = config.canons?.business;
@@ -196,6 +198,12 @@ export function getBusinessCanonDir(config: CollabConfig): string {
     throw new Error('No business canon configured.');
   }
 
+  // Local source: the user's directory as-is
+  if (canon.source === 'local' && canon.localPath) {
+    return canon.localPath;
+  }
+
+  // GitHub source: cached clone
   const repoName = canon.repo.split('/').pop() ?? canon.repo;
   const collabHome = process.env.COLLAB_HOME ?? path.join(os.homedir(), '.collab');
   return path.join(collabHome, CANONS_SUBDIR, repoName);
@@ -215,9 +223,20 @@ export function syncBusinessCanon(
     return false;
   }
 
+  const print = log ?? console.log;
+
+  // Local canons don't need syncing — just validate the path exists
+  if (canon.source === 'local') {
+    if (!canon.localPath || !fs.existsSync(canon.localPath)) {
+      print(`Local canon path not found: ${canon.localPath ?? '(not set)'}`);
+      return false;
+    }
+    print(`Using local business canon at ${canon.localPath}`);
+    return true;
+  }
+
   const canonsDir = getBusinessCanonDir(config);
   const parentDir = path.dirname(canonsDir);
-  const print = log ?? console.log;
   const branch = canon.branch || 'main';
 
   // Build repo URL — inject token for private repo access if available

@@ -43,6 +43,7 @@ export function registerUpdateCanonsCommand(program: Command): void {
 
       // ── Business canon ───────────────────────────────────────
       if (isBusinessCanonConfigured(context.config)) {
+        const canon = context.config.canons?.business;
         const auth = loadGitHubAuth(context.config.collabDir);
         const token = auth?.token;
 
@@ -51,16 +52,19 @@ export function registerUpdateCanonsCommand(program: Command): void {
           throw new CliError('Failed to sync business canon.');
         }
 
-        const bizDir = getBusinessCanonDir(context.config);
-        try {
-          const bizCommitInfo = execFileSync(
-            'git',
-            ['-C', bizDir, 'log', '-1', `--format=${COMMIT_FORMAT}`],
-            { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
-          ).trim();
-          context.logger.info(`Business canon up to date: ${bizCommitInfo}`);
-        } catch {
-          context.logger.info('Business canon updated successfully.');
+        // Show git log only for GitHub-sourced canons (local dirs may not be git repos)
+        if (canon?.source !== 'local') {
+          const bizDir = getBusinessCanonDir(context.config);
+          try {
+            const bizCommitInfo = execFileSync(
+              'git',
+              ['-C', bizDir, 'log', '-1', `--format=${COMMIT_FORMAT}`],
+              { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+            ).trim();
+            context.logger.info(`Business canon up to date: ${bizCommitInfo}`);
+          } catch {
+            context.logger.info('Business canon updated successfully.');
+          }
         }
       }
     });
