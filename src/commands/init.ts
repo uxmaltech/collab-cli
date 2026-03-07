@@ -50,6 +50,7 @@ import { getEnabledProviders, PROVIDER_DEFAULTS, type ProviderKey } from '../lib
 import type { Executor } from '../lib/executor';
 import type { Logger } from '../lib/logger';
 import { dryRunHealthOptions, loadRuntimeEnv, waitForInfraHealth, waitForMcpHealth, logServiceHealth } from '../lib/service-health';
+import { readCliVersion } from '../lib/version';
 
 interface InitOptions {
   force?: boolean;
@@ -163,8 +164,6 @@ async function resolveWizardSelection(
   let mcpUrl: string | undefined;
 
   if (mode === 'indexed') {
-    logger.phaseHeader('collab init', 'Infrastructure');
-
     infraType = options.infraType
       ? parseInfraType(options.infraType)
       : await promptChoice(
@@ -1419,8 +1418,14 @@ Examples:
         context.logger.warn('Force mode enabled: configuration will be overwritten with wizard selections.');
       }
 
+      const version = readCliVersion();
+      context.logger.wizardIntro(`collab init v${version}`);
+
       // ── Step 1: Configuration wizard ────────────────────────
-      context.logger.phaseHeader('collab init', 'Configuration');
+      // Total steps depend on flow path; computed after selections.
+      // Use a mutable counter so each phase increments naturally.
+      let wizStep = 0;
+      context.logger.wizardStep(++wizStep, 'Configuration');
 
       const selections = await resolveWizardSelection(
         options, context.config, context.logger, context.executor.dryRun,
@@ -1439,7 +1444,7 @@ Examples:
       // When preserving an existing config (no --force), skip canon
       // resolution — the existing canon config is already merged.
       if (!preserveExisting) {
-        context.logger.phaseHeader('collab init', 'Business Canon');
+        context.logger.wizardStep(++wizStep, 'Business Canon');
 
         const canons = await resolveBusinessCanon(options, effectiveConfig, context.logger);
         if (canons) {
@@ -1479,7 +1484,7 @@ Examples:
         };
 
         // Phase W — workspace-level stages
-        context.logger.phaseHeader('Workspace Setup', `${ws.repos.length} repositories (${ws.type})`);
+        context.logger.wizardStep(++wizStep, 'Workspace Setup', `${ws.repos.length} repositories (${ws.type})`);
 
         const workspaceStages = buildWorkspaceStages(
           effectiveConfig, context.executor, context.logger,
@@ -1503,7 +1508,7 @@ Examples:
         if (selections.mode === 'indexed' && context.executor.dryRun) {
           context.logger.info('[dry-run] Would validate GitHub remotes and token access for workspace repos.');
         } else if (selections.mode === 'indexed') {
-          context.logger.phaseHeader('Repository Validation', 'GitHub access');
+          context.logger.wizardStep(++wizStep, 'Repository Validation', 'GitHub access');
           const auth = loadGitHubAuth(effectiveConfig.collabDir);
           if (!auth) {
             throw new CliError(
@@ -1524,7 +1529,7 @@ Examples:
 
         // Phase R — per-repo stages
         const repoConfigs = resolveRepoConfigs(effectiveConfig);
-        context.logger.phaseHeader('Repository Analysis', `${selections.mode} mode`);
+        context.logger.wizardStep(++wizStep, 'Repository Setup', `${selections.mode} mode`);
 
         const perRepoStages = buildPerRepoStages(selections.mode);
 
@@ -1549,7 +1554,7 @@ Examples:
           const infraLabel = selections.infraType === 'remote'
             ? 'Remote MCP services'
             : 'Docker + MCP services';
-          context.logger.phaseHeader('Infrastructure', infraLabel);
+          context.logger.wizardStep(++wizStep, 'Infrastructure', infraLabel);
 
           const infraStages = selections.infraType === 'remote' && selections.mcpUrl
             ? buildRemoteInfraStages(
@@ -1583,7 +1588,7 @@ Examples:
           );
         }
 
-        context.logger.phaseHeader('Project Setup', selections.mode);
+        context.logger.wizardStep(++wizStep, 'Project Setup', selections.mode);
 
         const stages = buildFileOnlyPipeline(effectiveConfig, context.executor, context.logger, configExistedBefore, options);
 
@@ -1602,7 +1607,6 @@ Examples:
       }
 
       // ── Summary ───────────────────────────────────────────
-      context.logger.phaseHeader('Setup Complete');
 
       const enabledProviders = getEnabledProviders(effectiveConfig);
       const providerLabel = enabledProviders.length > 0
@@ -1674,5 +1678,7 @@ Examples:
       if (!options.force && configExistedBefore) {
         context.logger.debug('Existing configuration was reused.');
       }
+
+      context.logger.wizardOutro('Setup complete');
     });
 }
