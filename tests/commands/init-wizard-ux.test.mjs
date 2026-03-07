@@ -123,13 +123,16 @@ test('indexed workspace wizard shows all phases in correct order', () => {
   const idxCanon = out.indexOf('Business Canon');
   const idxWorkspace = out.indexOf('Workspace Setup');
   const idxRepo = out.indexOf('Repository Setup');
-  const idxInfra = out.indexOf('Infrastructure');
+  // Use the step-specific banner pattern to avoid matching the summary footer
+  // (wizardStep output: "Step N · Infrastructure", footer: "Infrastructure: value")
+  const infraStepMatch = out.match(/Step \d+.*Infrastructure/);
+  assert.ok(infraStepMatch, 'should have Infrastructure wizard step');
+  const idxInfra = infraStepMatch.index;
 
   assert.ok(idxConfig >= 0, 'should have Configuration step');
   assert.ok(idxCanon >= 0, 'should have Business Canon step');
   assert.ok(idxWorkspace >= 0, 'should have Workspace Setup step');
   assert.ok(idxRepo >= 0, 'should have Repository Setup step');
-  assert.ok(idxInfra >= 0, 'should have Infrastructure step');
 
   // Verify correct ordering
   assert.ok(idxConfig < idxCanon, 'Configuration before Business Canon');

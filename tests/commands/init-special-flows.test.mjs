@@ -58,8 +58,14 @@ test('workspace mode state writes reference per-repo workflows', () => {
   );
 
   assert.equal(result.status, 0, result.stderr);
-  // State should be written multiple times (workspace + per-repo workflows)
+
+  // Verify per-repo workflows executed (not just a loose state-write count)
+  assert.ok(result.stdout.includes('[repo 1/2] api'), 'should process repo api');
+  assert.ok(result.stdout.includes('[repo 2/2] web'), 'should process repo web');
+
+  // Each repo triggers its own state writes after stage completion
   const stateWrites = result.stdout.split('write state file').length - 1;
+  // workspace stages + (per-repo stages × 2 repos) → well above 3
   assert.ok(stateWrites >= 3, `should write state at least 3 times (workspace + 2 repos), got ${stateWrites}`);
 });
 
@@ -100,6 +106,11 @@ test('--yes with full indexed flags completes without prompts', () => {
   assert.equal(result.status, 0, result.stderr);
   assert.ok(result.stdout.includes('indexed'), 'should show indexed mode');
   assert.ok(result.stdout.includes('split'), 'should use split compose mode');
+
+  // Verify interactive prompts were suppressed (no prompt markers emitted)
+  const combined = result.stdout + result.stderr;
+  assert.ok(!combined.includes('Select setup mode'), 'should not prompt for setup mode');
+  assert.ok(!combined.includes('Select compose generation mode'), 'should not prompt for compose mode');
 });
 
 // ── Infra-only special flow ─────────────────────────────────────
@@ -303,6 +314,16 @@ test('--skip-analysis flag is accepted and suppresses analysis stage', () => {
   );
 
   assert.equal(result.status, 0, result.stderr);
+
+  // Verify analysis was actually suppressed (skip message present, no analysis execution)
+  assert.ok(
+    result.stdout.includes('Skipping repository analysis by user choice'),
+    'should log that analysis was skipped',
+  );
+  assert.ok(
+    !result.stdout.includes('Would analyze repository'),
+    'should NOT run the analysis stage',
+  );
 });
 
 test('--skip-ci flag is accepted', () => {
