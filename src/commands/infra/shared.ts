@@ -14,6 +14,7 @@ import {
   logServiceHealth,
   waitForInfraHealth,
 } from '../../lib/service-health';
+import { startSpinner } from '../../lib/spinner';
 
 export const INFRA_SERVICES = ['qdrant', 'metad0', 'storaged0', 'graphd'] as const;
 
@@ -66,6 +67,10 @@ export async function runInfraCompose(
   const args = action === 'up' ? ['up', '-d'] : action === 'stop' ? ['stop'] : ['ps'];
   const services = selection.source === 'consolidated' ? [...INFRA_SERVICES] : [];
 
+  const spinner = action === 'up'
+    ? await startSpinner('Starting infrastructure...', logger.verbosity === 'quiet')
+    : null;
+
   runDockerCompose({
     executor,
     files: [selection.filePath],
@@ -78,8 +83,17 @@ export async function runInfraCompose(
     return;
   }
 
+  spinner?.message('Waiting for services to be healthy...');
+
   const env = loadRuntimeEnv(config);
   const health = await waitForInfraHealth(env, dryRunHealthOptions(executor, options.health ?? {}));
+
+  if (health.ok) {
+    spinner?.stop('Infrastructure services healthy');
+  } else {
+    spinner?.fail('Infrastructure services did not become healthy');
+  }
+
   logServiceHealth(logger, 'infra health', health);
 
   if (!health.ok) {

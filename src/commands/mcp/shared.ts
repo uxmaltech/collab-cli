@@ -14,6 +14,7 @@ import {
   logServiceHealth,
   waitForMcpHealth,
 } from '../../lib/service-health';
+import { startSpinner } from '../../lib/spinner';
 
 /** @deprecated Use {@link ComposeServiceSelection} directly. */
 export type McpSelection = ComposeServiceSelection;
@@ -64,6 +65,10 @@ export async function runMcpCompose(
   const args = action === 'up' ? ['up', '-d'] : action === 'stop' ? ['stop'] : ['ps'];
   const serviceScope = selection.source === 'consolidated' ? ['mcp'] : [];
 
+  const spinner = action === 'up'
+    ? await startSpinner('Starting MCP service...', logger.verbosity === 'quiet')
+    : null;
+
   runDockerCompose({
     executor,
     files: [selection.filePath],
@@ -76,8 +81,17 @@ export async function runMcpCompose(
     return;
   }
 
+  spinner?.message('Waiting for MCP service to be healthy...');
+
   const env = loadRuntimeEnv(config);
   const health = await waitForMcpHealth(env, dryRunHealthOptions(executor, options.health ?? {}));
+
+  if (health.ok) {
+    spinner?.stop('MCP service healthy');
+  } else {
+    spinner?.fail('MCP service did not become healthy');
+  }
+
   logServiceHealth(logger, 'mcp health', health);
 
   if (!health.ok) {

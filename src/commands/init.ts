@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -50,6 +50,7 @@ import { getEnabledProviders, PROVIDER_DEFAULTS, type ProviderKey } from '../lib
 import type { Executor } from '../lib/executor';
 import type { Logger } from '../lib/logger';
 import { dryRunHealthOptions, loadRuntimeEnv, waitForInfraHealth, waitForMcpHealth, logServiceHealth } from '../lib/service-health';
+import { withSpinner } from '../lib/spinner';
 import { readCliVersion } from '../lib/version';
 
 interface InitOptions {
@@ -543,7 +544,11 @@ async function resolveGitHubBusinessCanon(
       throw new CliError('Search query is required.');
     }
 
-    const results = await searchGitHubRepos(query, token, 8);
+    const results = await withSpinner(
+      'Searching GitHub...',
+      () => searchGitHubRepos(query, token, 8),
+      logger.verbosity === 'quiet',
+    );
 
     if (results.items.length === 0) {
       logger.info(`No repositories found for "${query}". Try a different search.`);
@@ -766,7 +771,11 @@ async function searchAndCloneRepos(
       throw new CliError('Search query is required.');
     }
 
-    const results = await searchGitHubRepos(query, token, 8);
+    const results = await withSpinner(
+      'Searching GitHub...',
+      () => searchGitHubRepos(query, token, 8),
+      logger.verbosity === 'quiet',
+    );
 
     if (results.items.length === 0) {
       logger.info(`No repositories found for "${query}". Try a different search.`);
@@ -829,21 +838,33 @@ async function searchAndCloneRepos(
     }
 
     const cloneUrl = `https://github.com/${repo.fullName}.git`;
-    logger.info(`Cloning ${repo.fullName}...`);
 
-    const result = spawnSync('git', ['clone', cloneUrl, repoName], {
-      cwd: workspaceDir,
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-
-    if (result.status !== 0) {
-      logger.warn(`Failed to clone ${repo.fullName}: ${result.stderr?.trim() || 'unknown error'}`);
+    try {
+      await withSpinner(
+        `Cloning ${repo.fullName}...`,
+        () => new Promise<void>((resolve, reject) => {
+          const child = spawn('git', ['clone', cloneUrl, repoName], {
+            cwd: workspaceDir,
+            stdio: ['ignore', 'pipe', 'pipe'],
+          });
+          let stderr = '';
+          child.stderr?.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
+          child.on('close', (code) => {
+            if (code !== 0) {
+              reject(new Error(stderr.trim() || 'unknown error'));
+            } else {
+              resolve();
+            }
+          });
+          child.on('error', reject);
+        }),
+        logger.verbosity === 'quiet',
+      );
+      cloned.push(repoName);
+    } catch (error) {
+      logger.warn(error instanceof Error ? error.message : String(error));
       continue;
     }
-
-    logger.step(true, `Cloned ${repo.fullName}`);
-    cloned.push(repoName);
   }
 
   if (cloned.length === 0) {

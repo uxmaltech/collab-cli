@@ -14,6 +14,7 @@ import {
   type IngestResult,
 } from '../lib/mcp-client';
 import { loadRuntimeEnv } from '../lib/service-health';
+import { withSpinner } from '../lib/spinner';
 import type { OrchestrationStage, StageContext } from '../lib/orchestrator';
 
 const MAX_DOCS_PER_REQUEST = 100;
@@ -187,8 +188,6 @@ export async function ingestCanonFiles(ctx: StageContext): Promise<void> {
   const uxmaltechFiles = collectMarkdownFiles(ctx.config.uxmaltechDir);
 
   if (uxmaltechFiles.length > 0) {
-    ctx.logger.info(`Ingesting ${uxmaltechFiles.length} framework architecture file(s) via HTTP.`);
-
     const payload: IngestPayload = {
       context: 'technical',
       scope: 'uxmaltech',
@@ -197,7 +196,11 @@ export async function ingestCanonFiles(ctx: StageContext): Promise<void> {
       documents: filesToDocuments(uxmaltechFiles, ctx.config.uxmaltechDir),
     };
 
-    const result = await ingestInBatches(baseUrl, payload, apiKey, timeoutMs);
+    const result = await withSpinner(
+      `Ingesting ${uxmaltechFiles.length} framework architecture file(s)...`,
+      () => ingestInBatches(baseUrl, payload, apiKey, timeoutMs),
+      ctx.logger.verbosity === 'quiet',
+    );
     ctx.logger.info(
       `Framework canon ingested: ${result.vector.ingested_files} files, ` +
         `${result.vector.total_points} vectors, ${result.graph.nodes_created} graph nodes.`,
@@ -221,8 +224,6 @@ export async function ingestCanonFiles(ctx: StageContext): Promise<void> {
         ? normalizedBusinessRepo
         : `${businessOrg}/${normalizedBusinessRepo}`;
 
-      ctx.logger.info(`Ingesting ${businessFiles.length} business architecture file(s) via HTTP.`);
-
       const payload: IngestPayload = {
         context: 'technical',
         scope: businessScope,
@@ -231,7 +232,11 @@ export async function ingestCanonFiles(ctx: StageContext): Promise<void> {
         documents: filesToDocuments(businessFiles, businessDir),
       };
 
-      const result = await ingestInBatches(baseUrl, payload, apiKey, timeoutMs);
+      const result = await withSpinner(
+        `Ingesting ${businessFiles.length} business architecture file(s)...`,
+        () => ingestInBatches(baseUrl, payload, apiKey, timeoutMs),
+        ctx.logger.verbosity === 'quiet',
+      );
       ctx.logger.info(
         `Business canon ingested: ${result.vector.ingested_files} files, ` +
           `${result.vector.total_points} vectors, ${result.graph.nodes_created} graph nodes.`,
@@ -250,9 +255,6 @@ export async function ingestCanonFiles(ctx: StageContext): Promise<void> {
       }
 
       const repoIdentity = resolveRepoIdentity(rc.repoDir, rc.name);
-      ctx.logger.info(
-        `Ingesting ${repoFiles.length} file(s) from repo ${repoIdentity.repo} via HTTP.`,
-      );
 
       const payload: IngestPayload = {
         context: 'technical',
@@ -262,7 +264,11 @@ export async function ingestCanonFiles(ctx: StageContext): Promise<void> {
         documents: filesToDocuments(repoFiles, rc.architectureRepoDir),
       };
 
-      const result = await ingestInBatches(baseUrl, payload, apiKey, timeoutMs);
+      const result = await withSpinner(
+        `Ingesting ${repoFiles.length} file(s) from ${repoIdentity.repo}...`,
+        () => ingestInBatches(baseUrl, payload, apiKey, timeoutMs),
+        ctx.logger.verbosity === 'quiet',
+      );
       ctx.logger.info(
         `Repo ${repoIdentity.repo} ingested: ${result.vector.ingested_files} files, ` +
           `${result.vector.total_points} vectors.`,
@@ -276,9 +282,6 @@ export async function ingestCanonFiles(ctx: StageContext): Promise<void> {
   if (repoFiles.length > 0) {
     const fallbackScope = path.basename(ctx.config.workspaceDir);
     const repoIdentity = resolveRepoIdentity(ctx.config.workspaceDir, fallbackScope);
-    ctx.logger.info(
-      `Ingesting ${repoFiles.length} file(s) from local repo architecture via HTTP.`,
-    );
 
     const payload: IngestPayload = {
       context: 'technical',
@@ -288,7 +291,11 @@ export async function ingestCanonFiles(ctx: StageContext): Promise<void> {
       documents: filesToDocuments(repoFiles, ctx.config.repoDir),
     };
 
-    const result = await ingestInBatches(baseUrl, payload, apiKey, timeoutMs);
+    const result = await withSpinner(
+      `Ingesting ${repoFiles.length} local repo architecture file(s)...`,
+      () => ingestInBatches(baseUrl, payload, apiKey, timeoutMs),
+      ctx.logger.verbosity === 'quiet',
+    );
     ctx.logger.info(
       `Repo architecture ingested: ${result.vector.ingested_files} files, ` +
         `${result.vector.total_points} vectors.`,
