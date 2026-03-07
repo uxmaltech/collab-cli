@@ -46,3 +46,7 @@
 - `Refs #<issue-number>` MAY be used for related work, but it MUST NOT be the only issue reference when the intent is to close the issue automatically.
 - If a pull request is intentionally partial and should leave the issue open, use `Refs #<issue-number>` instead of `Closes #<issue-number>`.
 
+## AI Agent Instruction File Rule
+- `AGENTS.md` is the only repository-level instruction file for AI agents.
+- Do NOT add `CLAUDE.md` or any other assistant-specific duplicate instruction file.
+- Repository guidance for AI agents MUST remain consolidated in `AGENTS.md`.
