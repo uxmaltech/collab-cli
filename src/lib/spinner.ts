@@ -49,6 +49,20 @@ export async function startSpinner(message: string, quiet = false): Promise<Spin
     };
   }
 
+  // Non-TTY: log lines instead of animated spinner (avoids garbled output in CI/pipes)
+  if (!process.stdout.isTTY) {
+    process.stdout.write(`        ${dim('...')} ${message}\n`);
+    return {
+      message: () => {},
+      stop(text?: string) {
+        process.stdout.write(`        ${green(CHECK)} ${text ?? message}\n`);
+      },
+      fail(text?: string) {
+        process.stdout.write(`        ${red(CROSS)} ${text ?? `${message} failed`}\n`);
+      },
+    };
+  }
+
   const { spinner } = await clack();
   const s = spinner();
   s.start(message);
