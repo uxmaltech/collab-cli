@@ -12,14 +12,22 @@ export interface Choice<T extends string> {
 }
 
 // ── Lazy loader for @clack/prompts ──────────────────────────────
+//
+// Use a runtime-native dynamic import indirection so that TypeScript
+// (when compiling to CommonJS) does not downlevel import() into require().
+// A bare `await import(...)` would be rewritten to `require(...)` by tsc,
+// which throws ERR_REQUIRE_ESM for ESM-only packages.
 
 type ClackModule = typeof import('@clack/prompts');
+
+// eslint-disable-next-line @typescript-eslint/no-implied-eval
+const importClack = new Function('return import("@clack/prompts")') as () => Promise<ClackModule>;
 
 let _clack: ClackModule | null = null;
 
 async function clack(): Promise<ClackModule> {
   if (!_clack) {
-    _clack = await import('@clack/prompts');
+    _clack = await importClack();
   }
   return _clack;
 }
