@@ -1,4 +1,4 @@
-import { bold, cyan, dim, green, red, yellow, CHECK, CROSS, CLEAR_SCREEN } from './ansi';
+import { bold, cyan, dim, green, red, yellow, CHECK, CROSS } from './ansi';
 import { toShellCommand } from './shell';
 
 export type Verbosity = 'quiet' | 'normal' | 'verbose';
@@ -25,6 +25,9 @@ export interface Logger {
   workflowHeader(workflow: string, mode: string): void;
   repoHeader(repoName: string, index: number, total: number): void;
   phaseHeader(title: string, subtitle?: string): void;
+  wizardStep(current: number, title: string, subtitle?: string): void;
+  wizardIntro(title: string): void;
+  wizardOutro(message: string): void;
   summaryFooter(entries: readonly SummaryEntry[]): void;
 }
 
@@ -106,25 +109,47 @@ class ConsoleLogger implements Logger {
   phaseHeader(title: string, subtitle?: string): void {
     if (this.verbosity === 'quiet') return;
 
-    // Only clear when stdout is a real terminal (skip in pipes/tests)
-    if (process.stdout.isTTY) {
-      process.stdout.write(CLEAR_SCREEN);
-    }
-
     const line = dim('\u2500'.repeat(48));
     const sub = subtitle ? `  ${dim(subtitle)}` : '';
     process.stdout.write(`\n  ${line}\n  ${bold(cyan(title))}${sub}\n  ${line}\n\n`);
   }
 
+  wizardStep(current: number, title: string, subtitle?: string): void {
+    if (this.verbosity === 'quiet') return;
+
+    const bar = dim('\u2502');
+    const dot = bold(cyan('\u25c6'));
+    const counter = dim(`Step ${current}`);
+    const sub = subtitle ? ` ${dim('\u00b7')} ${dim(subtitle)}` : '';
+
+    process.stdout.write(`\n  ${bar}\n  ${dot}  ${counter} ${dim('\u00b7')} ${bold(title)}${sub}\n  ${bar}\n`);
+  }
+
+  wizardIntro(title: string): void {
+    if (this.verbosity === 'quiet') return;
+
+    const top = bold(cyan('\u250c'));
+    process.stdout.write(`\n  ${top}  ${bold(title)}\n`);
+  }
+
+  wizardOutro(message: string): void {
+    if (this.verbosity === 'quiet') return;
+
+    const bottom = bold(green('\u2514'));
+    process.stdout.write(`\n  ${bottom}  ${bold(green(message))}\n\n`);
+  }
+
   summaryFooter(entries: readonly SummaryEntry[]): void {
-    process.stdout.write(`\n  ${dim('\u2500'.repeat(40))}\n`);
-    process.stdout.write(`  ${bold(green(CHECK))} ${bold('Init complete')}\n\n`);
+    if (this.verbosity === 'quiet') return;
+
+    const bar = dim('\u2502');
+    process.stdout.write(`\n  ${bar}\n`);
 
     for (const entry of entries) {
-      process.stdout.write(`  ${dim(entry.label + ':')} ${entry.value}\n`);
+      process.stdout.write(`  ${bar}  ${dim(entry.label + ':')} ${entry.value}\n`);
     }
 
-    process.stdout.write('\n');
+    process.stdout.write(`  ${bar}\n`);
   }
 }
 
