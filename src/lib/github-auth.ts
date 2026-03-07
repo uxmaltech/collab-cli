@@ -232,12 +232,18 @@ export async function runGitHubDeviceFlow(
   print('');
   const spinner = await startSpinner('Waiting for authorization...');
 
-  const token = await pollForAccessToken(
-    clientId,
-    deviceCode.device_code,
-    deviceCode.interval,
-    deviceCode.expires_in,
-  );
+  let token: string;
+  try {
+    token = await pollForAccessToken(
+      clientId,
+      deviceCode.device_code,
+      deviceCode.interval,
+      deviceCode.expires_in,
+    );
+  } catch (error) {
+    spinner.fail('GitHub authorization failed');
+    throw error;
+  }
 
   const auth: GitHubAuth = {
     provider: 'github',
