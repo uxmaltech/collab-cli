@@ -232,32 +232,31 @@ export async function runGitHubDeviceFlow(
   print('');
   const spinner = await startSpinner('Waiting for authorization...');
 
-  let token: string;
   try {
-    token = await pollForAccessToken(
+    const token = await pollForAccessToken(
       clientId,
       deviceCode.device_code,
       deviceCode.interval,
       deviceCode.expires_in,
     );
+
+    const auth: GitHubAuth = {
+      provider: 'github',
+      token,
+      scopes: SCOPES.split(' '),
+      created_at: new Date().toISOString(),
+    };
+
+    saveGitHubAuth(collabDir, auth);
+    ensureAuthGitIgnore(collabDir);
+
+    spinner.stop('GitHub authorization complete.');
+
+    return auth;
   } catch (error) {
     spinner.fail('GitHub authorization failed');
     throw error;
   }
-
-  const auth: GitHubAuth = {
-    provider: 'github',
-    token,
-    scopes: SCOPES.split(' '),
-    created_at: new Date().toISOString(),
-  };
-
-  saveGitHubAuth(collabDir, auth);
-  ensureAuthGitIgnore(collabDir);
-
-  spinner.stop('GitHub authorization complete.');
-
-  return auth;
 }
 
 /**
