@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -664,6 +665,7 @@ function parseRepos(value: string | undefined): string[] | null {
 
 async function resolveWorkspace(
   workspaceDir: string,
+  collabDir: string,
   options: InitOptions,
   logger: Logger,
   mode: CollabMode = 'file-only',
@@ -719,11 +721,19 @@ async function resolveWorkspace(
 
   // No repos found
   if (isIndexed) {
-    throw new CliError(
-      'Indexed mode requires a multi-repo workspace with at least 1 governed repo.\n' +
-        'No git repositories found in the workspace directory.\n' +
-        'Clone your repos from GitHub and re-run.',
-    );
+    if (options.yes) {
+      throw new CliError(
+        'Indexed mode requires a multi-repo workspace with at least 1 governed repo.\n' +
+          'No git repositories found in the workspace directory.\n' +
+          'Clone your repos from GitHub and re-run, or pass --repos repo1,repo2.',
+      );
+    }
+
+    // Interactive: let user search and clone repos from GitHub
+    logger.info('No repositories found in the workspace. Search GitHub to select and clone repos.');
+    const cloned = await searchAndCloneRepos(workspaceDir, collabDir, logger);
+    if (cloned.length === 0) return null;
+    return { name, type: 'multi-repo', repos: cloned };
   }
 
   if (options.yes) {
@@ -733,6 +743,115 @@ async function resolveWorkspace(
   }
 
   return null;
+}
+
+/**
+ * Interactive GitHub search → multi-select → clone flow.
+ * Used when indexed mode has no repos in the workspace.
+ * Returns the list of cloned repo directory names.
+ */
+async function searchAndCloneRepos(
+  workspaceDir: string,
+  collabDir: string,
+  logger: Logger,
+): Promise<string[]> {
+  const token = await ensureGitHubAuth(collabDir, logger);
+
+  const selected: { fullName: string; defaultBranch: string }[] = [];
+
+  // Search loop: let user search and accumulate repos
+  let done = false;
+  while (!done) {
+    const query = await promptText('Search GitHub repositories to clone:');
+    if (!query) {
+      throw new CliError('Search query is required.');
+    }
+
+    const results = await searchGitHubRepos(query, token, 8);
+
+    if (results.items.length === 0) {
+      logger.info(`No repositories found for "${query}". Try a different search.`);
+      continue;
+    }
+
+    logger.info(`Found ${results.items.length} results (of ${results.totalCount} total):`);
+
+    const choices = results.items.map((r) => ({
+      value: r.fullName,
+      label: `${r.fullName}${r.private ? ' \u{1F512}' : ''}${r.description ? ` \u2014 ${r.description}` : ''}`,
+    }));
+
+    const picked = await promptMultiSelect(
+      'Select repositories to clone:',
+      choices,
+      [],
+    );
+
+    for (const fullName of picked) {
+      if (!selected.some((s) => s.fullName === fullName)) {
+        const match = results.items.find((r) => r.fullName === fullName);
+        selected.push({
+          fullName,
+          defaultBranch: match?.defaultBranch ?? 'main',
+        });
+      }
+    }
+
+    if (selected.length > 0) {
+      logger.info(`Selected so far: ${selected.map((s) => s.fullName).join(', ')}`);
+      const more = await promptChoice(
+        'Add more repositories?',
+        [
+          { value: 'no', label: 'No, continue with selected repos' },
+          { value: 'yes', label: 'Yes, search for more' },
+        ],
+        'no',
+      );
+      done = more === 'no';
+    }
+  }
+
+  if (selected.length === 0) {
+    return [];
+  }
+
+  // Clone selected repos into workspace
+  logger.info(`Cloning ${selected.length} repo(s) into ${workspaceDir}...`);
+  const cloned: string[] = [];
+
+  for (const repo of selected) {
+    const repoName = repo.fullName.split('/')[1];
+    const targetDir = path.join(workspaceDir, repoName);
+
+    if (fs.existsSync(targetDir)) {
+      logger.info(`Directory "${repoName}" already exists, skipping clone.`);
+      cloned.push(repoName);
+      continue;
+    }
+
+    const cloneUrl = `https://github.com/${repo.fullName}.git`;
+    logger.info(`Cloning ${repo.fullName}...`);
+
+    const result = spawnSync('git', ['clone', cloneUrl, repoName], {
+      cwd: workspaceDir,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    if (result.status !== 0) {
+      logger.warn(`Failed to clone ${repo.fullName}: ${result.stderr?.trim() || 'unknown error'}`);
+      continue;
+    }
+
+    logger.step(true, `Cloned ${repo.fullName}`);
+    cloned.push(repoName);
+  }
+
+  if (cloned.length === 0) {
+    throw new CliError('No repositories were cloned successfully.');
+  }
+
+  return cloned;
 }
 
 // ────────────────────────────────────────────────────────────────
@@ -1345,6 +1464,7 @@ Examples:
           ? context.config.workspace
           : await resolveWorkspace(
               context.config.workspaceDir,
+              effectiveConfig.collabDir,
               options,
               context.logger,
               selections.mode,
