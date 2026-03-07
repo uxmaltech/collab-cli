@@ -1,6 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { startSpinner } from './spinner';
+
 /**
  * GitHub OAuth Device Flow for workspace-scoped authentication.
  *
@@ -228,7 +230,7 @@ export async function runGitHubDeviceFlow(
   print(`  Open: ${deviceCode.verification_uri}`);
   print(`  Code: ${deviceCode.user_code}`);
   print('');
-  print('Waiting for authorization...');
+  const spinner = await startSpinner('Waiting for authorization...');
 
   const token = await pollForAccessToken(
     clientId,
@@ -247,7 +249,7 @@ export async function runGitHubDeviceFlow(
   saveGitHubAuth(collabDir, auth);
   ensureAuthGitIgnore(collabDir);
 
-  print('GitHub authorization complete.');
+  spinner.stop('GitHub authorization complete.');
 
   return auth;
 }

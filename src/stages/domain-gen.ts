@@ -30,6 +30,7 @@ import type { OrchestrationStage } from '../lib/orchestrator';
 import { getEnabledProviders, type ProviderKey } from '../lib/providers';
 import { scanRepository } from '../lib/repo-scanner';
 import { loadRuntimeEnv } from '../lib/service-health';
+import { withSpinner } from '../lib/spinner';
 
 // ────────────────────────────────────────────────────────────────
 // Helper: collect markdown files recursively
@@ -126,16 +127,16 @@ function buildDomainAnalysisStage(): OrchestrationStage {
       }
 
       // 4. Call AI
-      ctx.logger.info('Generating domain definition via AI...');
       const messages: AiMessage[] = [
         { role: 'system', content: prompt.system },
         { role: 'user', content: prompt.user },
       ];
 
-      const rawResponse = await client.complete(messages, {
-        maxTokens: 8192,
-        temperature: 0.2,
-      });
+      const rawResponse = await withSpinner(
+        'Generating domain definition via AI...',
+        () => client.complete(messages, { maxTokens: 8192, temperature: 0.2 }),
+        ctx.logger.verbosity === 'quiet',
+      );
 
       // 5. Parse response
       const result = parseDomainGenerationResponse(rawResponse);

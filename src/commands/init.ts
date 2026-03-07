@@ -50,6 +50,7 @@ import { getEnabledProviders, PROVIDER_DEFAULTS, type ProviderKey } from '../lib
 import type { Executor } from '../lib/executor';
 import type { Logger } from '../lib/logger';
 import { dryRunHealthOptions, loadRuntimeEnv, waitForInfraHealth, waitForMcpHealth, logServiceHealth } from '../lib/service-health';
+import { startSpinner, withSpinner } from '../lib/spinner';
 import { readCliVersion } from '../lib/version';
 
 interface InitOptions {
@@ -543,7 +544,11 @@ async function resolveGitHubBusinessCanon(
       throw new CliError('Search query is required.');
     }
 
-    const results = await searchGitHubRepos(query, token, 8);
+    const results = await withSpinner(
+      'Searching GitHub...',
+      () => searchGitHubRepos(query, token, 8),
+      logger.verbosity === 'quiet',
+    );
 
     if (results.items.length === 0) {
       logger.info(`No repositories found for "${query}". Try a different search.`);
@@ -766,7 +771,11 @@ async function searchAndCloneRepos(
       throw new CliError('Search query is required.');
     }
 
-    const results = await searchGitHubRepos(query, token, 8);
+    const results = await withSpinner(
+      'Searching GitHub...',
+      () => searchGitHubRepos(query, token, 8),
+      logger.verbosity === 'quiet',
+    );
 
     if (results.items.length === 0) {
       logger.info(`No repositories found for "${query}". Try a different search.`);
@@ -829,7 +838,7 @@ async function searchAndCloneRepos(
     }
 
     const cloneUrl = `https://github.com/${repo.fullName}.git`;
-    logger.info(`Cloning ${repo.fullName}...`);
+    const spinner = await startSpinner(`Cloning ${repo.fullName}...`, logger.verbosity === 'quiet');
 
     const result = spawnSync('git', ['clone', cloneUrl, repoName], {
       cwd: workspaceDir,
@@ -838,11 +847,12 @@ async function searchAndCloneRepos(
     });
 
     if (result.status !== 0) {
-      logger.warn(`Failed to clone ${repo.fullName}: ${result.stderr?.trim() || 'unknown error'}`);
+      spinner.fail(`Failed to clone ${repo.fullName}`);
+      logger.warn(result.stderr?.trim() || 'unknown error');
       continue;
     }
 
-    logger.step(true, `Cloned ${repo.fullName}`);
+    spinner.stop(`Cloned ${repo.fullName}`);
     cloned.push(repoName);
   }
 
