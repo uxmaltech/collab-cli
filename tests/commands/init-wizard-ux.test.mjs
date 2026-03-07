@@ -51,10 +51,11 @@ test('wizard does not show outro on failure', () => {
 
 // ── Wizard step progression ─────────────────────────────────────
 
-test('file-only single-repo wizard shows correct step sequence', () => {
+test('file-only empty workspace wizard shows steps in correct order', () => {
   const workspace = makeTempWorkspace();
   const env = createFakeDockerEnv();
 
+  // Empty workspace + --yes → auto-detects as mono-repo with repos=['.']
   const result = runCli(
     ['--cwd', workspace, '--dry-run', 'init', '--yes', '--business-canon', 'none', '--mode', 'file-only'],
     { cwd: workspace, env },
@@ -62,13 +63,19 @@ test('file-only single-repo wizard shows correct step sequence', () => {
 
   assert.equal(result.status, 0, result.stderr);
 
-  // Step 1: Configuration, Step 2 is skipped because --yes + no existing config means
-  // Business Canon step runs (it's not skipped by preserveExisting since no config exists)
-  assert.ok(result.stdout.includes('Step 1'), 'should have Step 1');
-  assert.ok(result.stdout.includes('Configuration'), 'Step 1 should be Configuration');
+  const out = result.stdout;
+  const idxConfig = out.indexOf('Configuration');
+  const idxCanon = out.indexOf('Business Canon');
+  const idxWorkspace = out.indexOf('Workspace Setup');
+
+  assert.ok(idxConfig >= 0, 'should have Configuration step');
+  assert.ok(idxCanon >= 0, 'should have Business Canon step');
+  assert.ok(idxWorkspace >= 0, 'should have Workspace Setup step');
+  assert.ok(idxConfig < idxCanon, 'Configuration before Business Canon');
+  assert.ok(idxCanon < idxWorkspace, 'Business Canon before Workspace Setup');
 });
 
-test('file-only workspace wizard shows workspace setup step', () => {
+test('file-only workspace wizard shows steps in correct order', () => {
   const workspace = makeMultiRepoWorkspace(['api', 'web']);
   const env = createFakeDockerEnv();
 
@@ -78,12 +85,23 @@ test('file-only workspace wizard shows workspace setup step', () => {
   );
 
   assert.equal(result.status, 0, result.stderr);
-  assert.ok(result.stdout.includes('Workspace Setup'), 'should have Workspace Setup step');
-  assert.ok(result.stdout.includes('2 repositories'), 'should show repo count');
-  assert.ok(result.stdout.includes('multi-repo'), 'should show workspace type');
+
+  const out = result.stdout;
+  const idxConfig = out.indexOf('Configuration');
+  const idxWorkspace = out.indexOf('Workspace Setup');
+  const idxRepo = out.indexOf('Repository Setup');
+
+  assert.ok(idxConfig >= 0, 'should have Configuration step');
+  assert.ok(idxWorkspace >= 0, 'should have Workspace Setup step');
+  assert.ok(idxRepo >= 0, 'should have Repository Setup step');
+  assert.ok(idxConfig < idxWorkspace, 'Configuration should come before Workspace Setup');
+  assert.ok(idxWorkspace < idxRepo, 'Workspace Setup should come before Repository Setup');
+
+  assert.ok(out.includes('2 repositories'), 'should show repo count');
+  assert.ok(out.includes('multi-repo'), 'should show workspace type');
 });
 
-test('indexed workspace wizard shows all phases including infrastructure', () => {
+test('indexed workspace wizard shows all phases in correct order', () => {
   const workspace = makeMultiRepoWorkspace(['svc1', 'svc2']);
   const env = createFakeDockerEnv();
 
@@ -100,12 +118,24 @@ test('indexed workspace wizard shows all phases including infrastructure', () =>
 
   assert.equal(result.status, 0, result.stderr);
 
-  // Verify key wizard steps are present
-  assert.ok(result.stdout.includes('Configuration'), 'should have Configuration step');
-  assert.ok(result.stdout.includes('Business Canon'), 'should have Business Canon step');
-  assert.ok(result.stdout.includes('Workspace Setup'), 'should have Workspace Setup step');
-  assert.ok(result.stdout.includes('Repository Setup'), 'should have Repository Setup step');
-  assert.ok(result.stdout.includes('Infrastructure'), 'should have Infrastructure step');
+  const out = result.stdout;
+  const idxConfig = out.indexOf('Configuration');
+  const idxCanon = out.indexOf('Business Canon');
+  const idxWorkspace = out.indexOf('Workspace Setup');
+  const idxRepo = out.indexOf('Repository Setup');
+  const idxInfra = out.indexOf('Infrastructure');
+
+  assert.ok(idxConfig >= 0, 'should have Configuration step');
+  assert.ok(idxCanon >= 0, 'should have Business Canon step');
+  assert.ok(idxWorkspace >= 0, 'should have Workspace Setup step');
+  assert.ok(idxRepo >= 0, 'should have Repository Setup step');
+  assert.ok(idxInfra >= 0, 'should have Infrastructure step');
+
+  // Verify correct ordering
+  assert.ok(idxConfig < idxCanon, 'Configuration before Business Canon');
+  assert.ok(idxCanon < idxWorkspace, 'Business Canon before Workspace Setup');
+  assert.ok(idxWorkspace < idxRepo, 'Workspace Setup before Repository Setup');
+  assert.ok(idxRepo < idxInfra, 'Repository Setup before Infrastructure');
 });
 
 // ── Summary footer ──────────────────────────────────────────────
@@ -206,6 +236,19 @@ test('--force overrides existing config and runs Business Canon step', () => {
   assert.ok(
     result.stderr.includes('Force mode enabled'),
     'should show force warning on stderr',
+  );
+
+  // Verify the wizard actually re-ran the Business Canon step
+  // (without --force, this step is skipped when config exists)
+  assert.ok(
+    !result.stdout.includes('Existing configuration detected'),
+    'should NOT show config preservation message with --force',
+  );
+
+  // The config-write stage should re-execute (not skip)
+  assert.ok(
+    result.stdout.includes('Write local collab configuration'),
+    'should re-run config-write stage with --force',
   );
 });
 
