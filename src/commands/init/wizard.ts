@@ -36,6 +36,13 @@ export async function resolveWizardSelection(
       ? validateMcpUrl(options.mcpUrl)
       : undefined;
 
+    if (infraType === 'remote' && !mcpUrl) {
+      throw new Error(
+        '--mcp-url is required when using --infra-type remote. Example:\n' +
+          '  collab init --yes --mode indexed --infra-type remote --mcp-url http://my-server:7337',
+      );
+    }
+
     if (mcpUrl) {
       await validateMcpServerContract(mcpUrl, logger, dryRun);
     }
