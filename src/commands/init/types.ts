@@ -18,6 +18,8 @@ export interface InitOptions {
   skipAnalysis?: boolean;
   skipCi?: boolean;
   skipGithubSetup?: boolean;
+  skipIngest?: boolean;
+  skipAstGeneration?: boolean;
   timeoutMs?: string;
   retries?: string;
   retryDelayMs?: string;

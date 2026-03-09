@@ -11,9 +11,11 @@ import type { Executor } from '../../lib/executor';
 import { storeGitHubToken } from '../../lib/github-auth';
 import type { Logger } from '../../lib/logger';
 import { parseMode } from '../../lib/mode';
+import type { OrchestrationStage } from '../../lib/orchestrator';
 import { runOrchestration } from '../../lib/orchestrator';
 import { promptChoice } from '../../lib/prompt';
 import { buildFileOnlyDomainPipeline, buildIndexedDomainPipeline } from '../../stages/domain-gen';
+import { buildRepoIngestStage } from '../../stages/repo-ingest';
 
 import type { InitOptions } from './types';
 import { parseBusinessCanonOption } from './business-canon';
@@ -129,10 +131,14 @@ export async function runRepoDomainGeneration(
   context.logger.phaseHeader('Domain Generation', `${repoName} (${mode})`);
 
   // Build pipeline
-  const stages = mode === 'file-only'
+  const basePipeline = mode === 'file-only'
     ? buildFileOnlyDomainPipeline()
     : buildIndexedDomainPipeline();
 
+  const stages: OrchestrationStage[] = [...basePipeline];
+  if (!options.skipIngest) {
+    stages.push(buildRepoIngestStage());
+  }
   // Execute
   await runOrchestration(
     {
@@ -146,6 +152,7 @@ export async function runRepoDomainGeneration(
         _repoPath: repoPath,
         yes: options.yes,
         providers: options.providers,
+        skipAstGeneration: options.skipAstGeneration,
       },
     },
     stages,
