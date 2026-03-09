@@ -79,8 +79,7 @@ export async function resolveWizardSelection(
       mcpUrl = options.mcpUrl
         ? validateMcpUrl(options.mcpUrl)
         : validateMcpUrl(
-            await promptChoice('MCP server base URL:', [{ value: 'http://127.0.0.1:7337', label: 'http://127.0.0.1:7337' }], 'http://127.0.0.1:7337')
-            ?? await (async () => 'http://127.0.0.1:7337')(),
+            await promptChoice('MCP server base URL:', [{ value: 'http://127.0.0.1:7337', label: 'http://127.0.0.1:7337' }], 'http://127.0.0.1:7337'),
           );
     }
 

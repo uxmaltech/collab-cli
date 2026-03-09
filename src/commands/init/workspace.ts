@@ -149,6 +149,19 @@ async function searchAndCloneRepos(
       [],
     );
 
+    if (picked.length === 0 && selected.length === 0) {
+      const retry = await promptChoice(
+        'No repositories selected. Search again?',
+        [
+          { value: 'yes', label: 'Yes, search again' },
+          { value: 'no', label: 'No, cancel' },
+        ],
+        'yes',
+      );
+      if (retry === 'no') return [];
+      continue;
+    }
+
     for (const fullName of picked) {
       if (!selected.some((s) => s.fullName === fullName)) {
         const match = results.items.find((r) => r.fullName === fullName);
@@ -191,7 +204,7 @@ async function searchAndCloneRepos(
       continue;
     }
 
-    const cloneUrl = `https://github.com/${repo.fullName}.git`;
+    const cloneUrl = `https://x-access-token:${token}@github.com/${repo.fullName}.git`;
 
     try {
       await withSpinner(

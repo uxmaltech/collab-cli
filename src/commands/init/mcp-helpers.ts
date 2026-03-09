@@ -4,8 +4,7 @@ import { CliError } from '../../lib/errors';
 import { loadGitHubAuth, isGitHubAuthValid, runGitHubDeviceFlow, storeGitHubToken } from '../../lib/github-auth';
 import { probeMcpContract } from '../../lib/mcp-contract';
 import type { OrchestrationStage } from '../../lib/orchestrator';
-import { getEnabledProviders, PROVIDER_DEFAULTS, type ProviderKey } from '../../lib/providers';
-import type { Executor } from '../../lib/executor';
+import type { ProviderKey } from '../../lib/providers';
 import type { Logger } from '../../lib/logger';
 
 import type { InitOptions } from './types';
