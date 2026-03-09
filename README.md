@@ -292,42 +292,6 @@ flowchart LR
 
 ---
 
-### `collab end`
-
-Finalize current work: create a PR with governance references and optional canon sync.
-
-```bash
-collab end                              # create PR from current branch to development
-collab end --dry-run                    # preview PR without creating it
-collab end --title "feat: add login"    # override PR title
-collab end --base development           # specify target branch
-collab end --skip-canon-sync            # skip canon sync PR generation
-```
-
-```mermaid
-flowchart TD
-    A["collab end"] --> B["Detect branch + issue number"]
-    B --> C["Build PR body with governance refs"]
-    C --> D["Create PR → base branch"]
-    D --> E{"indexed mode +<br>arch changes?"}
-    E -->|yes| F["Create canon sync PR"]
-    E -->|no| G["Done"]
-    F -. "--skip-canon-sync" .-> G
-```
-
-**Context detection:** Parses issue numbers from branch names (e.g., `feature/42-add-login` → issue #42). In indexed mode, the PR body includes a GOV-R-001 phase checklist.
-
-**Canon sync (indexed mode):** When architecture changes are detected (`docs/architecture/`), a separate PR is created in the business-canon repo to complete Phase 5 (Canon Sync) of GOV-R-001.
-
-| Option | Description |
-|--------|-------------|
-| `--dry-run` | Show what would be done without executing |
-| `--skip-canon-sync` | Skip canon sync PR generation |
-| `--title <title>` | Override PR title |
-| `--base <branch>` | Target branch (default: `development`) |
-
----
-
 ### `collab canon rebuild`
 
 Destroy and recreate all derived canon artifacts for the current workspace.
