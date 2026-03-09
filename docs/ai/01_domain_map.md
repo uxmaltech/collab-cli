@@ -49,12 +49,6 @@
 - Secret management: CANON_SYNC_PAT via `gh secret set` (stdin).
 - Orchestration stage with `--skip-github-setup` flag.
 
-## Work Finalization (`collab end`)
-- Context detection: branch name → issue number parsing (e.g., `feature/42-add-login` → #42).
-- PR creation with governance references and GOV-R-001 phase checklist (indexed mode).
-- Canon sync PR generation: detects architecture changes and creates PR in business-canon repo.
-- Options: `--dry-run`, `--skip-canon-sync`, `--title`, `--base`.
-
 ## Testing and Validation
 - Template-level snapshot/parameter tests for compose assets.
 - Library unit tests for executor/preflight/orchestrator/health/mode/config behavior.

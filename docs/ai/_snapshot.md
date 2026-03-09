@@ -5,12 +5,11 @@
 - CLI framework: Commander.js
 - Test runner: `node:test` native, `node scripts/run-tests.mjs`
 
-## Command tree (12 commands, 8 subcommands)
+## Command tree (11 commands, 8 subcommands)
 
 | Command | Subcommands | Description |
 |---------|-------------|-------------|
 | `init` | `infra` (phase) | Onboarding wizard, domain generation (`--repo`), infra setup |
-| `end` | — | Create PR with governance references + canon sync |
 | `canon` | `rebuild` | Destroy and recreate derived canon artifacts |
 | `compose` | `generate`, `validate` | Docker Compose file generation and validation |
 | `infra` | `up`, `down`, `status` | Infrastructure services lifecycle (Qdrant + NebulaGraph) |
@@ -53,12 +52,11 @@ Codex (OpenAI), Claude (Anthropic), Gemini (Google), Copilot (GitHub) with auto-
 - Framework canon: `collab-architecture` synced from GitHub
 - Business canon: configurable `owner/repo` or local path
 - Domain generation: `collab init --repo` scans package → AI analysis → domain file write → AST/document ingestion
-- Canon sync: `collab end` detects architecture changes → creates sync PR in business-canon repo
+- Canon sync: planned as part of `collab epic` lifecycle (#125)
 
 ## GitHub integration
 
 - Branch model, protection rules, merge strategy, CI workflows via API (indexed mode)
-- `collab end`: parses issue from branch name, creates PR with governance checklist
 - GitHub token: `--github-token` flag or interactive `gh auth` flow
 
 ## Test layout

@@ -336,8 +336,6 @@ Examples:
 
       context.logger.info('  - Verify full setup health:');
       context.logger.info('      collab doctor');
-      context.logger.info('  - Finalize and archive when done:');
-      context.logger.info('      collab end');
 
       if (!options.force && configExistedBefore) {
         context.logger.debug('Existing configuration was reused.');
