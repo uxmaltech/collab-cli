@@ -1,8 +1,8 @@
-; Clase
+; Class
 (class_declaration
   name: (name) @node.class.name) @node.class
 
-; Interfaz
+; Interface
 (interface_declaration
   name: (name) @node.interface.name) @node.interface
 
@@ -14,6 +14,6 @@
 (enum_declaration
   name: (name) @node.enum.name) @node.enum
 
-; Método dentro de clase (el nodo padre se resuelve en runtime)
+; Method inside class (parent node resolved at runtime)
 (method_declaration
   name: (name) @node.function.name) @node.function

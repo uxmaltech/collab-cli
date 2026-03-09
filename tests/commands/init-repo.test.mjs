@@ -155,9 +155,10 @@ test('init --repo dry-run shows AST extraction stats', () => {
   );
 
   assert.equal(result.status, 0, `stdout: ${result.stdout}\nstderr: ${result.stderr}`);
-  assert.ok(
-    result.stdout.includes('AST extraction complete') || result.stdout.includes('nodes'),
-    'should show AST extraction stats in dry-run',
+  assert.match(
+    result.stdout,
+    /AST extraction complete.*\d+\s+nodes/,
+    'should show AST extraction stats with node count in dry-run',
   );
   assert.ok(
     result.stdout.includes('source file'),

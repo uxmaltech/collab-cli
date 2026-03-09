@@ -97,7 +97,7 @@ collab init --resume                 # resume from last failed stage
 | **Description** | Agents read `.md` files directly | Agents query NebulaGraph + Qdrant via MCP |
 | **Docker** | Not required | Required (Qdrant, NebulaGraph, MCP server) |
 | **MCP** | No | Yes — endpoint `http://127.0.0.1:7337/mcp` |
-| **Wizard stages** | 8 | 15 |
+| **Wizard stages** | 9 | 16 |
 | **Use case** | Small projects, no Docker, quick start | Multi-repo ecosystems, large canons |
 
 **Transition heuristic:** Consider indexed mode when the canon exceeds ~50,000 tokens (~375 files).
@@ -153,11 +153,11 @@ flowchart TD
     D -->|no| F{workspace?}
     F -->|yes| G["Workspace pipeline<br>per-repo stages + infra"]
     F -->|no| H{mode?}
-    H -->|"file-only"| I["Single-repo file-only<br>8 stages"]
+    H -->|"file-only"| I["Single-repo file-only<br>9 stages"]
     H -->|"indexed"| J["ERROR<br>indexed requires workspace"]
 ```
 
-#### Full wizard pipeline — file-only (8 stages)
+#### Full wizard pipeline — file-only (9 stages)
 
 ```mermaid
 flowchart TD
@@ -174,7 +174,7 @@ flowchart TD
     S8 -. "--skip-ci" .-> S9
 ```
 
-#### Full wizard pipeline — indexed (15 stages)
+#### Full wizard pipeline — indexed (16 stages)
 
 ```mermaid
 flowchart TD

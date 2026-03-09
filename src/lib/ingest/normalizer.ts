@@ -295,12 +295,17 @@ export function normalizeFileMatches(opts: {
         }
       }
 
-      // Only reassign edges where a specific owner was resolved
+      // Only reassign edges when all resolved methods agree on the same owner.
+      // If multiple distinct owners exist (multi-class file), leave edges unchanged
+      // to avoid incorrect attribution.
       if (unknownClassOwnerMap.size > 0) {
-        const firstOwner = [...unknownClassOwnerMap.values()][0];
-        for (const edge of edges) {
-          if (edge.from.includes('UNKNOWN_CLASS')) {
-            edge.from = firstOwner;
+        const distinctOwners = new Set(unknownClassOwnerMap.values());
+        if (distinctOwners.size === 1) {
+          const owner = [...distinctOwners][0];
+          for (const edge of edges) {
+            if (edge.from.includes('UNKNOWN_CLASS')) {
+              edge.from = owner;
+            }
           }
         }
       }

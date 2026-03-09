@@ -1,4 +1,4 @@
-; Herencia: class Foo extends Bar
+; Inheritance: class Foo extends Bar
 ; extends_clause value is an identifier (not type_identifier)
 (class_declaration
   name: (type_identifier) @edge.extends.from
@@ -6,7 +6,7 @@
     (extends_clause
       value: [(identifier) (type_identifier)] @edge.extends.to))) @edge.extends.context
 
-; Implementa: class Foo implements Bar, Baz
+; Implements: class Foo implements Bar, Baz
 (class_declaration
   name: (type_identifier) @edge.implements.from
   (class_heritage
@@ -21,7 +21,7 @@
         name: (identifier) @edge.imports.name)))
   source: (string) @edge.imports.from) @edge.imports.context
 
-; Llamada a método: foo.bar(...)
+; Method call: foo.bar(...)
 (call_expression
   function: (member_expression
     property: (property_identifier) @edge.calls.method)) @edge.calls.context
