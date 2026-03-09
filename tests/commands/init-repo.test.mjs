@@ -21,7 +21,7 @@ function createFakePackage(workspace, name) {
   return pkgDir;
 }
 
-test('init --repo shows domain generation stages in dry-run (file-only)', () => {
+test('init --repo shows domain generation and ingest stages in dry-run (file-only)', () => {
   const workspace = makeTempWorkspace();
   const env = createFakeDockerEnv();
   const pkgDir = createFakePackage(workspace, 'my-pkg');
@@ -45,6 +45,10 @@ test('init --repo shows domain generation stages in dry-run (file-only)', () => 
   assert.ok(
     result.stdout.includes('Analyze repository') || result.stdout.includes('domain-analysis'),
     'should have domain analysis stage',
+  );
+  assert.ok(
+    result.stdout.includes('[3/3]') || result.stdout.includes('Extract AST'),
+    'should include the AST ingest stage as stage 3',
   );
 });
 
@@ -72,6 +76,10 @@ test('init --repo shows indexed stages in dry-run', () => {
     result.stdout.includes('Sync business canon') || result.stdout.includes('domain-canon-sync'),
     'should have canon sync stage',
   );
+  assert.ok(
+    result.stdout.includes('Extract AST'),
+    'should include the AST ingest stage in indexed mode',
+  );
 });
 
 test('init --repo fails with nonexistent package', () => {
@@ -95,6 +103,65 @@ test('init --repo fails with nonexistent package', () => {
   assert.ok(
     result.stderr.includes('not found') || result.stdout.includes('not found'),
     'should mention package not found',
+  );
+});
+
+test('init --repo --skip-ingest omits AST ingest stage', () => {
+  const workspace = makeTempWorkspace();
+  const env = createFakeDockerEnv();
+  const pkgDir = createFakePackage(workspace, 'my-pkg');
+
+  const result = runCli(
+    [
+      '--cwd', workspace,
+      '--dry-run',
+      'init',
+      '--repo', pkgDir,
+      '--mode', 'file-only',
+      '--yes',
+      '--business-canon', 'none',
+      '--skip-ingest',
+    ],
+    { cwd: workspace, env },
+  );
+
+  assert.equal(result.status, 0, `stdout: ${result.stdout}\nstderr: ${result.stderr}`);
+  assert.ok(
+    result.stdout.includes('[1/2]') && result.stdout.includes('[2/2]'),
+    'should show only 2 stages when --skip-ingest is used',
+  );
+  assert.ok(
+    !result.stdout.includes('Extract AST'),
+    'should NOT include AST ingest stage',
+  );
+});
+
+test('init --repo dry-run shows AST extraction stats', () => {
+  const workspace = makeTempWorkspace();
+  const env = createFakeDockerEnv();
+  const pkgDir = createFakePackage(workspace, 'my-pkg');
+
+  const result = runCli(
+    [
+      '--cwd', workspace,
+      '--dry-run',
+      'init',
+      '--repo', pkgDir,
+      '--mode', 'file-only',
+      '--yes',
+      '--business-canon', 'none',
+    ],
+    { cwd: workspace, env },
+  );
+
+  assert.equal(result.status, 0, `stdout: ${result.stdout}\nstderr: ${result.stderr}`);
+  assert.ok(
+    result.stdout.includes('AST extraction complete') || result.stdout.includes('nodes'),
+    'should show AST extraction stats in dry-run',
+  );
+  assert.ok(
+    result.stdout.includes('source file'),
+    'should mention source files found',
   );
 });
 

@@ -49,6 +49,7 @@ export function registerInitCommand(program: Command): void {
     .option('--skip-analysis', 'Skip AI-powered repository analysis stage')
     .option('--skip-ci', 'Skip CI workflow generation')
     .option('--skip-github-setup', 'Skip GitHub branch model and workflow configuration')
+    .option('--skip-ingest', 'Skip AST extraction and MCP ingestion')
     .option('--providers <list>', 'Comma-separated AI provider list (codex,claude,gemini,copilot)')
     .option('--business-canon <value>', 'Business canon: owner/repo, /local/path, or "none" to skip')
     .option('--github-token <token>', 'GitHub token for non-interactive mode')

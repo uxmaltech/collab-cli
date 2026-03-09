@@ -1,4 +1,5 @@
 import type { CollabConfig } from './config';
+import type { IngestAstPayload, IngestMarkdownPayload } from './ingest/types';
 import { loadRuntimeEnv } from './service-health';
 
 export interface IngestDocument {
@@ -154,4 +155,72 @@ export async function triggerGraphSeed(
   }
 
   return (await response.json()) as SeedResult;
+}
+
+export interface IngestAstResult {
+  nodes_created: number;
+  edges_created: number;
+  space: string;
+}
+
+export async function ingestAst(
+  baseUrl: string,
+  payload: IngestAstPayload,
+  apiKey?: string,
+  timeoutMs = DEFAULT_MCP_HTTP_TIMEOUT_MS,
+): Promise<IngestAstResult> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+
+  if (apiKey) {
+    headers.Authorization = `Bearer ${apiKey}`;
+  }
+
+  const response = await fetchWithTimeout(`${baseUrl}/api/v1/ingest/ast`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(payload),
+  }, timeoutMs, 'MCP AST ingest request');
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`MCP AST ingest failed (${response.status}): ${body}`);
+  }
+
+  return (await response.json()) as IngestAstResult;
+}
+
+export interface IngestMarkdownResult {
+  ingested_files: number;
+  total_points: number;
+  collection: string;
+}
+
+export async function ingestMarkdown(
+  baseUrl: string,
+  payload: IngestMarkdownPayload,
+  apiKey?: string,
+  timeoutMs = DEFAULT_MCP_HTTP_TIMEOUT_MS,
+): Promise<IngestMarkdownResult> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+
+  if (apiKey) {
+    headers.Authorization = `Bearer ${apiKey}`;
+  }
+
+  const response = await fetchWithTimeout(`${baseUrl}/api/v1/ingest/markdown`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(payload),
+  }, timeoutMs, 'MCP markdown ingest request');
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`MCP markdown ingest failed (${response.status}): ${body}`);
+  }
+
+  return (await response.json()) as IngestMarkdownResult;
 }
