@@ -5,12 +5,11 @@
 - CLI framework: Commander.js
 - Test runner: `node:test` native, `node scripts/run-tests.mjs`
 
-## Command tree (12 commands, 8 subcommands)
+## Command tree (11 commands, 9 subcommands)
 
 | Command | Subcommands | Description |
 |---------|-------------|-------------|
-| `init` | `infra` (phase) | Onboarding wizard, domain generation (`--repo`), infra setup |
-| `end` | — | Create PR with governance references + canon sync |
+| `init` | `infra`, `repos` | Onboarding wizard, domain generation, infra setup |
 | `canon` | `rebuild` | Destroy and recreate derived canon artifacts |
 | `compose` | `generate`, `validate` | Docker Compose file generation and validation |
 | `infra` | `up`, `down`, `status` | Infrastructure services lifecycle (Qdrant + NebulaGraph) |
@@ -30,10 +29,10 @@
 
 - Flags: `--yes`, `--resume`, `--force`, `--mode`, `--compose-mode`, `--infra-type`, `--mcp-url`
 - Skip flags: `--skip-analysis`, `--skip-ci`, `--skip-github-setup`, `--skip-mcp-snippets`, `--skip-ingest`, `--skip-ast-generation`
-- Configuration: `--providers`, `--business-canon`, `--github-token`, `--repos`, `--repo`
+- Configuration: `--providers`, `--business-canon`, `--github-token`, `--repos`, `--repo` (deprecated)
 - Health tuning: `--timeout-ms`, `--retries`, `--retry-delay-ms`
 - Mode selection: `file-only` (8 stages) / `indexed` (15 stages)
-- Domain generation: `--repo <package>` with file-only or indexed pipeline + repo-ingest stage
+- Domain generation: `collab init repos <package...>` with file-only or indexed pipeline + repo-ingest stage (multi-repo support)
 - Repo-ingest stage: tree-sitter AST extraction (PHP, TypeScript) → MCP graph + document chunking → MCP vectors
 
 ## Runtime patterns
@@ -52,13 +51,11 @@ Codex (OpenAI), Claude (Anthropic), Gemini (Google), Copilot (GitHub) with auto-
 
 - Framework canon: `collab-architecture` synced from GitHub
 - Business canon: configurable `owner/repo` or local path
-- Domain generation: `collab init --repo` scans package → AI analysis → domain file write → AST/document ingestion
-- Canon sync: `collab end` detects architecture changes → creates sync PR in business-canon repo
+- Domain generation: `collab init repos <package...>` scans packages → AI analysis → domain file write → AST/document ingestion (multi-repo support)
 
 ## GitHub integration
 
 - Branch model, protection rules, merge strategy, CI workflows via API (indexed mode)
-- `collab end`: parses issue from branch name, creates PR with governance checklist
 - GitHub token: `--github-token` flag or interactive `gh auth` flow
 
 ## Test layout

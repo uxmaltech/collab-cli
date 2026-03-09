@@ -22,6 +22,7 @@ import { resolveBusinessCanon } from './business-canon';
 import { resolveWorkspace } from './workspace';
 import { runInfraOnly } from './infra-only';
 import { runRepoDomainGeneration } from './repo-domain';
+import { runReposDomainGeneration } from './repos';
 import {
   buildWorkspaceStages,
   buildPerRepoStages,
@@ -31,7 +32,7 @@ import {
 } from './pipelines';
 
 export function registerInitCommand(program: Command): void {
-  program
+  const init = program
     .command('init')
     .description('Run onboarding wizard and orchestrate setup stages')
     .argument('[phase]', 'Optional phase to run in isolation (e.g. "infra")')
@@ -44,7 +45,7 @@ export function registerInitCommand(program: Command): void {
     .option('--mcp-url <url>', 'MCP server base URL for remote infrastructure')
     .option('--output-dir <directory>', 'Directory used to write compose outputs')
     .option('--repos <list>', 'Comma-separated repo directories for workspace mode')
-    .option('--repo <package>', 'Generate domain definition from package analysis')
+    .option('--repo <package>', '(deprecated, use "collab init repos <path>") Generate domain definition')
     .option('--skip-mcp-snippets', 'Skip MCP client config snippet generation')
     .option('--skip-analysis', 'Skip AI-powered repository analysis (codex/claude/gemini)')
     .option('--skip-ci', 'Skip GitHub Actions CI workflow generation')
@@ -66,8 +67,8 @@ Examples:
   collab init --yes --mode file-only
   collab init --yes --mode indexed
   collab init --repos api,web,shared --yes
-  collab init --repo collab-chat-ai-pkg --mode file-only
-  collab init --repo collab-chat-ai-pkg --mode indexed
+  collab init repos collab-chat-ai-pkg --mode file-only --yes --business-canon none
+  collab init repos pkg-a pkg-b --mode indexed --business-canon owner/repo
   collab init --yes --mode indexed --infra-type remote --mcp-url http://my-server:7337 --business-canon none
   collab init --resume
   collab init infra
@@ -88,10 +89,13 @@ Examples:
         throw new CliError(`Unknown init phase "${phase}". Available phases: infra`);
       }
 
-      // ── Repo domain generation: collab init --repo <pkg> ───
+      // ── Deprecated --repo flag redirect ─────────────────────
       if (options.repo) {
-        await runRepoDomainGeneration(context, options);
-        await runEcosystemChecks(context.config, context.logger, context.executor.dryRun);
+        context.logger.warn(
+          'The --repo flag is deprecated and will be removed in a future release. ' +
+            'Use "collab init repos <path>" instead.',
+        );
+        await runReposDomainGeneration(context, options, [options.repo]);
         return;
       }
 
@@ -331,18 +335,51 @@ Examples:
 
       if (ws) {
         context.logger.info('  - Initialize domain repos:');
-        context.logger.info('      collab init --repo=<package-name>');
+        context.logger.info('      collab init repos <package-name>');
       }
 
       context.logger.info('  - Verify full setup health:');
       context.logger.info('      collab doctor');
-      context.logger.info('  - Finalize and archive when done:');
-      context.logger.info('      collab end');
 
       if (!options.force && configExistedBefore) {
         context.logger.debug('Existing configuration was reused.');
       }
 
       context.logger.wizardOutro('Setup complete');
+    });
+
+  // ── Register `repos` subcommand ──────────────────────────
+  registerReposSubcommand(init);
+}
+
+// ────────────────────────────────────────────────────────────────
+// Subcommand: collab init repos <path...>
+// ────────────────────────────────────────────────────────────────
+
+function registerReposSubcommand(init: Command): void {
+  init
+    .command('repos')
+    .description('Generate domain definitions from one or more package repositories')
+    .argument('<paths...>', 'One or more repository paths to analyze')
+    .addHelpText(
+      'after',
+      `
+Options are inherited from "collab init" (--mode, --yes, --business-canon, etc.)
+
+Examples:
+  collab init repos collab-chat-ai-pkg
+  collab init repos pkg-a pkg-b pkg-c --mode file-only --yes --business-canon none
+  collab init repos ./path/to/repo --mode indexed --business-canon owner/repo
+`,
+    )
+    .action(async (paths: string[], _options: InitOptions, command: Command) => {
+      const context = createCommandContext(command);
+      ensureWritableDirectory(context.config.workspaceDir);
+
+      // Options are defined on the parent "init" command, so we read them
+      // via optsWithGlobals() which merges parent + root-level options.
+      const parentOptions = command.optsWithGlobals<InitOptions>();
+
+      await runReposDomainGeneration(context, parentOptions, paths);
     });
 }

@@ -148,9 +148,8 @@ collab init [phase] [options]
 flowchart TD
     A["collab init [phase] [options]"] --> B{phase?}
     B -->|"infra"| C["Infra-only pipeline<br>compose → docker → MCP → health"]
-    B -->|none| D{"--repo?"}
-    D -->|yes| E["Repo-domain pipeline<br>analysis → domain → ingest"]
-    D -->|no| F{workspace?}
+    B -->|"repos"| E["Repo-domain pipeline<br>analysis → domain → ingest<br>(multi-repo support)"]
+    B -->|none| F{workspace?}
     F -->|yes| G["Workspace pipeline<br>per-repo stages + infra"]
     F -->|no| H{mode?}
     H -->|"file-only"| I["Single-repo file-only<br>9 stages"]
@@ -208,21 +207,23 @@ flowchart TD
     S14 -. "--skip-mcp-snippets" .-> S15
 ```
 
-#### Domain generation (`collab init --repo`)
+#### Domain generation (`collab init repos`)
 
-Scan a repository package and generate its domain definition:
+Scan one or more repository packages and generate their domain definitions. Supports multi-repo batch processing:
 
 ```bash
-collab init --repo <package> --mode file-only --yes
-collab init --repo <package> --mode indexed --business-canon owner/repo
-collab init --repo <package> --skip-analysis          # skip AI analysis
-collab init --repo <package> --skip-ingest            # skip entire ingest stage
-collab init --repo <package> --skip-ast-generation    # skip tree-sitter, still ingest docs
+collab init repos <package> --mode file-only --yes --business-canon none
+collab init repos <package> --mode indexed --business-canon owner/repo
+collab init repos pkg-a pkg-b pkg-c --mode file-only --yes --business-canon none
+collab init repos <package> --skip-analysis          # skip AI analysis
+collab init repos <package> --skip-ingest            # skip entire ingest stage
+collab init repos <package> --skip-ast-generation    # skip tree-sitter, still ingest docs
 ```
 
 ```mermaid
 flowchart TD
-    A["collab init --repo pkg"] --> B["Repo analysis ✦AI"]
+    A["collab init repos pkg-a pkg-b"] --> LOOP["For each repo"]
+    LOOP --> B["Repo analysis ✦AI"]
     B --> C["Domain file write"]
     C --> D{mode?}
     D -->|indexed| E["Domain canon push"]
@@ -242,7 +243,7 @@ flowchart TD
     H -. "--skip-ast-generation" .-> I
 ```
 
-**`--skip-*` flag behavior with `--repo`:**
+**`--skip-*` flag behavior with `repos`:**
 
 | `--skip-ast-generation` | `--skip-ingest` | Result |
 |---|---|---|
@@ -276,7 +277,7 @@ flowchart LR
 | `--mcp-url <url>` | MCP server base URL for remote infrastructure |
 | `--output-dir <dir>` | Directory for compose outputs |
 | `--repos <list>` | Comma-separated repo directories for workspace mode |
-| `--repo <package>` | Generate domain definition from package analysis |
+| `--repo <package>` | **(deprecated)** Use `collab init repos <path>` instead |
 | `--skip-mcp-snippets` | Skip MCP client config snippet generation |
 | `--skip-analysis` | Skip AI-powered repository analysis (codex/claude/gemini) |
 | `--skip-ci` | Skip GitHub Actions CI workflow generation |

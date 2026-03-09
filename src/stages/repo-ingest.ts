@@ -345,7 +345,7 @@ export function buildRepoIngestStage(): OrchestrationStage {
     recovery: [
       'Ensure MCP service is running and accessible.',
       'Check that tree-sitter WASM grammars are installed (web-tree-sitter, tree-sitter-php, tree-sitter-typescript).',
-      'Run collab init --repo <package> --resume to retry ingestion.',
+      'Run collab init repos <package> --resume to retry ingestion.',
     ],
     run: runRepoIngest,
   };

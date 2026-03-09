@@ -20,7 +20,7 @@
 ## Canon Management
 - Canon sync from GitHub repositories (`collab update-canons`).
 - Canon scaffold generation for new repos (templates for governance, knowledge, domains, evolution).
-- Domain generation via `collab init --repo=<package>` — analyzes code and generates domain files.
+- Domain generation via `collab init repos <package...>` — analyzes code and generates domain files (multi-repo support).
 
 ## Compose Generation Domain
 - Template rendering for consolidated and split compose topologies.
@@ -48,12 +48,6 @@
 - CI workflow generation: guard-main-pr (blocks non-development PRs to main), canon-sync-trigger (creates issues on merge to main).
 - Secret management: CANON_SYNC_PAT via `gh secret set` (stdin).
 - Orchestration stage with `--skip-github-setup` flag.
-
-## Work Finalization (`collab end`)
-- Context detection: branch name → issue number parsing (e.g., `feature/42-add-login` → #42).
-- PR creation with governance references and GOV-R-001 phase checklist (indexed mode).
-- Canon sync PR generation: detects architecture changes and creates PR in business-canon repo.
-- Options: `--dry-run`, `--skip-canon-sync`, `--title`, `--base`.
 
 ## Testing and Validation
 - Template-level snapshot/parameter tests for compose assets.
