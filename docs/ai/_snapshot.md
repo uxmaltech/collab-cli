@@ -52,6 +52,7 @@ Codex (OpenAI), Claude (Anthropic), Gemini (Google), Copilot (GitHub) with auto-
 - Framework canon: `collab-architecture` synced from GitHub
 - Business canon: configurable `owner/repo` or local path
 - Domain generation: `collab init repos <package...>` scans packages → AI analysis → domain file write → AST/document ingestion (multi-repo support)
+- Canon sync: planned as part of `collab epic` lifecycle (#125)
 
 ## GitHub integration
 
