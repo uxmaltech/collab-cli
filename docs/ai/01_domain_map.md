@@ -20,7 +20,7 @@
 ## Canon Management
 - Canon sync from GitHub repositories (`collab update-canons`).
 - Canon scaffold generation for new repos (templates for governance, knowledge, domains, evolution).
-- Domain generation via `collab init --repo=<package>` — analyzes code and generates domain files.
+- Domain generation via `collab init repos <package...>` — analyzes code and generates domain files (multi-repo support).
 
 ## Compose Generation Domain
 - Template rendering for consolidated and split compose topologies.

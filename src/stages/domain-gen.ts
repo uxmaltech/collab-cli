@@ -68,7 +68,7 @@ function buildDomainAnalysisStage(): OrchestrationStage {
     title: 'Analyze repository and generate domain definition',
     recovery: [
       'Ensure an AI provider is configured (OPENAI_API_KEY, claude CLI, etc.).',
-      'Run collab init --repo <package> --resume to retry analysis.',
+      'Run collab init repos <package> --resume to retry analysis.',
     ],
     run: async (ctx) => {
       const repoPath = ctx.options?._repoPath as string;
@@ -168,7 +168,7 @@ function buildDomainFileWriteLocalStage(): OrchestrationStage {
     title: 'Write domain files to local repo',
     recovery: [
       'Verify write permissions for the target repo directory.',
-      'Run collab init --repo <package> --resume to retry.',
+      'Run collab init repos <package> --resume to retry.',
     ],
     run: (ctx) => {
       const repoPath = ctx.options?._repoPath as string;
@@ -203,7 +203,7 @@ function buildDomainCanonSyncStage(): OrchestrationStage {
     title: 'Sync business canon repository',
     recovery: [
       'Ensure GitHub access is configured.',
-      'Run collab init --repo <package> --resume to retry.',
+      'Run collab init repos <package> --resume to retry.',
     ],
     run: (ctx) => {
       if (!isBusinessCanonConfigured(ctx.config)) {
@@ -234,7 +234,7 @@ function buildDomainFileWriteCanonStage(): OrchestrationStage {
     title: 'Write domain files to business canon',
     recovery: [
       'Verify write permissions for the business canon directory.',
-      'Run collab init --repo <package> --resume to retry.',
+      'Run collab init repos <package> --resume to retry.',
     ],
     run: (ctx) => {
       const result = ctx.options?._domainResult as DomainGenerationResult | undefined;
@@ -265,7 +265,7 @@ function buildDomainGraphUpdateStage(): OrchestrationStage {
     title: 'Update graph seed with domain vertices',
     recovery: [
       'Verify write permissions for the business canon graph/seed directory.',
-      'Run collab init --repo <package> --resume to retry.',
+      'Run collab init repos <package> --resume to retry.',
     ],
     run: (ctx) => {
       const result = ctx.options?._domainResult as DomainGenerationResult | undefined;
@@ -304,7 +304,7 @@ function buildDomainCanonPushStage(): OrchestrationStage {
     title: 'Commit and push domain to business canon',
     recovery: [
       'Ensure GitHub access is configured with push permissions.',
-      'Run collab init --repo <package> --resume to retry.',
+      'Run collab init repos <package> --resume to retry.',
     ],
     run: (ctx) => {
       const result = ctx.options?._domainResult as DomainGenerationResult | undefined;
@@ -360,7 +360,7 @@ function buildDomainIngestStage(): OrchestrationStage {
     title: 'Ingest domain files into MCP',
     recovery: [
       'Ensure MCP service is running and accessible.',
-      'Run collab init --repo <package> --resume to retry ingestion.',
+      'Run collab init repos <package> --resume to retry ingestion.',
     ],
     run: async (ctx) => {
       const result = ctx.options?._domainResult as DomainGenerationResult | undefined;
