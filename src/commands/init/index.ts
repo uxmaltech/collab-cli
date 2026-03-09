@@ -21,7 +21,6 @@ import { resolveWizardSelection } from './wizard';
 import { resolveBusinessCanon } from './business-canon';
 import { resolveWorkspace } from './workspace';
 import { runInfraOnly } from './infra-only';
-import { runRepoDomainGeneration } from './repo-domain';
 import { runReposDomainGeneration } from './repos';
 import {
   buildWorkspaceStages,

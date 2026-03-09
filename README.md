@@ -209,20 +209,20 @@ flowchart TD
 
 #### Domain generation (`collab init repos`)
 
-Scan one or more repository packages and generate their domain definitions. Supports multi-repo batch processing:
+Scan one or more repository paths and generate their domain definitions. Supports multi-repo batch processing:
 
 ```bash
-collab init repos <package> --mode file-only --yes --business-canon none
-collab init repos <package> --mode indexed --business-canon owner/repo
-collab init repos pkg-a pkg-b pkg-c --mode file-only --yes --business-canon none
-collab init repos <package> --skip-analysis          # skip AI analysis
-collab init repos <package> --skip-ingest            # skip entire ingest stage
-collab init repos <package> --skip-ast-generation    # skip tree-sitter, still ingest docs
+collab init repos <path> --mode file-only --yes --business-canon none
+collab init repos <path> --mode indexed --business-canon owner/repo
+collab init repos ./repo-a ./repo-b ./repo-c --mode file-only --yes --business-canon none
+collab init repos <path> --skip-analysis          # skip AI analysis
+collab init repos <path> --skip-ingest            # skip entire ingest stage
+collab init repos <path> --skip-ast-generation    # skip tree-sitter, still ingest docs
 ```
 
 ```mermaid
 flowchart TD
-    A["collab init repos pkg-a pkg-b"] --> LOOP["For each repo"]
+    A["collab init repos ./repo-a ./repo-b"] --> LOOP["For each repo"]
     LOOP --> B["Repo analysis ✦AI"]
     B --> C["Domain file write"]
     C --> D{mode?}
