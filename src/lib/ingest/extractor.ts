@@ -61,6 +61,16 @@ export async function extractFile(opts: {
             properties: {},
           });
         }
+        if (caps['edge.route.method'] && caps['edge.route.uri']) {
+          const method = nodeText(caps['edge.route.method'], sourceText);
+          const uri = nodeText(caps['edge.route.uri'], sourceText);
+          result.edges.push({
+            from: `${repo}::UNKNOWN`,
+            to: `UNRESOLVED::Route::${method}`,
+            type: 'ROUTE',
+            properties: { method, uri },
+          });
+        }
       }
     } catch {
       // laravel.scm is best-effort; ignore parse/query errors

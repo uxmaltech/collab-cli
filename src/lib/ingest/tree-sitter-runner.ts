@@ -81,31 +81,35 @@ export async function runQuery(opts: {
 
   const tree = parser.parse(opts.sourceText);
   if (!tree) {
+    parser.delete();
     throw new Error(`tree-sitter failed to parse source (language=${opts.language})`);
   }
 
-  const normalizedLang = opts.language === 'javascript' ? 'typescript' : opts.language;
-  const queryPath = path.join(QUERIES_DIR, normalizedLang, opts.queryFile);
-  const querySource = readFileSync(queryPath, 'utf8');
+  let query: InstanceType<typeof Query> | undefined;
+  try {
+    const normalizedLang = opts.language === 'javascript' ? 'typescript' : opts.language;
+    const queryPath = path.join(QUERIES_DIR, normalizedLang, opts.queryFile);
+    const querySource = readFileSync(queryPath, 'utf8');
 
-  const query = new Query(lang, querySource);
-  const rawMatches = query.matches(tree.rootNode);
+    query = new Query(lang, querySource);
+    const rawMatches = query.matches(tree.rootNode);
 
-  // Snapshot all node data before cleaning up WASM resources
-  const results: QueryMatch[] = rawMatches.map((m) => ({
-    patternIndex: m.patternIndex,
-    captures: m.captures.map((c) => ({
-      name: c.name,
-      node: snapshotNode(c.node),
-    })),
-  }));
+    // Snapshot all node data before cleaning up WASM resources
+    const results: QueryMatch[] = rawMatches.map((m) => ({
+      patternIndex: m.patternIndex,
+      captures: m.captures.map((c) => ({
+        name: c.name,
+        node: snapshotNode(c.node),
+      })),
+    }));
 
-  // Clean up WASM resources
-  query.delete();
-  tree.delete();
-  parser.delete();
-
-  return results;
+    return results;
+  } finally {
+    // Clean up WASM resources even if query loading or matching fails
+    query?.delete();
+    tree.delete();
+    parser.delete();
+  }
 }
 
 /**

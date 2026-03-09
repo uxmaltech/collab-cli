@@ -16,6 +16,7 @@
   "files": [
     "bin",
     "dist",
+    "queries",
     "README.md",
     "LICENSE",
     "install.sh"

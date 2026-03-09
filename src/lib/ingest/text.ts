@@ -64,11 +64,20 @@ export function chunkTextWithRanges(
       pushCurrentChunk();
 
       const overlap: ParagraphWithRange[] = [];
-      let overlapTokenCount = 0;
-      for (let i = current.length - 1; i >= 0; i -= 1) {
-        overlap.unshift(current[i]);
-        overlapTokenCount += estimateTokens(current[i].text);
-        if (overlapTokenCount >= overlapTokens) break;
+      if (overlapTokens > 0) {
+        let overlapTokenCount = 0;
+        for (let i = current.length - 1; i >= 0; i -= 1) {
+          const candidate = current[i];
+          const candidateTokens = estimateTokens(candidate.text);
+
+          // Skip oversized paragraphs that alone exceed the overlap budget
+          if (overlapTokenCount === 0 && candidateTokens > overlapTokens) break;
+          if (overlapTokenCount + candidateTokens > overlapTokens) break;
+
+          overlap.unshift(candidate);
+          overlapTokenCount += candidateTokens;
+          if (overlapTokenCount >= overlapTokens) break;
+        }
       }
 
       current = overlap.length ? [...overlap, paragraph] : [paragraph];

@@ -143,6 +143,31 @@ function inferSymbolLine(match: RegExpExecArray, sourceText: string): number {
   return snippet.split('\n').length;
 }
 
+/**
+ * Find the end line of a symbol by matching braces from the match position.
+ * Falls back to declaration line if no braces are found.
+ */
+function inferSymbolEndLine(match: RegExpExecArray, sourceText: string): number {
+  const startLine = inferSymbolLine(match, sourceText);
+  const afterMatch = sourceText.slice(match.index + match[0].length);
+  const braceStart = afterMatch.indexOf('{');
+
+  if (braceStart === -1) return startLine;
+
+  let depth = 1;
+  let pos = match.index + match[0].length + braceStart + 1;
+  while (pos < sourceText.length && depth > 0) {
+    if (sourceText[pos] === '{') depth++;
+    else if (sourceText[pos] === '}') depth--;
+    pos++;
+  }
+
+  if (depth === 0) {
+    return sourceText.slice(0, pos).split('\n').length;
+  }
+  return startLine;
+}
+
 export function heuristicallyExtractSymbols(opts: {
   language: string;
   sourceText: string;
@@ -166,7 +191,7 @@ export function heuristicallyExtractSymbols(opts: {
         name: className,
         path: classPath,
         startLine: inferSymbolLine(classMatch, text),
-        endLine: null,
+        endLine: inferSymbolEndLine(classMatch, text),
       });
     }
 
@@ -180,7 +205,7 @@ export function heuristicallyExtractSymbols(opts: {
         name: fnName,
         path: fnPath,
         startLine: inferSymbolLine(fnMatch, text),
-        endLine: null,
+        endLine: inferSymbolEndLine(fnMatch, text),
       });
     }
 
@@ -196,7 +221,7 @@ export function heuristicallyExtractSymbols(opts: {
         name: classMatch[1],
         path: classMatch[1],
         startLine: inferSymbolLine(classMatch, text),
-        endLine: null,
+        endLine: inferSymbolEndLine(classMatch, text),
       });
     }
 
@@ -208,7 +233,7 @@ export function heuristicallyExtractSymbols(opts: {
         name: fnMatch[1],
         path: fnMatch[1],
         startLine: inferSymbolLine(fnMatch, text),
-        endLine: null,
+        endLine: inferSymbolEndLine(fnMatch, text),
       });
     }
 
@@ -221,7 +246,7 @@ export function heuristicallyExtractSymbols(opts: {
         name: arrowMatch[1],
         path: arrowMatch[1],
         startLine: inferSymbolLine(arrowMatch, text),
-        endLine: null,
+        endLine: inferSymbolEndLine(arrowMatch, text),
       });
     }
 

@@ -46,8 +46,8 @@ test('init infra runs only infrastructure stages (dry-run)', () => {
   assert.ok(!result.stdout.includes('Generate project architecture scaffold'), 'should not have repo-scaffold');
 
   // Summary should indicate infra-only phase with local infrastructure
-  assert.ok(result.stdout.includes('infra-only'), 'summary should show infra-only phase');
-  assert.ok(result.stdout.includes('local'), 'summary should show local infrastructure');
+  assert.match(result.stdout, /Phase:\s*infra-only/, 'summary should show infra-only phase');
+  assert.match(result.stdout, /Infrastructure:\s*local/, 'summary should show local infrastructure');
 });
 
 test('init infra bootstraps config on fresh host (dry-run)', () => {
@@ -68,8 +68,8 @@ test('init infra bootstraps config on fresh host (dry-run)', () => {
   assert.ok(result.stdout.includes('Start MCP service'), 'should have mcp-start');
 
   // Summary indicates infra-only phase with local infrastructure
-  assert.ok(result.stdout.includes('infra-only'), 'summary should show infra-only phase');
-  assert.ok(result.stdout.includes('local'), 'summary should show local infrastructure');
+  assert.match(result.stdout, /Phase:\s*infra-only/, 'summary should show infra-only phase');
+  assert.match(result.stdout, /Infrastructure:\s*local/, 'summary should show local infrastructure');
 });
 
 test('init infra with existing file-only config overrides to indexed (dry-run)', () => {
@@ -84,8 +84,8 @@ test('init infra with existing file-only config overrides to indexed (dry-run)',
 
   assert.equal(result.status, 0, `stderr: ${result.stderr}`);
   assert.ok(result.stdout.includes('Start infrastructure services'), 'should run infra stages');
-  assert.ok(result.stdout.includes('infra-only'), 'summary should show infra-only phase');
-  assert.ok(result.stdout.includes('local'), 'summary should show local infrastructure');
+  assert.match(result.stdout, /Phase:\s*infra-only/, 'summary should show infra-only phase');
+  assert.match(result.stdout, /Infrastructure:\s*local/, 'summary should show local infrastructure');
 });
 
 test('init with unknown phase fails with helpful error', () => {

@@ -7,7 +7,7 @@ function buildNodeId(repo: string, namespace: string | null, name: string): stri
 }
 
 function extractPhpNamespace(sourceText: string): string | null {
-  const match = String(sourceText).match(/^\s*namespace\s+([\w\\]+)\s*;/m);
+  const match = String(sourceText).match(/^\s*namespace\s+([\w\\]+)\s*(?:;|\{)/m);
   return match ? match[1] : null;
 }
 
@@ -142,7 +142,7 @@ function normalizePhpEdges(opts: {
       const prefixMatch = contextText.match(/use\s+([\w\\]+)\\\{/);
       const prefix = prefixMatch ? prefixMatch[1] : '';
       const clauseName = nodeText(captures['edge.uses_import_group.to'], sourceText).trim();
-      const fqcn = prefix ? `${prefix}${clauseName}` : clauseName;
+      const fqcn = prefix ? `${prefix}\\${clauseName}` : clauseName;
       edges.push({
         from: buildNodeId(repo, namespace, 'UNKNOWN_CLASS'),
         to: `UNRESOLVED::${fqcn}`,
@@ -170,7 +170,7 @@ function normalizeTsNodes(opts: {
 
     if (captures['node.class']) {
       const name = nodeText(captures['node.class.name'], sourceText);
-      const id = `${repo}::${name}`;
+      const id = `${repo}::${sourcePath}::${name}`;
       if (seenIds.has(id)) continue;
       seenIds.add(id);
       const lines = nodeLines(captures['node.class']);
@@ -182,7 +182,7 @@ function normalizeTsNodes(opts: {
       });
     } else if (captures['node.interface']) {
       const name = nodeText(captures['node.interface.name'], sourceText);
-      const id = `${repo}::${name}`;
+      const id = `${repo}::${sourcePath}::${name}`;
       if (seenIds.has(id)) continue;
       seenIds.add(id);
       const lines = nodeLines(captures['node.interface']);
@@ -194,7 +194,7 @@ function normalizeTsNodes(opts: {
       });
     } else if (captures['node.function']) {
       const name = nodeText(captures['node.function.name'], sourceText);
-      const id = `${repo}::${name}`;
+      const id = `${repo}::${sourcePath}::${name}`;
       if (seenIds.has(id)) continue;
       seenIds.add(id);
       const lines = nodeLines(captures['node.function']);
@@ -214,8 +214,9 @@ function normalizeTsEdges(opts: {
   matches: QueryMatch[];
   sourceText: string;
   repo: string;
+  sourcePath: string;
 }): AstEdge[] {
-  const { matches, sourceText, repo } = opts;
+  const { matches, sourceText, repo, sourcePath } = opts;
   const edges: AstEdge[] = [];
 
   for (const match of matches) {
@@ -225,7 +226,7 @@ function normalizeTsEdges(opts: {
       const fromName = nodeText(captures['edge.extends.from'], sourceText);
       const toName = nodeText(captures['edge.extends.to'], sourceText);
       edges.push({
-        from: `${repo}::${fromName}`,
+        from: `${repo}::${sourcePath}::${fromName}`,
         to: `UNRESOLVED::${toName}`,
         type: 'EXTENDS',
         properties: {},
@@ -234,7 +235,7 @@ function normalizeTsEdges(opts: {
       const fromName = nodeText(captures['edge.implements.from'], sourceText);
       const toName = nodeText(captures['edge.implements.to'], sourceText);
       edges.push({
-        from: `${repo}::${fromName}`,
+        from: `${repo}::${sourcePath}::${fromName}`,
         to: `UNRESOLVED::${toName}`,
         type: 'IMPLEMENTS',
         properties: {},
@@ -270,37 +271,43 @@ export function normalizeFileMatches(opts: {
     if (classLikeNodes.length > 0) {
       const phpNamespace = extractPhpNamespace(sourceText);
       const resolvedIds = new Set(nodes.map((n) => n.id));
+      const unknownClassOwnerMap = new Map<string, string>();
 
       for (const node of nodes) {
         if (node.tag === 'Function' && node.id.includes('UNKNOWN_CLASS')) {
+          const originalUnknownId = buildNodeId(repo, phpNamespace, 'UNKNOWN_CLASS');
           const methodStart = (node.properties?.startLine as number) ?? 0;
-          const owner =
-            classLikeNodes.find((c) => {
-              const cStart = (c.properties?.startLine as number) ?? 0;
-              const cEnd = (c.properties?.endLine as number) ?? Infinity;
-              return methodStart >= cStart && methodStart <= cEnd;
-            }) || classLikeNodes[0];
-          const newId = node.id.replace(
-            buildNodeId(repo, phpNamespace, 'UNKNOWN_CLASS'),
-            owner.id,
-          );
-          if (!resolvedIds.has(newId)) {
-            resolvedIds.add(newId);
-            node.id = newId;
+          const owner = classLikeNodes.find((c) => {
+            const cStart = (c.properties?.startLine as number) ?? 0;
+            const cEnd = (c.properties?.endLine as number) ?? Infinity;
+            return methodStart >= cStart && methodStart <= cEnd;
+          });
+
+          if (owner) {
+            const newId = node.id.replace(originalUnknownId, owner.id);
+            if (!resolvedIds.has(newId)) {
+              resolvedIds.add(newId);
+              unknownClassOwnerMap.set(node.id, owner.id);
+              node.id = newId;
+            }
           }
+          // If no owner found by line range, leave the node.id unchanged
         }
       }
 
-      const primaryNode = classLikeNodes[0];
-      for (const edge of edges) {
-        if (edge.from.includes('UNKNOWN_CLASS')) {
-          edge.from = primaryNode.id;
+      // Only reassign edges where a specific owner was resolved
+      if (unknownClassOwnerMap.size > 0) {
+        const firstOwner = [...unknownClassOwnerMap.values()][0];
+        for (const edge of edges) {
+          if (edge.from.includes('UNKNOWN_CLASS')) {
+            edge.from = firstOwner;
+          }
         }
       }
     }
   } else if (language === 'typescript' || language === 'javascript') {
     nodes = normalizeTsNodes({ matches: nodeMatches, sourceText, repo, sourcePath });
-    edges = normalizeTsEdges({ matches: edgeMatches, sourceText, repo });
+    edges = normalizeTsEdges({ matches: edgeMatches, sourceText, repo, sourcePath });
   }
 
   return { repo, platform, nodes, edges };

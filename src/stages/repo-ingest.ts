@@ -18,8 +18,6 @@ import {
   ingestMarkdown,
   resolveMcpApiKey,
   resolveMcpHttpTimeoutMs,
-  type IngestAstResult,
-  type IngestMarkdownResult,
 } from '../lib/mcp-client';
 import type { OrchestrationStage, StageContext } from '../lib/orchestrator';
 import { loadRuntimeEnv } from '../lib/service-health';
@@ -111,14 +109,15 @@ function resolveRepoIdentity(repoDir: string, fallbackScope: string): RepoIdenti
       { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] },
     ).trim();
 
-    const normalized = remoteUrl
-      .replace(/\/+$/, '')
-      .replace(/\.git$/, '')
-      .replace(/^https?:\/\/github\.com\//i, '')
-      .replace(/^git@github\.com:/i, '')
-      .replace(/^ssh:\/\/git@github\.com\//i, '');
+    const normalized = remoteUrl.trim().replace(/\/+$/, '').replace(/\.git$/, '');
+    const match =
+      normalized.match(/^https?:\/\/[^/]+\/(.+)$/i) ??
+      normalized.match(/^ssh:\/\/[^/]+\/(.+)$/i) ??
+      normalized.match(/^[^@]+@[^:]+:(.+)$/i);
 
-    const [organization, repoName] = normalized.split('/').filter(Boolean);
+    const segments = match?.[1].split('/').filter(Boolean) ?? [];
+    const organization = segments.at(-2);
+    const repoName = segments.at(-1);
     if (organization && repoName) {
       return {
         organization,
