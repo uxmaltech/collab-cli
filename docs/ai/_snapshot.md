@@ -2,19 +2,77 @@
 
 - Phase: Post-phase 3 (governance + release readiness)
 - Build system: TypeScript (`tsc`)
-- CLI framework: Commander
-- Command tree: `init`, `end`, `compose`, `infra`, `mcp`, `up`, `seed`, `doctor`, `update-canons`
-- Wizard capabilities: `--yes`, `--resume`, `--force`, `--skip-analysis`, `--skip-ci`, `--skip-github-setup`, `--providers`, mode selection (`file-only` / `indexed`)
-- Runtime orchestration: staged workflow with persisted recovery state
+- CLI framework: Commander.js
+- Test runner: `node:test` native, `node scripts/run-tests.mjs`
+
+## Command tree (12 commands, 8 subcommands)
+
+| Command | Subcommands | Description |
+|---------|-------------|-------------|
+| `init` | `infra` (phase) | Onboarding wizard, domain generation (`--repo`), infra setup |
+| `end` | — | Create PR with governance references + canon sync |
+| `canon` | `rebuild` | Destroy and recreate derived canon artifacts |
+| `compose` | `generate`, `validate` | Docker Compose file generation and validation |
+| `infra` | `up`, `down`, `status` | Infrastructure services lifecycle (Qdrant + NebulaGraph) |
+| `mcp` | `start`, `stop`, `status` | MCP runtime service lifecycle |
+| `up` | — | Full startup pipeline (infra → MCP) |
+| `seed` | — | Baseline infrastructure readiness check |
+| `doctor` | — | System diagnostics across config, health, versions |
+| `update-canons` | — | Download/update canons from GitHub |
+| `upgrade` | — | Check for and install latest CLI version |
+| `uninstall` | — | Remove collab-cli from system |
+
+## Global options
+
+`--cwd`, `--dry-run`, `--verbose`, `--quiet`, `-v/--version`
+
+## Init wizard capabilities
+
+- Flags: `--yes`, `--resume`, `--force`, `--mode`, `--compose-mode`, `--infra-type`, `--mcp-url`
+- Skip flags: `--skip-analysis`, `--skip-ci`, `--skip-github-setup`, `--skip-mcp-snippets`, `--skip-ingest`, `--skip-ast-generation`
+- Configuration: `--providers`, `--business-canon`, `--github-token`, `--repos`, `--repo`
+- Health tuning: `--timeout-ms`, `--retries`, `--retry-delay-ms`
+- Mode selection: `file-only` (8 stages) / `indexed` (15 stages)
+- Domain generation: `--repo <package>` with file-only or indexed pipeline + repo-ingest stage
+- Repo-ingest stage: tree-sitter AST extraction (PHP, TypeScript) → MCP graph + document chunking → MCP vectors
+
+## Runtime patterns
+
+- Staged orchestration: `OrchestrationStage` with `{id, title, recovery[], run(ctx)}`
+- Persisted recovery state for `--resume` support
 - Health checks: shared HTTP/TCP checker reused across infra/mcp/doctor
 - Dry-run: global `--dry-run` with executor-driven zero side effects
 - Compatibility: `ecosystem.manifest.json` + doctor/wizard checks
-- AI providers: Codex (OpenAI), Claude (Anthropic), Gemini (Google), Copilot (GitHub) with auto-detection
-- Canon management: sync from GitHub, scaffold generation, domain generation via `--repo`
-- GitHub setup (indexed): branch model, protection, merge strategy, CI workflows via API
-- Work finalization: `collab end` — PR creation, governance references, canon sync
-- Workspace: multi-repo support with `--repos` flag
-- Test layout: `tests/compose`, `tests/commands`, `tests/lib`, `tests/e2e`
-- CI: non-container checks on push/PR; Docker `e2e` only on PRs targeting `main`; protected `main` required checks
-- Governance: `CONTRIBUTING.md` + structured issue template with dependencies section
+
+## AI providers
+
+Codex (OpenAI), Claude (Anthropic), Gemini (Google), Copilot (GitHub) with auto-detection via env vars or CLI presence.
+
+## Canon management
+
+- Framework canon: `collab-architecture` synced from GitHub
+- Business canon: configurable `owner/repo` or local path
+- Domain generation: `collab init --repo` scans package → AI analysis → domain file write → AST/document ingestion
+- Canon sync: `collab end` detects architecture changes → creates sync PR in business-canon repo
+
+## GitHub integration
+
+- Branch model, protection rules, merge strategy, CI workflows via API (indexed mode)
+- `collab end`: parses issue from branch name, creates PR with governance checklist
+- GitHub token: `--github-token` flag or interactive `gh auth` flow
+
+## Test layout
+
+`tests/compose`, `tests/commands`, `tests/lib`, `tests/e2e`, `tests/stages`
+
+## CI strategy
+
+- Non-container checks on push/PR to `development`
+- Docker `e2e` only on PRs targeting `main`
+- Protected `main` with required checks
+
+## Governance
+
+- `CONTRIBUTING.md`: language policy (English), issue quality requirements, PR rules, documentation maintenance
+- Structured issue template with dependencies section
 - Release: tag-driven `release.yml` (validate, package, npm publish, GitHub release)

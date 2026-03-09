@@ -152,6 +152,7 @@ export async function runRepoDomainGeneration(
         _repoPath: repoPath,
         yes: options.yes,
         providers: options.providers,
+        skipAstGeneration: options.skipAstGeneration,
       },
     },
     stages,

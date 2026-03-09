@@ -165,6 +165,44 @@ test('init --repo dry-run shows AST extraction stats', () => {
   );
 });
 
+test('init --repo --skip-ast-generation skips AST extraction but keeps ingest stage', () => {
+  const workspace = makeTempWorkspace();
+  const env = createFakeDockerEnv();
+  const pkgDir = createFakePackage(workspace, 'my-pkg');
+
+  const result = runCli(
+    [
+      '--cwd', workspace,
+      '--dry-run',
+      'init',
+      '--repo', pkgDir,
+      '--mode', 'file-only',
+      '--yes',
+      '--business-canon', 'none',
+      '--skip-ast-generation',
+    ],
+    { cwd: workspace, env },
+  );
+
+  assert.equal(result.status, 0, `stdout: ${result.stdout}\nstderr: ${result.stderr}`);
+  assert.ok(
+    result.stdout.includes('[3/3]') || result.stdout.includes('Extract AST'),
+    'should still include the ingest stage (stage 3)',
+  );
+  assert.ok(
+    result.stdout.includes('Skipping AST extraction'),
+    'should log that AST extraction is skipped',
+  );
+  assert.ok(
+    !result.stdout.includes('AST extraction complete'),
+    'should NOT show AST extraction complete message',
+  );
+  assert.ok(
+    result.stdout.includes('Document chunking complete') || result.stdout.includes('chunk'),
+    'should still show document chunking',
+  );
+});
+
 test('init --repo indexed without business-canon fails', () => {
   const workspace = makeTempWorkspace();
   const env = createFakeDockerEnv();

@@ -161,63 +161,70 @@ export async function runRepoIngest(ctx: StageContext): Promise<void> {
     return;
   }
 
-  // 2. AST extraction for supported languages
-  const extractions: ExtractionResult[] = [];
-  let astSkipped = 0;
-  let astErrors = 0;
+  // 2. AST extraction for supported languages (skippable via --skip-ast-generation)
+  const skipAst = Boolean(ctx.options?.skipAstGeneration);
+  let merged = mergeExtractions([]);
 
-  const astExtractionWork = async (): Promise<void> => {
-    for (const relativePath of sourceFiles) {
-      const language = detectLanguage(relativePath);
-      if (!isSupported(language)) {
-        astSkipped++;
-        continue;
-      }
+  if (skipAst) {
+    ctx.logger.info('Skipping AST extraction by user choice (--skip-ast-generation).');
+  } else {
+    const extractions: ExtractionResult[] = [];
+    let astSkipped = 0;
+    let astErrors = 0;
 
-      const fullPath = path.join(repoPath, relativePath);
-      let sourceText: string;
-      try {
-        sourceText = fs.readFileSync(fullPath, 'utf8');
-      } catch {
-        astErrors++;
-        continue;
-      }
-
-      try {
-        const result = await extractFile({
-          repo: identity.repo,
-          platform,
-          sourcePath: relativePath,
-          sourceText,
-          language,
-          laravel: isLaravel,
-        });
-
-        if (result.warning) {
-          ctx.logger.warn(result.warning);
+    const astExtractionWork = async (): Promise<void> => {
+      for (const relativePath of sourceFiles) {
+        const language = detectLanguage(relativePath);
+        if (!isSupported(language)) {
+          astSkipped++;
+          continue;
         }
 
-        extractions.push(result);
-      } catch (err) {
-        astErrors++;
-        ctx.logger.warn(
-          `AST extraction failed for ${relativePath}: ${err instanceof Error ? err.message : String(err)}`,
-        );
+        const fullPath = path.join(repoPath, relativePath);
+        let sourceText: string;
+        try {
+          sourceText = fs.readFileSync(fullPath, 'utf8');
+        } catch {
+          astErrors++;
+          continue;
+        }
+
+        try {
+          const result = await extractFile({
+            repo: identity.repo,
+            platform,
+            sourcePath: relativePath,
+            sourceText,
+            language,
+            laravel: isLaravel,
+          });
+
+          if (result.warning) {
+            ctx.logger.warn(result.warning);
+          }
+
+          extractions.push(result);
+        } catch (err) {
+          astErrors++;
+          ctx.logger.warn(
+            `AST extraction failed for ${relativePath}: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
       }
-    }
-  };
+    };
 
-  await withSpinner(
-    'Extracting AST from source files...',
-    astExtractionWork,
-    ctx.logger.verbosity === 'quiet',
-  );
+    await withSpinner(
+      'Extracting AST from source files...',
+      astExtractionWork,
+      ctx.logger.verbosity === 'quiet',
+    );
 
-  const merged = mergeExtractions(extractions);
-  ctx.logger.info(
-    `AST extraction complete: ${merged.nodes.length} nodes, ${merged.edges.length} edges` +
-      ` (${extractions.length} files parsed, ${astSkipped} skipped, ${astErrors} errors)`,
-  );
+    merged = mergeExtractions(extractions);
+    ctx.logger.info(
+      `AST extraction complete: ${merged.nodes.length} nodes, ${merged.edges.length} edges` +
+        ` (${extractions.length} files parsed, ${astSkipped} skipped, ${astErrors} errors)`,
+    );
+  }
 
   // 3. Chunk all source files for document ingestion
   const documents: IngestMarkdownDocument[] = [];
