@@ -246,6 +246,10 @@ function shortenId(id: string): string {
   return parts[parts.length - 1] || id;
 }
 
+function stringProp(value: unknown, fallback = ''): string {
+  return typeof value === 'string' ? value : fallback;
+}
+
 export function writeImpactComment(
   merged: { nodes: AstNode[]; edges: AstEdge[] },
 ): void {
@@ -261,8 +265,8 @@ export function writeImpactComment(
     lines.push('| Type | Name | File |');
     lines.push('|------|------|------|');
     for (const node of merged.nodes) {
-      const name = String(node.properties.name || shortenId(node.id));
-      const file = String(node.properties.path || '');
+      const name = stringProp(node.properties.name, shortenId(node.id));
+      const file = stringProp(node.properties.path);
       lines.push(`| ${node.tag} | ${name} | ${file} |`);
     }
     lines.push('');
@@ -282,7 +286,7 @@ export function writeImpactComment(
   // Files affected (collapsible)
   const fileCounts = new Map<string, number>();
   for (const node of merged.nodes) {
-    const file = String(node.properties.path || 'unknown');
+    const file = stringProp(node.properties.path, 'unknown');
     fileCounts.set(file, (fileCounts.get(file) || 0) + 1);
   }
 

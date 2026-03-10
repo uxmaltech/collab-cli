@@ -29,26 +29,38 @@ jobs:
           AST_IMPACT_FILE: \${{ runner.temp }}/ast-impact.md
 
       - name: Post architecture impact comment
+        env:
+          AST_IMPACT_FILE: \${{ runner.temp }}/ast-impact.md
         uses: actions/github-script@v7
         continue-on-error: true
         with:
           script: |
             const fs = require('fs');
-            const impactFile = process.env.RUNNER_TEMP + '/ast-impact.md';
-            if (!fs.existsSync(impactFile)) {
-              console.log('No impact file found, skipping comment.');
-              return;
-            }
-            const body = fs.readFileSync(impactFile, 'utf8');
-            if (!body.trim()) return;
-            const { data: comments } = await github.rest.issues.listComments({
+            const marker = '<!-- collab:architecture-impact -->';
+            const impactFile = process.env.AST_IMPACT_FILE;
+            const raw = fs.existsSync(impactFile)
+              ? fs.readFileSync(impactFile, 'utf8').trim()
+              : '';
+            const body = raw ? marker + '\\n' + raw : '';
+            const comments = await github.paginate(github.rest.issues.listComments, {
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
+              per_page: 100,
             });
             const existing = comments.find(c =>
-              c.body && c.body.startsWith('## Architecture Impact')
+              c.user?.login === 'github-actions[bot]' && c.body?.includes(marker)
             );
+            if (!body) {
+              if (existing) {
+                await github.rest.issues.deleteComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: existing.id,
+                });
+              }
+              return;
+            }
             if (existing) {
               await github.rest.issues.updateComment({
                 owner: context.repo.owner,
