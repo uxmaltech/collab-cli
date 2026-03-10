@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process';
 import os from 'node:os';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -198,15 +199,64 @@ async function resolveGitHubBusinessCanon(
   }
 
   const branch = await promptText('Branch:', defaultBranch);
+  const effectiveBranch = branch || defaultBranch;
+
+  // Clone immediately so workspace detection finds the repo
+  await cloneGitHubRepo(repo, effectiveBranch, config.workspaceDir, token, logger);
 
   return {
     business: {
       repo,
-      branch: branch || defaultBranch,
+      branch: effectiveBranch,
       localDir: 'business',
       source: 'github',
     },
   };
+}
+
+/**
+ * Clones a GitHub repo into the workspace directory with a visible spinner.
+ * Skips if the target directory already exists.
+ */
+export async function cloneGitHubRepo(
+  slug: string,
+  branch: string,
+  workspaceDir: string,
+  token: string,
+  logger: Logger,
+): Promise<void> {
+  const repoName = slug.split('/').pop() ?? slug;
+  const targetDir = path.join(workspaceDir, repoName);
+
+  if (fs.existsSync(targetDir)) {
+    logger.info(`Directory "${repoName}" already exists, skipping clone.`);
+    return;
+  }
+
+  const cloneUrl = `https://x-access-token:${token}@github.com/${slug}.git`;
+
+  await withSpinner(
+    `Cloning ${slug}...`,
+    () => new Promise<void>((resolve, reject) => {
+      const child = spawn(
+        'git',
+        ['clone', '--branch', branch, '--single-branch', '--progress', cloneUrl, repoName],
+        { cwd: workspaceDir, stdio: ['ignore', 'pipe', 'pipe'] },
+      );
+      let stderr = '';
+      child.stderr?.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
+      child.on('close', (code) => {
+        if (code !== 0) {
+          const sanitized = stderr.replace(/x-access-token:[^@]+@/g, 'x-access-token:***@');
+          reject(new Error(sanitized.trim() || `git clone exited with code ${code}`));
+        } else {
+          resolve();
+        }
+      });
+      child.on('error', reject);
+    }),
+    logger.verbosity === 'quiet',
+  );
 }
 
 export async function ensureGitHubAuth(collabDir: string, logger: Logger): Promise<string> {
