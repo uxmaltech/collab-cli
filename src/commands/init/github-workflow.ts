@@ -39,10 +39,15 @@ export async function runGitHubWorkflow(
     ...context.config,
   };
 
-  // Allow --mode override, but default to configured mode
-  if (options.mode) {
-    effectiveConfig.mode = parseMode(options.mode);
+  // Allow --mode override, but guard against indexed without workspace
+  const requestedMode = options.mode ? parseMode(options.mode) : effectiveConfig.mode;
+  if (requestedMode === 'indexed' && !effectiveConfig.workspace) {
+    throw new CliError(
+      'Indexed mode requires a workspace configuration.\n' +
+        'Run "collab init" first to set up the workspace, then retry.',
+    );
   }
+  effectiveConfig.mode = requestedMode;
 
   // Summary header
   const modeLabel = effectiveConfig.mode;

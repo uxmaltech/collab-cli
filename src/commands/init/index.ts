@@ -417,8 +417,6 @@ Examples:
     )
     .action(async (_options: InitOptions, command: Command) => {
       const context = createCommandContext(command);
-      ensureWritableDirectory(context.config.workspaceDir);
-
       const parentOptions = command.optsWithGlobals<InitOptions>();
       await runGitHubWorkflow(context, parentOptions);
     });

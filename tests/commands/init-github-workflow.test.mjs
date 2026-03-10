@@ -22,7 +22,9 @@ function makeWorkspaceWithConfig(mode, extras = {}) {
 }
 
 test('init github-workflow runs GitHub workflow stages in dry-run (indexed)', () => {
-  const workspace = makeWorkspaceWithConfig('indexed');
+  const workspace = makeWorkspaceWithConfig('indexed', {
+    workspace: { name: 'test-ws', type: 'multi-repo', repos: ['repo-a'] },
+  });
   const env = createFakeDockerEnv();
 
   const result = runCli(
@@ -85,8 +87,26 @@ test('init github-workflow fails without .collab/config.json', () => {
   );
 });
 
-test('init github-workflow respects --skip-github-setup', () => {
+test('init github-workflow fails for indexed mode without workspace config', () => {
   const workspace = makeWorkspaceWithConfig('indexed');
+  const env = createFakeDockerEnv();
+
+  const result = runCli(
+    ['--cwd', workspace, '--dry-run', 'init', 'github-workflow'],
+    { cwd: workspace, env },
+  );
+
+  assert.notEqual(result.status, 0, 'should fail without workspace');
+  assert.ok(
+    result.stderr.includes('Indexed mode requires a workspace configuration'),
+    'should report workspace requirement',
+  );
+});
+
+test('init github-workflow respects --skip-github-setup', () => {
+  const workspace = makeWorkspaceWithConfig('indexed', {
+    workspace: { name: 'test-ws', type: 'multi-repo', repos: ['repo-a'] },
+  });
   const env = createFakeDockerEnv();
 
   const result = runCli(
@@ -103,7 +123,9 @@ test('init github-workflow respects --skip-github-setup', () => {
 });
 
 test('init github-workflow respects --skip-ci', () => {
-  const workspace = makeWorkspaceWithConfig('indexed');
+  const workspace = makeWorkspaceWithConfig('indexed', {
+    workspace: { name: 'test-ws', type: 'multi-repo', repos: ['repo-a'] },
+  });
   const env = createFakeDockerEnv();
 
   const result = runCli(
