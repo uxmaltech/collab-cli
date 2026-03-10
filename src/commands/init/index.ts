@@ -140,9 +140,10 @@ Examples:
 
           // Clone GitHub business canon now so workspace detection finds it
           if (canons.business?.source === 'github' && !context.executor.dryRun) {
-            const auth = loadGitHubAuth(effectiveConfig.collabDir);
+            const token =
+              options.githubToken ?? loadGitHubAuth(effectiveConfig.collabDir)?.token;
             const cloned = syncBusinessCanon(
-              effectiveConfig, (msg) => context.logger.info(msg), auth?.token,
+              effectiveConfig, (msg) => context.logger.info(msg), token,
             );
             if (!cloned) {
               context.logger.warn(
