@@ -43,6 +43,13 @@ export interface CanonsConfig {
   business?: CanonConfig;
 }
 
+export interface GitHubConfig {
+  requiredApprovals?: number;
+  dismissStaleReviews?: boolean;
+  enforceAdmins?: boolean;
+  requiredStatusChecks?: string[];
+}
+
 export interface RepoConfig {
   name: string;
   repoDir: string;
@@ -67,6 +74,7 @@ export interface CollabConfig {
   assistants?: AssistantsConfig;
   workspace?: WorkspaceConfig;
   canons?: CanonsConfig;
+  github?: GitHubConfig;
 }
 
 /** Raw config that may come from an older version without workspace metadata. */
@@ -86,6 +94,7 @@ interface RawCollabConfig {
   assistants?: AssistantsConfig;
   workspace?: RawWorkspaceConfig;
   canons?: CanonsConfig;
+  github?: GitHubConfig;
 }
 
 const DEFAULT_COMPOSE_PATHS: ComposePathConfig = {
@@ -156,6 +165,7 @@ export function loadCollabConfig(cwd = process.cwd()): CollabConfig {
     assistants: raw.assistants,
     workspace,
     canons: raw.canons,
+    github: raw.github,
   };
 }
 
@@ -189,6 +199,10 @@ export function serializeUserConfig(config: CollabConfig): string {
 
   if (config.canons) {
     data.canons = config.canons;
+  }
+
+  if (config.github) {
+    data.github = config.github;
   }
 
   return JSON.stringify(data, null, 2);
