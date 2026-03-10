@@ -43,11 +43,13 @@
 - Ecosystem manifest-driven version checks across CLI, canon schema, and MCP.
 - Compatibility warnings surfaced in wizard summary and doctor.
 
-## GitHub Setup (indexed mode)
+## GitHub Setup (`collab init github-workflow`)
+- Standalone subcommand: `collab init github-workflow` runs auth + github-setup + ci-setup as a pipeline.
 - GitHub API repo configuration: branch model (main/development), protection rules, merge strategy.
 - CI workflow generation: guard-main-pr (blocks non-development PRs to main), canon-sync-trigger (creates issues on merge to main).
+- Architecture CI: architecture-pr.yml (both modes), architecture-merge.yml (indexed only).
 - Secret management: CANON_SYNC_PAT via `gh secret set` (stdin).
-- Orchestration stage with `--skip-github-setup` flag.
+- Skip flags: `--skip-github-setup` (skip branch model/protection), `--skip-ci` (skip CI workflows).
 
 ## Testing and Validation
 - Template-level snapshot/parameter tests for compose assets.

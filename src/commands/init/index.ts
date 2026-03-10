@@ -21,6 +21,7 @@ import { resolveWizardSelection } from './wizard';
 import { resolveBusinessCanon } from './business-canon';
 import { resolveWorkspace } from './workspace';
 import { runInfraOnly } from './infra-only';
+import { runGitHubWorkflow } from './github-workflow';
 import { runReposDomainGeneration } from './repos';
 import {
   buildWorkspaceStages,
@@ -72,6 +73,8 @@ Examples:
   collab init --resume
   collab init infra
   collab init infra --resume
+  collab init github-workflow
+  collab init github-workflow --dry-run
 `,
     )
     .action(async (phase: string | undefined, options: InitOptions, command: Command) => {
@@ -347,8 +350,9 @@ Examples:
       context.logger.wizardOutro('Setup complete');
     });
 
-  // ── Register `repos` subcommand ──────────────────────────
+  // ── Register subcommands ────────────────────────────────
   registerReposSubcommand(init);
+  registerGitHubWorkflowSubcommand(init);
 }
 
 // ────────────────────────────────────────────────────────────────
@@ -380,5 +384,40 @@ Examples:
       const parentOptions = command.optsWithGlobals<InitOptions>();
 
       await runReposDomainGeneration(context, parentOptions, paths);
+    });
+}
+
+// ────────────────────────────────────────────────────────────────
+// Subcommand: collab init github-workflow
+// ────────────────────────────────────────────────────────────────
+
+function registerGitHubWorkflowSubcommand(init: Command): void {
+  init
+    .command('github-workflow')
+    .description('Configure GitHub branch model, protections, and CI workflows')
+    .addHelpText(
+      'after',
+      `
+Options are inherited from "collab init" (--mode, --skip-ci, --skip-github-setup, --github-token, etc.)
+
+Requires an existing .collab/config.json (run "collab init" first).
+
+Stages:
+  1. github-auth     — resolve/validate GitHub token
+  2. github-setup    — branch model, protection, guard-main-pr.yml, canon-sync-trigger.yml (indexed only)
+  3. ci-setup        — architecture-pr.yml (both modes), architecture-merge.yml (indexed only)
+
+Examples:
+  collab init github-workflow
+  collab init github-workflow --dry-run
+  collab init github-workflow --skip-github-setup
+  collab init github-workflow --skip-ci
+  collab init github-workflow --github-token ghp_xxxxx
+`,
+    )
+    .action(async (_options: InitOptions, command: Command) => {
+      const context = createCommandContext(command);
+      const parentOptions = command.optsWithGlobals<InitOptions>();
+      await runGitHubWorkflow(context, parentOptions);
     });
 }

@@ -5,11 +5,11 @@
 - CLI framework: Commander.js
 - Test runner: `node:test` native, `node scripts/run-tests.mjs`
 
-## Command tree (11 commands, 9 subcommands)
+## Command tree (11 commands, 10 subcommands)
 
 | Command | Subcommands | Description |
 |---------|-------------|-------------|
-| `init` | `infra`, `repos` | Onboarding wizard, domain generation, infra setup |
+| `init` | `infra`, `repos`, `github-workflow` | Onboarding wizard, domain generation, infra setup, GitHub workflows |
 | `canon` | `rebuild` | Destroy and recreate derived canon artifacts |
 | `compose` | `generate`, `validate` | Docker Compose file generation and validation |
 | `infra` | `up`, `down`, `status` | Infrastructure services lifecycle (Qdrant + NebulaGraph) |
@@ -56,6 +56,7 @@ Codex (OpenAI), Claude (Anthropic), Gemini (Google), Copilot (GitHub) with auto-
 
 ## GitHub integration
 
+- Standalone setup: `collab init github-workflow` runs auth + github-setup + ci-setup as standalone pipeline
 - Branch model, protection rules, merge strategy, CI workflows via API (indexed mode)
 - GitHub token: `--github-token` flag or interactive `gh auth` flow
 
