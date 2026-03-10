@@ -12,6 +12,10 @@ import {
   setBranchProtection,
   setMergeStrategy,
   configureRepo,
+  getAuthenticatedUser,
+  listUserOrgs,
+  createGitHubRepo,
+  createInitialReadme,
 } from '../../dist/lib/github-api.js';
 
 // ── normalizeGitHubRemote ─────────────────────────────────────
@@ -292,4 +296,149 @@ test('configureRepo orchestrates full configuration', async (t) => {
 
   assert.ok(calls.length >= 4, `expected at least 4 API calls, got ${calls.length}`);
   assert.ok(logs.some((l) => l.includes('Configuring branch model')));
+});
+
+// ── getAuthenticatedUser ──────────────────────────────────────
+
+test('getAuthenticatedUser returns login on 200', async (t) => {
+  t.mock.method(globalThis, 'fetch', async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ login: 'testuser' }),
+  }));
+
+  const login = await getAuthenticatedUser('token');
+  assert.equal(login, 'testuser');
+});
+
+test('getAuthenticatedUser throws on 401', async (t) => {
+  t.mock.method(globalThis, 'fetch', async () => ({
+    ok: false,
+    status: 401,
+    statusText: 'Unauthorized',
+  }));
+
+  await assert.rejects(() => getAuthenticatedUser('bad-token'), /GitHub API error 401/);
+});
+
+// ── listUserOrgs ──────────────────────────────────────────────
+
+test('listUserOrgs returns org logins on 200', async (t) => {
+  t.mock.method(globalThis, 'fetch', async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ([
+      { login: 'org-b' },
+      { login: 'org-a' },
+    ]),
+  }));
+
+  const orgs = await listUserOrgs('token');
+  assert.deepEqual(orgs, ['org-a', 'org-b']);
+});
+
+test('listUserOrgs returns empty array on error', async (t) => {
+  t.mock.method(globalThis, 'fetch', async () => ({
+    ok: false,
+    status: 403,
+  }));
+
+  const orgs = await listUserOrgs('token');
+  assert.deepEqual(orgs, []);
+});
+
+// ── createGitHubRepo ──────────────────────────────────────────
+
+test('createGitHubRepo creates user repo on 201', async (t) => {
+  let capturedUrl;
+  let capturedBody;
+  t.mock.method(globalThis, 'fetch', async (url, opts) => {
+    capturedUrl = typeof url === 'string' ? url : url.toString();
+    capturedBody = JSON.parse(opts.body);
+    return {
+      ok: true,
+      status: 201,
+      json: async () => ({
+        full_name: 'testuser/my-repo',
+        default_branch: 'main',
+        private: true,
+      }),
+    };
+  });
+
+  const result = await createGitHubRepo({ name: 'my-repo', isPrivate: true }, 'token');
+  assert.equal(result.fullName, 'testuser/my-repo');
+  assert.equal(result.private, true);
+  assert.ok(capturedUrl.endsWith('/user/repos'), `expected user repos URL, got ${capturedUrl}`);
+  assert.equal(capturedBody.name, 'my-repo');
+  assert.equal(capturedBody.private, true);
+});
+
+test('createGitHubRepo creates org repo when org provided', async (t) => {
+  let capturedUrl;
+  t.mock.method(globalThis, 'fetch', async (url) => {
+    capturedUrl = typeof url === 'string' ? url : url.toString();
+    return {
+      ok: true,
+      status: 201,
+      json: async () => ({
+        full_name: 'myorg/my-repo',
+        default_branch: 'main',
+        private: false,
+      }),
+    };
+  });
+
+  const result = await createGitHubRepo({ name: 'my-repo', org: 'myorg', isPrivate: false }, 'token');
+  assert.equal(result.fullName, 'myorg/my-repo');
+  assert.ok(capturedUrl.includes('/orgs/myorg/repos'), `expected org repos URL, got ${capturedUrl}`);
+});
+
+test('createGitHubRepo throws on failure', async (t) => {
+  t.mock.method(globalThis, 'fetch', async () => ({
+    ok: false,
+    status: 422,
+    statusText: 'Unprocessable Entity',
+    text: async () => '{"message":"name already exists"}',
+  }));
+
+  await assert.rejects(
+    () => createGitHubRepo({ name: 'existing' }, 'token'),
+    /GitHub repo creation failed.*422/,
+  );
+});
+
+// ── createInitialReadme ───────────────────────────────────────
+
+test('createInitialReadme sends correct PUT request', async (t) => {
+  let capturedUrl;
+  let capturedBody;
+  t.mock.method(globalThis, 'fetch', async (url, opts) => {
+    capturedUrl = typeof url === 'string' ? url : url.toString();
+    capturedBody = JSON.parse(opts.body);
+    return { ok: true, status: 201 };
+  });
+
+  await createInitialReadme('org/my-repo', 'main', 'token');
+
+  assert.ok(capturedUrl.includes('/repos/org/my-repo/contents/README.md'));
+  assert.equal(capturedBody.message, 'Initial commit');
+  assert.equal(capturedBody.branch, 'main');
+  // Verify content is base64 of "# my-repo\n"
+  const decoded = Buffer.from(capturedBody.content, 'base64').toString();
+  assert.equal(decoded, '# my-repo\n');
+});
+
+test('createInitialReadme throws on failure', async (t) => {
+  t.mock.method(globalThis, 'fetch', async () => ({
+    ok: false,
+    status: 409,
+    statusText: 'Conflict',
+    text: async () => '{"message":"sha mismatch"}',
+  }));
+
+  await assert.rejects(
+    () => createInitialReadme('org/repo', 'main', 'token'),
+    /Failed to create initial README/,
+  );
 });

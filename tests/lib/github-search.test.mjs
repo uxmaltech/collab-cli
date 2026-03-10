@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 // Static import — module structure and exports
-import { searchGitHubRepos } from '../../dist/lib/github-search.js';
+import { searchGitHubRepos, listGitHubBranches } from '../../dist/lib/github-search.js';
 
 test('searchGitHubRepos is a function', () => {
   assert.equal(typeof searchGitHubRepos, 'function');
@@ -57,4 +57,54 @@ test('searchGitHubRepos parses successful response', async (t) => {
   assert.equal(result.items[0].description, 'A test repo');
   assert.equal(result.items[0].private, false);
   assert.equal(result.items[0].defaultBranch, 'main');
+});
+
+// ── listGitHubBranches ──────────────────────────────────────────
+
+test('listGitHubBranches returns sorted branches with default first', async (t) => {
+  t.mock.method(globalThis, 'fetch', async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ([
+      { name: 'feature-b' },
+      { name: 'main' },
+      { name: 'development' },
+    ]),
+  }));
+
+  const branches = await listGitHubBranches('org/repo', 'fake-token', 'main');
+  assert.equal(branches[0], 'main');
+  assert.ok(branches.includes('development'));
+  assert.ok(branches.includes('feature-b'));
+});
+
+test('listGitHubBranches returns empty array for empty repo', async (t) => {
+  t.mock.method(globalThis, 'fetch', async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ([]),
+  }));
+
+  const branches = await listGitHubBranches('org/empty-repo', 'fake-token', 'main');
+  assert.deepEqual(branches, []);
+});
+
+test('listGitHubBranches falls back on non-200', async (t) => {
+  t.mock.method(globalThis, 'fetch', async () => ({
+    ok: false,
+    status: 404,
+  }));
+
+  const branches = await listGitHubBranches('org/repo', 'fake-token', 'main');
+  assert.deepEqual(branches, ['main']);
+});
+
+test('listGitHubBranches falls back to main when no default specified', async (t) => {
+  t.mock.method(globalThis, 'fetch', async () => ({
+    ok: false,
+    status: 500,
+  }));
+
+  const branches = await listGitHubBranches('org/repo', 'fake-token');
+  assert.deepEqual(branches, ['main']);
 });

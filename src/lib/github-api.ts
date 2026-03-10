@@ -277,6 +277,192 @@ export async function createBranch(slug: string, branch: string, fromSha: string
 }
 
 // ────────────────────────────────────────────────────────────────
+// Authenticated user & organizations
+// ────────────────────────────────────────────────────────────────
+
+/**
+ * Returns the login (username) of the authenticated user.
+ */
+export async function getAuthenticatedUser(token: string): Promise<string> {
+  const url = 'https://api.github.com/user';
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ACCESS_CHECK_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': GITHUB_API_VERSION,
+      },
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      throw new CliError(`GitHub API error ${response.status} fetching authenticated user`);
+    }
+
+    const data = (await response.json()) as { login: string };
+    return data.login;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Lists organizations the authenticated user belongs to.
+ * Returns org login names.
+ */
+export async function listUserOrgs(token: string): Promise<string[]> {
+  const url = 'https://api.github.com/user/orgs?per_page=100';
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ACCESS_CHECK_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': GITHUB_API_VERSION,
+      },
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      return [];
+    }
+
+    const data = (await response.json()) as Array<{ login: string }>;
+    return data.map((org) => org.login).sort();
+  } catch {
+    return [];
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// ────────────────────────────────────────────────────────────────
+// Repository creation
+// ────────────────────────────────────────────────────────────────
+
+export interface CreateRepoOptions {
+  name: string;
+  description?: string;
+  isPrivate?: boolean;
+  /** If provided, creates under this org; otherwise under the authenticated user. */
+  org?: string;
+}
+
+export interface CreateRepoResult {
+  fullName: string;
+  defaultBranch: string;
+  private: boolean;
+}
+
+/**
+ * Creates a new GitHub repository under the authenticated user or an organization.
+ */
+export async function createGitHubRepo(
+  options: CreateRepoOptions,
+  token: string,
+): Promise<CreateRepoResult> {
+  const url = options.org
+    ? `https://api.github.com/orgs/${options.org}/repos`
+    : 'https://api.github.com/user/repos';
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ACCESS_CHECK_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': GITHUB_API_VERSION,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        name: options.name,
+        description: options.description ?? '',
+        private: options.isPrivate ?? true,
+        auto_init: false,
+      }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const body = await response.text().catch(() => '');
+      throw new CliError(
+        `GitHub repo creation failed (HTTP ${response.status}): ${body || response.statusText}`,
+      );
+    }
+
+    const data = (await response.json()) as {
+      full_name: string;
+      default_branch: string;
+      private: boolean;
+    };
+
+    return {
+      fullName: data.full_name,
+      defaultBranch: data.default_branch,
+      private: data.private,
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// ────────────────────────────────────────────────────────────────
+// Initial commit (README.md) for empty repos
+// ────────────────────────────────────────────────────────────────
+
+/**
+ * Creates a README.md with a placeholder commit on the given branch.
+ * Uses the GitHub Contents API which also creates the branch if the repo is empty.
+ */
+export async function createInitialReadme(
+  slug: string,
+  branch: string,
+  token: string,
+): Promise<void> {
+  const url = `https://api.github.com/repos/${slug}/contents/README.md`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ACCESS_CHECK_TIMEOUT_MS);
+
+  const repoName = slug.split('/').pop() ?? slug;
+  const content = Buffer.from(`# ${repoName}\n`).toString('base64');
+
+  try {
+    const response = await fetch(url, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': GITHUB_API_VERSION,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        message: 'Initial commit',
+        content,
+        branch,
+      }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const body = await response.text().catch(() => '');
+      throw new CliError(
+        `Failed to create initial README.md (HTTP ${response.status}): ${body || response.statusText}`,
+      );
+    }
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// ────────────────────────────────────────────────────────────────
 // Repo configuration
 // ────────────────────────────────────────────────────────────────
 
