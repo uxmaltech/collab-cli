@@ -44,6 +44,28 @@ test('normalizeGitHubRemote returns null for malformed URL', () => {
   assert.equal(normalizeGitHubRemote('github.com'), null);
 });
 
+test('normalizeGitHubRemote parses HTTPS URL with x-access-token credentials', () => {
+  assert.equal(
+    normalizeGitHubRemote('https://x-access-token:gho_abc123@github.com/anystream/api-server.git'),
+    'anystream/api-server',
+  );
+});
+
+test('normalizeGitHubRemote parses HTTPS URL with user:pass credentials', () => {
+  assert.equal(
+    normalizeGitHubRemote('https://user:token@github.com/org/repo.git'),
+    'org/repo',
+  );
+});
+
+test('normalizeGitHubRemote rejects subdomain spoofing (notgithub.com)', () => {
+  assert.equal(normalizeGitHubRemote('https://notgithub.com/org/repo.git'), null);
+});
+
+test('normalizeGitHubRemote rejects domain suffix spoofing (github.com.evil.tld)', () => {
+  assert.equal(normalizeGitHubRemote('https://github.com.evil.tld/org/repo.git'), null);
+});
+
 test('normalizeGitHubRemote handles trailing slashes', () => {
   assert.equal(normalizeGitHubRemote('https://github.com/uxmaltech/collab-cli/'), 'uxmaltech/collab-cli');
 });
