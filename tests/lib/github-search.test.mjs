@@ -61,16 +61,21 @@ test('searchGitHubRepos parses successful response', async (t) => {
 
 // ── listGitHubBranches ──────────────────────────────────────────
 
-test('listGitHubBranches returns sorted branches with default first', async (t) => {
-  t.mock.method(globalThis, 'fetch', async () => ({
+/** Helper to create a mock Response with Link header support. */
+function branchResponse(branches, linkHeader) {
+  return {
     ok: true,
     status: 200,
-    json: async () => ([
-      { name: 'feature-b' },
-      { name: 'main' },
-      { name: 'development' },
-    ]),
-  }));
+    json: async () => branches,
+    headers: { get: (name) => name.toLowerCase() === 'link' ? linkHeader : null },
+  };
+}
+
+test('listGitHubBranches returns sorted branches with default first', async (t) => {
+  t.mock.method(globalThis, 'fetch', async () => branchResponse(
+    [{ name: 'feature-b' }, { name: 'main' }, { name: 'development' }],
+    null,
+  ));
 
   const branches = await listGitHubBranches('org/repo', 'fake-token', 'main');
   assert.equal(branches[0], 'main');
@@ -79,14 +84,35 @@ test('listGitHubBranches returns sorted branches with default first', async (t) 
 });
 
 test('listGitHubBranches returns empty array for empty repo', async (t) => {
-  t.mock.method(globalThis, 'fetch', async () => ({
-    ok: true,
-    status: 200,
-    json: async () => ([]),
-  }));
+  t.mock.method(globalThis, 'fetch', async () => branchResponse([], null));
 
   const branches = await listGitHubBranches('org/empty-repo', 'fake-token', 'main');
   assert.deepEqual(branches, []);
+});
+
+test('listGitHubBranches paginates through multiple pages', async (t) => {
+  let callCount = 0;
+  t.mock.method(globalThis, 'fetch', async () => {
+    callCount++;
+    if (callCount === 1) {
+      return branchResponse(
+        [{ name: 'branch-a' }, { name: 'branch-b' }],
+        '<https://api.github.com/repos/org/repo/branches?per_page=100&page=2>; rel="next"',
+      );
+    }
+    // Second page — no next link
+    return branchResponse(
+      [{ name: 'branch-c' }, { name: 'main' }],
+      null,
+    );
+  });
+
+  const branches = await listGitHubBranches('org/repo', 'fake-token', 'main');
+  assert.equal(callCount, 2, 'should have fetched 2 pages');
+  assert.equal(branches.length, 4);
+  assert.equal(branches[0], 'main');
+  assert.ok(branches.includes('branch-a'));
+  assert.ok(branches.includes('branch-c'));
 });
 
 test('listGitHubBranches falls back on non-200', async (t) => {
