@@ -190,6 +190,54 @@ test('setBranchProtection succeeds on 200', async (t) => {
   await setBranchProtection('org/repo', 'main', 'token');
 });
 
+test('setBranchProtection uses defaults when no config provided', async (t) => {
+  let capturedBody;
+  t.mock.method(globalThis, 'fetch', async (_url, opts) => {
+    capturedBody = JSON.parse(opts.body);
+    return { ok: true, status: 200 };
+  });
+
+  await setBranchProtection('org/repo', 'main', 'token');
+
+  assert.equal(capturedBody.required_status_checks, null);
+  assert.equal(capturedBody.enforce_admins, false);
+  assert.equal(capturedBody.required_pull_request_reviews.required_approving_review_count, 1);
+  assert.equal(capturedBody.required_pull_request_reviews.dismiss_stale_reviews, true);
+  assert.equal(capturedBody.restrictions, null);
+});
+
+test('setBranchProtection applies custom config', async (t) => {
+  let capturedBody;
+  t.mock.method(globalThis, 'fetch', async (_url, opts) => {
+    capturedBody = JSON.parse(opts.body);
+    return { ok: true, status: 200 };
+  });
+
+  await setBranchProtection('org/repo', 'main', 'token', {
+    requiredApprovals: 2,
+    dismissStaleReviews: false,
+    enforceAdmins: true,
+    requiredStatusChecks: ['ci/build', 'ci/test'],
+  });
+
+  assert.deepEqual(capturedBody.required_status_checks, { strict: true, contexts: ['ci/build', 'ci/test'] });
+  assert.equal(capturedBody.enforce_admins, true);
+  assert.equal(capturedBody.required_pull_request_reviews.required_approving_review_count, 2);
+  assert.equal(capturedBody.required_pull_request_reviews.dismiss_stale_reviews, false);
+});
+
+test('setBranchProtection with empty requiredStatusChecks uses null', async (t) => {
+  let capturedBody;
+  t.mock.method(globalThis, 'fetch', async (_url, opts) => {
+    capturedBody = JSON.parse(opts.body);
+    return { ok: true, status: 200 };
+  });
+
+  await setBranchProtection('org/repo', 'main', 'token', { requiredStatusChecks: [] });
+
+  assert.equal(capturedBody.required_status_checks, null);
+});
+
 // ── setMergeStrategy ──────────────────────────────────────────
 
 test('setMergeStrategy succeeds on 200', async (t) => {

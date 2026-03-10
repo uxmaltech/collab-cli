@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 
+import type { GitHubConfig } from './config';
 import { CliError } from './errors';
 import type { Logger } from './logger';
 
@@ -312,10 +313,20 @@ export async function setDefaultBranch(slug: string, branch: string, token: stri
 /**
  * Applies branch protection rules. PUT is idempotent by HTTP spec.
  */
-export async function setBranchProtection(slug: string, branch: string, token: string): Promise<void> {
+export async function setBranchProtection(
+  slug: string,
+  branch: string,
+  token: string,
+  githubConfig?: GitHubConfig,
+): Promise<void> {
   const url = `https://api.github.com/repos/${slug}/branches/${branch}/protection`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ACCESS_CHECK_TIMEOUT_MS);
+
+  const checks = githubConfig?.requiredStatusChecks;
+  const requiredStatusChecks = checks && checks.length > 0
+    ? { strict: true, contexts: checks }
+    : null;
 
   try {
     const response = await fetch(url, {
@@ -327,11 +338,11 @@ export async function setBranchProtection(slug: string, branch: string, token: s
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        required_status_checks: null,
-        enforce_admins: false,
+        required_status_checks: requiredStatusChecks,
+        enforce_admins: githubConfig?.enforceAdmins ?? false,
         required_pull_request_reviews: {
-          required_approving_review_count: 1,
-          dismiss_stale_reviews: true,
+          required_approving_review_count: githubConfig?.requiredApprovals ?? 1,
+          dismiss_stale_reviews: githubConfig?.dismissStaleReviews ?? true,
         },
         restrictions: null,
       }),
@@ -385,7 +396,7 @@ export async function setMergeStrategy(slug: string, token: string): Promise<voi
  * Orchestrates full GitHub configuration for a single repo:
  * branch model → default branch → protection → merge strategy.
  */
-export async function configureRepo(slug: string, token: string, logger: Logger): Promise<void> {
+export async function configureRepo(slug: string, token: string, logger: Logger, githubConfig?: GitHubConfig): Promise<void> {
   logger.info(`Configuring branch model for ${slug}...`);
 
   // 1. Get current repo info
@@ -424,8 +435,9 @@ export async function configureRepo(slug: string, token: string, logger: Logger)
   }
 
   // 4. Protect main
-  await setBranchProtection(slug, 'main', token);
-  logger.info(`  Applied branch protection on "main" (1 review required).`);
+  await setBranchProtection(slug, 'main', token, githubConfig);
+  const approvals = githubConfig?.requiredApprovals ?? 1;
+  logger.info(`  Applied branch protection on "main" (${approvals} review${approvals !== 1 ? 's' : ''} required).`);
 
   // 5. Merge strategy
   await setMergeStrategy(slug, token);

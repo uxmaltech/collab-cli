@@ -51,3 +51,30 @@ test('loadCollabConfig fails fast on invalid persisted mode', () => {
 
   assert.throws(() => loadCollabConfig(workspace), /Invalid mode/);
 });
+
+test('loadCollabConfig reads github config', () => {
+  const workspace = makeTempWorkspace();
+  const defaults = defaultCollabConfig(workspace);
+  fs.mkdirSync(defaults.collabDir, { recursive: true });
+  fs.writeFileSync(
+    defaults.configFile,
+    JSON.stringify({
+      github: {
+        requiredApprovals: 2,
+        enforceAdmins: true,
+        requiredStatusChecks: ['ci/build'],
+      },
+    }, null, 2),
+  );
+
+  const loaded = loadCollabConfig(workspace);
+  assert.equal(loaded.github.requiredApprovals, 2);
+  assert.equal(loaded.github.enforceAdmins, true);
+  assert.deepEqual(loaded.github.requiredStatusChecks, ['ci/build']);
+});
+
+test('loadCollabConfig defaults github to undefined when not set', () => {
+  const workspace = makeTempWorkspace();
+  const config = loadCollabConfig(workspace);
+  assert.equal(config.github, undefined);
+});
