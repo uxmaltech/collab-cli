@@ -146,11 +146,12 @@ collab init [phase] [options]
 
 ```mermaid
 flowchart TD
-    A["collab init [phase] [options]"] --> B{phase?}
-    B -->|"infra"| C["Infra-only pipeline<br>compose → docker → MCP → health"]
+    A["collab init"] --> B{subcommand?}
     B -->|"repos"| E["Repo-domain pipeline<br>analysis → domain → ingest<br>(multi-repo support)"]
     B -->|"github-workflow"| GW["GitHub workflow pipeline<br>auth → setup → CI workflows"]
-    B -->|none| F{workspace?}
+    B -->|none| C{"phase arg?"}
+    C -->|"infra"| D["Infra-only pipeline<br>compose → docker → MCP → health"]
+    C -->|none| F{workspace?}
     F -->|yes| G["Workspace pipeline<br>per-repo stages + infra"]
     F -->|no| H{mode?}
     H -->|"file-only"| I["Single-repo file-only<br>9 stages"]

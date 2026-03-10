@@ -103,6 +103,22 @@ test('init github-workflow fails for indexed mode without workspace config', () 
   );
 });
 
+test('init github-workflow rejects --mode indexed override on file-only config without workspace', () => {
+  const workspace = makeWorkspaceWithConfig('file-only');
+  const env = createFakeDockerEnv();
+
+  const result = runCli(
+    ['--cwd', workspace, '--dry-run', 'init', 'github-workflow', '--mode', 'indexed'],
+    { cwd: workspace, env },
+  );
+
+  assert.notEqual(result.status, 0, 'should fail when overriding to indexed without workspace');
+  assert.ok(
+    result.stderr.includes('Indexed mode requires a workspace configuration'),
+    'should report workspace requirement on mode override',
+  );
+});
+
 test('init github-workflow respects --skip-github-setup', () => {
   const workspace = makeWorkspaceWithConfig('indexed', {
     workspace: { name: 'test-ws', type: 'multi-repo', repos: ['repo-a'] },
@@ -115,10 +131,14 @@ test('init github-workflow respects --skip-github-setup', () => {
   );
 
   assert.equal(result.status, 0, `stderr: ${result.stderr}`);
-  // github-setup stage should be present but skipped
+  // github-setup stage should appear but emit skip message
   assert.ok(
     result.stdout.includes('Configure GitHub branch model'),
     'github-setup stage should still appear in pipeline',
+  );
+  assert.ok(
+    result.stdout.includes('Skipping GitHub setup by user choice'),
+    'should emit skip message for github-setup',
   );
 });
 
@@ -134,10 +154,14 @@ test('init github-workflow respects --skip-ci', () => {
   );
 
   assert.equal(result.status, 0, `stderr: ${result.stderr}`);
-  // ci-setup stage should be present but skipped
+  // ci-setup stage should appear but emit skip message
   assert.ok(
     result.stdout.includes('Generate CI workflow files'),
     'ci-setup stage should still appear in pipeline',
+  );
+  assert.ok(
+    result.stdout.includes('Skipping CI workflow generation by user choice'),
+    'should emit skip message for ci-setup',
   );
 });
 
