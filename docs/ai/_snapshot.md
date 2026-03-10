@@ -5,11 +5,12 @@
 - CLI framework: Commander.js
 - Test runner: `node:test` native, `node scripts/run-tests.mjs`
 
-## Command tree (11 commands, 10 subcommands)
+## Command tree (12 commands, 11 subcommands)
 
 | Command | Subcommands | Description |
 |---------|-------------|-------------|
 | `init` | `infra`, `repos`, `github-workflow` | Onboarding wizard, domain generation, infra setup, GitHub workflows |
+| `ci` | `ast-delta` | CI/CD pipeline utilities (delta AST extraction) |
 | `canon` | `rebuild` | Destroy and recreate derived canon artifacts |
 | `compose` | `generate`, `validate` | Docker Compose file generation and validation |
 | `infra` | `up`, `down`, `status` | Infrastructure services lifecycle (Qdrant + NebulaGraph) |
@@ -28,7 +29,7 @@
 ## Init wizard capabilities
 
 - Flags: `--yes`, `--resume`, `--force`, `--mode`, `--compose-mode`, `--infra-type`, `--mcp-url`
-- Skip flags: `--skip-analysis`, `--skip-ci`, `--skip-github-setup`, `--skip-mcp-snippets`, `--skip-ingest`, `--skip-ast-generation`
+- Skip flags: `--skip-analysis`, `--skip-ci`, `--skip-github-setup`, `--skip-mcp-snippets`, `--skip-ingest`, `--skip-ast-generation`, `--skip-ast-delta`
 - Configuration: `--providers`, `--business-canon`, `--github-token`, `--repos`, `--repo` (deprecated)
 - Health tuning: `--timeout-ms`, `--retries`, `--retry-delay-ms`
 - Mode selection: `file-only` (8 stages) / `indexed` (15 stages)
@@ -63,6 +64,12 @@ Codex (OpenAI), Claude (Anthropic), Gemini (Google), Copilot (GitHub) with auto-
 ## Test layout
 
 `tests/compose`, `tests/commands`, `tests/lib`, `tests/e2e`, `tests/stages`
+
+## CI workflows generated
+
+- `architecture-pr.yml`: validates architecture docs on PRs (both modes)
+- `architecture-merge.yml`: re-ingests architecture docs on merge (indexed only)
+- `ast-delta-pr.yml`: extracts delta AST on PRs and ingests into MCP (indexed only, `--skip-ast-delta` to omit)
 
 ## CI strategy
 
