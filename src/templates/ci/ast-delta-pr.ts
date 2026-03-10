@@ -5,6 +5,9 @@ on:
   pull_request:
     types: [opened, synchronize]
 
+permissions:
+  pull-requests: write
+
 jobs:
   ast-delta:
     runs-on: ubuntu-latest
@@ -23,4 +26,54 @@ jobs:
         env:
           MCP_BASE_URL: \${{ secrets.MCP_BASE_URL }}
           MCP_API_KEY: \${{ secrets.MCP_API_KEY }}
+          AST_IMPACT_FILE: \${{ runner.temp }}/ast-impact.md
+
+      - name: Post architecture impact comment
+        env:
+          AST_IMPACT_FILE: \${{ runner.temp }}/ast-impact.md
+        uses: actions/github-script@v7
+        continue-on-error: true
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- collab:architecture-impact -->';
+            const impactFile = process.env.AST_IMPACT_FILE;
+            const raw = fs.existsSync(impactFile)
+              ? fs.readFileSync(impactFile, 'utf8').trim()
+              : '';
+            const body = raw ? marker + '\\n' + raw : '';
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              per_page: 100,
+            });
+            const existing = comments.find(c =>
+              c.user?.login === 'github-actions[bot]' && c.body?.includes(marker)
+            );
+            if (!body) {
+              if (existing) {
+                await github.rest.issues.deleteComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: existing.id,
+                });
+              }
+              return;
+            }
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
 `;

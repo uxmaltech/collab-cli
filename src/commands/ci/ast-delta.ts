@@ -11,7 +11,7 @@ import { filterChangedSourceFiles } from '../../lib/ingest/file-filter';
 import { detectPlatform } from '../../lib/ingest/platform-detector';
 import { resolveRepoIdentity } from '../../lib/ingest/repo-identity';
 import { chunkTextWithRanges } from '../../lib/ingest/text';
-import type { ExtractionResult, IngestAstPayload, IngestMarkdownDocument, IngestMarkdownPayload } from '../../lib/ingest/types';
+import type { AstEdge, AstNode, ExtractionResult, IngestAstPayload, IngestMarkdownDocument, IngestMarkdownPayload } from '../../lib/ingest/types';
 import { getMcpBaseUrl, ingestAst, ingestMarkdown, resolveMcpApiKey, resolveMcpHttpTimeoutMs } from '../../lib/mcp-client';
 import { loadRuntimeEnv } from '../../lib/service-health';
 
@@ -206,8 +206,9 @@ async function runAstDelta(context: CommandContext, options: AstDeltaOptions): P
     }
   }
 
-  // 9. Write GitHub Actions job summary
+  // 9. Write GitHub Actions job summary and PR impact comment
   writeSummary(changedFiles.length, sourceFiles.length, merged, documents, astIngested || docIngested);
+  writeImpactComment(merged);
 }
 
 function writeSummary(
@@ -237,5 +238,70 @@ function writeSummary(
     fs.appendFileSync(summaryFile, lines.join('\n') + '\n');
   } catch {
     // Ignore — GITHUB_STEP_SUMMARY may not be writable outside CI
+  }
+}
+
+function shortenId(id: string): string {
+  const parts = id.split('::');
+  return parts[parts.length - 1] || id;
+}
+
+function stringProp(value: unknown, fallback = ''): string {
+  return typeof value === 'string' ? value : fallback;
+}
+
+export function writeImpactComment(
+  merged: { nodes: AstNode[]; edges: AstEdge[] },
+): void {
+  const impactFile = process.env.AST_IMPACT_FILE;
+  if (!impactFile) return;
+  if (merged.nodes.length === 0 && merged.edges.length === 0) return;
+
+  const lines: string[] = ['## Architecture Impact', ''];
+
+  // Nodes table
+  if (merged.nodes.length > 0) {
+    lines.push(`### Nodes (${merged.nodes.length})`, '');
+    lines.push('| Type | Name | File |');
+    lines.push('|------|------|------|');
+    for (const node of merged.nodes) {
+      const name = stringProp(node.properties.name, shortenId(node.id));
+      const file = stringProp(node.properties.path);
+      lines.push(`| ${node.tag} | ${name} | ${file} |`);
+    }
+    lines.push('');
+  }
+
+  // Edges table
+  if (merged.edges.length > 0) {
+    lines.push(`### Edges (${merged.edges.length})`, '');
+    lines.push('| Type | From | To |');
+    lines.push('|------|------|-----|');
+    for (const edge of merged.edges) {
+      lines.push(`| ${edge.type} | ${shortenId(edge.from)} | ${shortenId(edge.to)} |`);
+    }
+    lines.push('');
+  }
+
+  // Files affected (collapsible)
+  const fileCounts = new Map<string, number>();
+  for (const node of merged.nodes) {
+    const file = stringProp(node.properties.path, 'unknown');
+    fileCounts.set(file, (fileCounts.get(file) || 0) + 1);
+  }
+
+  if (fileCounts.size > 0) {
+    lines.push('<details>');
+    lines.push(`<summary>Files affected (${fileCounts.size})</summary>`, '');
+    for (const [file, count] of [...fileCounts.entries()].sort()) {
+      lines.push(`- ${file}: ${count} node${count !== 1 ? 's' : ''}`);
+    }
+    lines.push('', '</details>');
+  }
+
+  try {
+    fs.writeFileSync(impactFile, lines.join('\n') + '\n');
+  } catch {
+    // Best-effort — may not be writable outside CI
   }
 }
