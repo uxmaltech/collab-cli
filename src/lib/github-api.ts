@@ -14,7 +14,8 @@ const ACCESS_CHECK_TIMEOUT_MS = 10_000;
 
 /**
  * Normalizes a git remote URL to a GitHub `owner/repo` slug.
- * Handles HTTPS, SSH (`git@`), and `ssh://` URL formats.
+ * Handles HTTPS (with or without embedded credentials), SSH (`git@`),
+ * and `ssh://` URL formats.
  * Returns `null` if the remote is not a `github.com` URL.
  */
 export function normalizeGitHubRemote(remoteUrl: string): string | null {
@@ -26,7 +27,7 @@ export function normalizeGitHubRemote(remoteUrl: string): string | null {
     .trim()
     .replace(/\/+$/, '')
     .replace(/\.git$/, '')
-    .replace(/^https?:\/\/github\.com\//i, '')
+    .replace(/^https?:\/\/(?:[^@]+@)?github\.com\//i, '')
     .replace(/^git@github\.com:/i, '')
     .replace(/^ssh:\/\/git@github\.com\//i, '');
 
