@@ -71,6 +71,7 @@ export async function runGitHubWorkflow(
       stageOptions: {
         skipGithubSetup: options.skipGithubSetup,
         skipCi: options.skipCi,
+        skipAstDelta: options.skipAstDelta,
       },
     },
     stages,

@@ -311,6 +311,25 @@ flowchart LR
 
 ---
 
+### `collab ci ast-delta`
+
+Extract AST from files changed since a base commit and ingest into MCP.
+
+```bash
+collab ci ast-delta                          # diff against HEAD~1
+collab ci ast-delta --base abc1234           # diff against specific commit
+```
+
+Designed for GitHub Actions — the generated `ast-delta-pr.yml` workflow calls this command automatically on PRs.
+
+| Option | Description |
+|--------|-------------|
+| `--base <sha>` | Base commit SHA to diff against (default: `HEAD~1`) |
+
+Environment variables: `MCP_BASE_URL`, `MCP_API_KEY`
+
+---
+
 ### `collab canon rebuild`
 
 Destroy and recreate all derived canon artifacts for the current workspace.

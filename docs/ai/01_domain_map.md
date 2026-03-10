@@ -48,8 +48,9 @@
 - GitHub API repo configuration: branch model (main/development), protection rules, merge strategy.
 - CI workflow generation: guard-main-pr (blocks non-development PRs to main), canon-sync-trigger (creates issues on merge to main).
 - Architecture CI: architecture-pr.yml (both modes), architecture-merge.yml (indexed only).
+- Delta AST CI: ast-delta-pr.yml (indexed only) — extracts AST diffs on PRs and ingests into MCP. CLI: `collab ci ast-delta --base <sha>`.
 - Secret management: CANON_SYNC_PAT via `gh secret set` (stdin).
-- Skip flags: `--skip-github-setup` (skip branch model/protection), `--skip-ci` (skip CI workflows).
+- Skip flags: `--skip-github-setup` (skip branch model/protection), `--skip-ci` (skip CI workflows), `--skip-ast-delta` (skip AST delta workflow).
 
 ## Testing and Validation
 - Template-level snapshot/parameter tests for compose assets.

@@ -52,6 +52,7 @@ export function registerInitCommand(program: Command): void {
     .option('--skip-github-setup', 'Skip GitHub branch model and workflow configuration')
     .option('--skip-ingest', 'Skip entire repo-ingest stage (no AST extraction, no MCP ingestion)')
     .option('--skip-ast-generation', 'Skip tree-sitter AST extraction (documents still chunked and ingested)')
+    .option('--skip-ast-delta', 'Skip generating the AST delta PR workflow (ast-delta-pr.yml)')
     .option('--providers <list>', 'Comma-separated AI provider list (codex,claude,gemini,copilot)')
     .option('--business-canon <value>', 'Business canon: owner/repo, /local/path, or "none" to skip')
     .option('--github-token <token>', 'GitHub token for non-interactive mode')
@@ -145,6 +146,7 @@ Examples:
         skipAnalysis: options.skipAnalysis,
         skipCi: options.skipCi,
         skipGithubSetup: options.skipGithubSetup,
+        skipAstDelta: options.skipAstDelta,
       };
 
       // ── Workspace detection ───────────────────────────────────

@@ -1,10 +1,11 @@
-import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
 import { detectLanguage, classifyContentKind, heuristicallyExtractSymbols } from '../lib/ingest/code-metadata';
+import { EXCLUDED_DIRS, MAX_DOCUMENTS_PER_BATCH, MAX_FILE_SIZE_BYTES, SOURCE_EXTENSIONS } from '../lib/ingest/constants';
 import { extractFile, isSupported, mergeExtractions } from '../lib/ingest/extractor';
 import { detectPlatform } from '../lib/ingest/platform-detector';
+import { resolveRepoIdentity } from '../lib/ingest/repo-identity';
 import { chunkTextWithRanges } from '../lib/ingest/text';
 import type {
   ExtractionResult,
@@ -22,35 +23,6 @@ import {
 import type { OrchestrationStage, StageContext } from '../lib/orchestrator';
 import { loadRuntimeEnv } from '../lib/service-health';
 import { withSpinner } from '../lib/spinner';
-
-const EXCLUDED_DIRS = new Set([
-  'node_modules',
-  '.git',
-  'dist',
-  'build',
-  'out',
-  '.next',
-  '.nuxt',
-  'coverage',
-  '__pycache__',
-  '.venv',
-  'vendor',
-  'target',
-  '.collab',
-  '.claude',
-]);
-
-const SOURCE_EXTENSIONS = new Set([
-  '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs',
-  '.php',
-  '.py', '.go', '.java', '.kt', '.rb',
-  '.md', '.mdx',
-  '.yml', '.yaml', '.json',
-  '.sql', '.sh', '.bash',
-]);
-
-const MAX_FILE_SIZE_BYTES = 512 * 1024; // 512 KB
-const MAX_DOCUMENTS_PER_BATCH = 50;
 
 function collectSourceFiles(dir: string, baseDir: string): string[] {
   const results: string[] = [];
@@ -93,48 +65,6 @@ function collectSourceFiles(dir: string, baseDir: string): string[] {
 
   walk(dir);
   return results;
-}
-
-interface RepoIdentity {
-  organization: string;
-  repo: string;
-  scope: string;
-}
-
-function resolveRepoIdentity(repoDir: string, fallbackScope: string): RepoIdentity {
-  try {
-    const remoteUrl = execFileSync(
-      'git',
-      ['-C', repoDir, 'remote', 'get-url', 'origin'],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] },
-    ).trim();
-
-    const normalized = remoteUrl.trim().replace(/\/+$/, '').replace(/\.git$/, '');
-    const match =
-      normalized.match(/^https?:\/\/[^/]+\/(.+)$/i) ??
-      normalized.match(/^ssh:\/\/[^/]+\/(.+)$/i) ??
-      normalized.match(/^[^@]+@[^:]+:(.+)$/i);
-
-    const segments = match?.[1].split('/').filter(Boolean) ?? [];
-    const organization = segments.at(-2);
-    const repoName = segments.at(-1);
-    if (organization && repoName) {
-      return {
-        organization,
-        repo: `${organization}/${repoName}`,
-        scope: repoName,
-      };
-    }
-  } catch {
-    // Fallback below
-  }
-
-  const scope = fallbackScope.split('/').filter(Boolean).pop() || 'repo';
-  return {
-    organization: 'local',
-    repo: `local/${scope}`,
-    scope,
-  };
 }
 
 export async function runRepoIngest(ctx: StageContext): Promise<void> {

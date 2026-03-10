@@ -20,6 +20,7 @@ export interface InitOptions {
   skipGithubSetup?: boolean;
   skipIngest?: boolean;
   skipAstGeneration?: boolean;
+  skipAstDelta?: boolean;
   timeoutMs?: string;
   retries?: string;
   retryDelayMs?: string;
