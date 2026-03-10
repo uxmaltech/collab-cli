@@ -13,6 +13,7 @@ import { repoAnalysisStage } from '../../stages/repo-analysis';
 import { repoAnalysisFileOnlyStage } from '../../stages/repo-analysis-fileonly';
 import { agentSkillsSetupStage } from '../../stages/agent-skills-setup';
 import { ciSetupStage } from '../../stages/ci-setup';
+import { githubSetupStage } from '../../stages/github-setup';
 
 import type { InitOptions } from './types';
 import { buildGitHubAuthStage } from './mcp-helpers';
@@ -109,5 +110,17 @@ export function buildFileOnlyPipeline(
     repoAnalysisFileOnlyStage,                                 // 7
     ciSetupStage,                                              // 8
     agentSkillsSetupStage,                                     // 9
+  ];
+}
+
+export function buildGitHubWorkflowStages(
+  effectiveConfig: CollabConfig,
+  logger: Logger,
+  options: InitOptions,
+): OrchestrationStage[] {
+  return [
+    buildGitHubAuthStage(effectiveConfig, logger, options),
+    githubSetupStage,
+    ciSetupStage,
   ];
 }

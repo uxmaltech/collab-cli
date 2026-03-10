@@ -17,7 +17,7 @@
 - **Canon synchronization**: Download/update canonical architecture from GitHub
 - **AI provider auto-detection**: Codex, Claude, Gemini, Copilot with MCP config generation
 - **Domain generation**: `collab init repos <package...>` analyzes repos and generates domain files in the configured architecture repo (multi-repo support)
-- **GitHub setup** (indexed): Branch model, protection rules, merge strategy, and CI workflows via GitHub API
+- **GitHub workflow setup**: `collab init github-workflow` configures branch model, protection rules, merge strategy, and CI workflows (standalone or as part of wizard)
 - **Diagnostics**: System health checks, compatibility verification, doctor command
 
 ## Key design principles

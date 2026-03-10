@@ -149,6 +149,7 @@ flowchart TD
     A["collab init [phase] [options]"] --> B{phase?}
     B -->|"infra"| C["Infra-only pipeline<br>compose → docker → MCP → health"]
     B -->|"repos"| E["Repo-domain pipeline<br>analysis → domain → ingest<br>(multi-repo support)"]
+    B -->|"github-workflow"| GW["GitHub workflow pipeline<br>auth → setup → CI workflows"]
     B -->|none| F{workspace?}
     F -->|yes| G["Workspace pipeline<br>per-repo stages + infra"]
     F -->|no| H{mode?}
@@ -251,6 +252,22 @@ flowchart TD
 | ✅ | ❌ | Skip tree-sitter, still chunk docs and send markdown to MCP |
 | ❌ | ✅ | Skip entire ingest stage — no extraction, no MCP send |
 | ✅ | ✅ | Same as `--skip-ingest` alone |
+
+#### GitHub workflow setup (`collab init github-workflow`)
+
+Configure GitHub branch model, protections, and CI workflows as a standalone pipeline. Requires an existing `.collab/config.json`.
+
+```bash
+collab init github-workflow                    # full GitHub setup
+collab init github-workflow --dry-run          # preview without changes
+collab init github-workflow --skip-github-setup # CI workflows only
+collab init github-workflow --skip-ci          # branch model + protection only
+```
+
+```mermaid
+flowchart LR
+    A["collab init github-workflow"] --> B["GitHub auth"] --> C["GitHub setup<br>(indexed only)"] --> D["CI workflows<br>(both modes)"]
+```
 
 #### Infrastructure only (`collab init infra`)
 
