@@ -26,70 +26,99 @@ export async function resolveWorkspace(
   options: InitOptions,
   logger: Logger,
   mode: CollabMode = 'file-only',
+  /** Directory name to exclude from governed repos (e.g. business canon). */
+  excludeRepo?: string,
 ): Promise<WorkspaceResolution | null> {
   const name = deriveWorkspaceName(workspaceDir);
   const isIndexed = mode === 'indexed';
 
+  /** Filter out the business canon from a repo list. */
+  const filterRepos = (repos: string[]): string[] =>
+    excludeRepo ? repos.filter((r) => r !== excludeRepo) : repos;
+
   // Explicit --repos flag takes priority
   const explicit = parseRepos(options.repos);
   if (explicit && explicit.length > 0) {
+    const filtered = filterRepos(explicit);
     // In indexed mode, always force multi-repo type
-    const type = isIndexed || explicit.length >= 2 ? 'multi-repo' : 'mono-repo';
-    logger.info(`Workspace mode: ${explicit.length} repo(s) specified: ${explicit.join(', ')}`);
-    return { name, type, repos: explicit };
+    const type = isIndexed || filtered.length >= 2 ? 'multi-repo' : 'mono-repo';
+    logger.info(`Workspace mode: ${filtered.length} repo(s) specified: ${filtered.join(', ')}`);
+    return { name, type, repos: filtered };
   }
 
   // Auto-detect workspace layout
   const layout = detectWorkspaceLayout(workspaceDir);
 
   if (layout) {
-    // Indexed mode + mono-repo layout: distinguish true mono-repo (cwd IS a
-    // repo, repos=['.']) from "only 1 child repo" (e.g. business canon cloned).
-    if (isIndexed && layout.type === 'mono-repo') {
-      const isCwdRepo = layout.repos.length === 1 && layout.repos[0] === '.';
+    // True mono-repo (cwd IS a git repo, repos=['.']) — always reject in indexed mode.
+    const isCwdRepo = layout.repos.length === 1 && layout.repos[0] === '.';
+    if (isIndexed && isCwdRepo) {
+      throw new CliError(
+        'Indexed mode requires a multi-repo workspace (business-canon + at least 1 governed repo).\n' +
+          'Current directory is detected as mono-repo. ' +
+          'Run from a parent directory containing multiple git repositories.',
+      );
+    }
 
-      if (isCwdRepo) {
-        // True mono-repo — can't host a multi-repo workspace here.
-        throw new CliError(
-          'Indexed mode requires a multi-repo workspace (business-canon + at least 1 governed repo).\n' +
-            'Current directory is detected as mono-repo. ' +
-            'Run from a parent directory containing multiple git repositories.',
-        );
-      }
+    // Apply business canon filter to discovered repos
+    const governedRepos = filterRepos(layout.repos);
 
-      // One child repo (business canon) — need additional workspace repos.
+    // Indexed mode + no governed repos after filtering: need more repos.
+    if (isIndexed && governedRepos.length === 0) {
       if (options.yes) {
         throw new CliError(
           'Indexed mode requires a multi-repo workspace (business-canon + at least 1 governed repo).\n' +
-            'Only one git repository found in the workspace directory.\n' +
+            'No governed repositories found in the workspace directory.\n' +
             'Clone additional repos from GitHub and re-run, or pass --repos repo1,repo2.',
         );
       }
 
-      // Interactive: keep existing repo(s) and let user clone more
+      // Interactive: business canon is the only repo — let user clone governed repos
+      if (excludeRepo) {
+        logger.info(
+          `Found business canon "${excludeRepo}" in workspace. ` +
+            'Indexed mode requires additional governed repos.',
+        );
+      }
+      const cloned = await searchAndCloneRepos(workspaceDir, collabDir, logger);
+      if (cloned.length === 0) return null;
+      return { name, type: 'multi-repo', repos: cloned };
+    }
+
+    // Indexed mode + only 1 governed repo after filtering: need more.
+    if (isIndexed && governedRepos.length === 1 && !isCwdRepo) {
+      if (options.yes) {
+        throw new CliError(
+          'Indexed mode requires a multi-repo workspace (business-canon + at least 1 governed repo).\n' +
+            'Only one governed repository found in the workspace directory.\n' +
+            'Clone additional repos from GitHub and re-run, or pass --repos repo1,repo2.',
+        );
+      }
+
       logger.info(
-        `Found ${layout.repos.join(', ')} in workspace. ` +
+        `Found ${governedRepos.join(', ')} in workspace. ` +
           'Indexed mode requires additional governed repos.',
       );
       const cloned = await searchAndCloneRepos(workspaceDir, collabDir, logger);
-      const allRepos = [...new Set([...layout.repos, ...cloned])].sort();
+      const allRepos = [...new Set([...governedRepos, ...cloned])].sort();
       if (allRepos.length < 2) return null;
       return { name, type: 'multi-repo', repos: allRepos };
     }
 
     if (options.yes) {
       logger.info(
-        `Workspace auto-detected (${layout.type}): ${layout.repos.length} repo(s) found: ${layout.repos.join(', ')}`,
+        `Workspace auto-detected (${layout.type}): ${governedRepos.length} repo(s) found: ${governedRepos.join(', ')}`,
       );
-      return { name, type: layout.type, repos: layout.repos };
+      const type = isIndexed || governedRepos.length >= 2 ? 'multi-repo' : layout.type;
+      return { name, type, repos: governedRepos };
     }
 
     // Interactive: for multi-repo let user confirm/select repos
-    if (layout.type === 'multi-repo') {
+    if (governedRepos.length >= 2) {
       const selected = await promptMultiSelect(
-        'This directory contains multiple git repositories. Select repos to include:',
-        layout.repos.map((r) => ({ value: r, label: r })),
-        layout.repos,
+        'Select governed repositories to include:',
+        governedRepos.map((r) => ({ value: r, label: r })),
+        governedRepos,
       );
 
       if (selected.length === 0) return null;
@@ -97,8 +126,10 @@ export async function resolveWorkspace(
     }
 
     // mono-repo auto-detected (file-only only — indexed handled above)
-    logger.info(`Mono-repo workspace detected: ${layout.repos.join(', ')}`);
-    return { name, type: 'mono-repo', repos: layout.repos };
+    if (governedRepos.length === 1) {
+      logger.info(`Mono-repo workspace detected: ${governedRepos.join(', ')}`);
+      return { name, type: 'mono-repo', repos: governedRepos };
+    }
   }
 
   // No repos found
