@@ -5,6 +5,9 @@ on:
   pull_request:
     types: [opened, synchronize]
 
+permissions:
+  pull-requests: write
+
 jobs:
   ast-delta:
     runs-on: ubuntu-latest
@@ -23,4 +26,42 @@ jobs:
         env:
           MCP_BASE_URL: \${{ secrets.MCP_BASE_URL }}
           MCP_API_KEY: \${{ secrets.MCP_API_KEY }}
+          AST_IMPACT_FILE: \${{ runner.temp }}/ast-impact.md
+
+      - name: Post architecture impact comment
+        uses: actions/github-script@v7
+        continue-on-error: true
+        with:
+          script: |
+            const fs = require('fs');
+            const impactFile = process.env.RUNNER_TEMP + '/ast-impact.md';
+            if (!fs.existsSync(impactFile)) {
+              console.log('No impact file found, skipping comment.');
+              return;
+            }
+            const body = fs.readFileSync(impactFile, 'utf8');
+            if (!body.trim()) return;
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.find(c =>
+              c.body && c.body.startsWith('## Architecture Impact')
+            );
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
 `;
