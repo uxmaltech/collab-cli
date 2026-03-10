@@ -247,7 +247,8 @@ export async function cloneGitHubRepo(
       child.stderr?.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
       child.on('close', (code) => {
         if (code !== 0) {
-          reject(new Error(stderr.trim() || `git clone exited with code ${code}`));
+          const sanitized = stderr.replace(/x-access-token:[^@]+@/g, 'x-access-token:***@');
+          reject(new Error(sanitized.trim() || `git clone exited with code ${code}`));
         } else {
           resolve();
         }

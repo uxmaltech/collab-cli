@@ -243,7 +243,8 @@ async function searchAndCloneRepos(
           child.stderr?.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
           child.on('close', (code) => {
             if (code !== 0) {
-              reject(new Error(stderr.trim() || 'unknown error'));
+              const sanitized = stderr.replace(/x-access-token:[^@]+@/g, 'x-access-token:***@');
+              reject(new Error(sanitized.trim() || 'unknown error'));
             } else {
               resolve();
             }
