@@ -4,11 +4,6 @@ name: AST Delta Extraction
 on:
   pull_request:
     types: [opened, synchronize]
-    paths:
-      - 'src/**'
-      - 'app/**'
-      - 'lib/**'
-      - 'packages/**'
 
 jobs:
   ast-delta:

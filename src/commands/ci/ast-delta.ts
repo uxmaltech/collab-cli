@@ -5,13 +5,15 @@ import type { Command } from 'commander';
 
 import type { CommandContext } from '../../lib/command-context';
 import { detectLanguage, classifyContentKind, heuristicallyExtractSymbols } from '../../lib/ingest/code-metadata';
-import { MAX_FILE_SIZE_BYTES, MAX_DOCUMENTS_PER_BATCH, SOURCE_EXTENSIONS } from '../../lib/ingest/constants';
+import { MAX_DOCUMENTS_PER_BATCH } from '../../lib/ingest/constants';
 import { extractFile, isSupported, mergeExtractions } from '../../lib/ingest/extractor';
+import { filterChangedSourceFiles } from '../../lib/ingest/file-filter';
 import { detectPlatform } from '../../lib/ingest/platform-detector';
 import { resolveRepoIdentity } from '../../lib/ingest/repo-identity';
 import { chunkTextWithRanges } from '../../lib/ingest/text';
 import type { ExtractionResult, IngestAstPayload, IngestMarkdownDocument, IngestMarkdownPayload } from '../../lib/ingest/types';
-import { ingestAst, ingestMarkdown } from '../../lib/mcp-client';
+import { getMcpBaseUrl, ingestAst, ingestMarkdown, resolveMcpApiKey, resolveMcpHttpTimeoutMs } from '../../lib/mcp-client';
+import { loadRuntimeEnv } from '../../lib/service-health';
 
 interface AstDeltaOptions {
   base?: string;
@@ -43,8 +45,11 @@ async function runAstDelta(context: CommandContext, options: AstDeltaOptions): P
     ).trim();
     changedFiles = output ? output.split('\n').filter(Boolean) : [];
   } catch (err) {
-    logger.warn(`git diff failed: ${err instanceof Error ? err.message : String(err)}`);
-    changedFiles = [];
+    throw new Error(
+      `Unable to compute changed files from ${baseSha}. Ensure the base commit is fetched (fetch-depth: 0): ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    );
   }
 
   if (changedFiles.length === 0) {
@@ -52,22 +57,8 @@ async function runAstDelta(context: CommandContext, options: AstDeltaOptions): P
     return;
   }
 
-  // 2. Filter to supported source files within size limit
-  const sourceFiles: string[] = [];
-  for (const file of changedFiles) {
-    const ext = path.extname(file).toLowerCase();
-    if (!SOURCE_EXTENSIONS.has(ext)) continue;
-
-    const fullPath = path.join(cwd, file);
-    try {
-      const stat = fs.statSync(fullPath);
-      if (stat.size > MAX_FILE_SIZE_BYTES) continue;
-    } catch {
-      continue; // file may have been deleted in a later commit
-    }
-
-    sourceFiles.push(file);
-  }
+  // 2. Filter to supported source files (shared filter with repo-ingest)
+  const sourceFiles = filterChangedSourceFiles(cwd, changedFiles);
 
   logger.info(`Changed files: ${changedFiles.length} total, ${sourceFiles.length} supported source files.`);
 
@@ -159,22 +150,19 @@ async function runAstDelta(context: CommandContext, options: AstDeltaOptions): P
 
   logger.info(`Document chunking: ${documents.length} chunk(s) from ${sourceFiles.length} file(s).`);
 
-  // 6. Resolve MCP connection
-  const baseUrl = process.env.MCP_BASE_URL || '';
-  const apiKey = process.env.MCP_API_KEY;
+  // 6. Resolve MCP connection (env vars for CI, collab config for local)
+  const env = loadRuntimeEnv(context.config);
+  const baseUrl = process.env.MCP_BASE_URL || getMcpBaseUrl(context.config);
+  const apiKey = process.env.MCP_API_KEY || resolveMcpApiKey(env);
+  const timeoutMs = resolveMcpHttpTimeoutMs(env);
 
-  if (!baseUrl) {
-    logger.warn('No MCP_BASE_URL configured; skipping ingestion.');
-    writeSummary(changedFiles.length, sourceFiles.length, merged, documents, false);
-    return;
-  }
-
-  // 7. Ingest AST
+  // 7. Ingest AST (isolated delta scope to avoid polluting canonical graph)
+  const deltaScope = `delta/${identity.scope}`;
   let astIngested = false;
   if (merged.nodes.length > 0 || merged.edges.length > 0) {
     const astPayload: IngestAstPayload = {
       context: 'technical',
-      scope: identity.scope,
+      scope: deltaScope,
       organization: identity.organization,
       repo: identity.repo,
       nodes: merged.nodes,
@@ -182,7 +170,7 @@ async function runAstDelta(context: CommandContext, options: AstDeltaOptions): P
     };
 
     try {
-      const result = await ingestAst(baseUrl, astPayload, apiKey);
+      const result = await ingestAst(baseUrl, astPayload, apiKey, timeoutMs);
       logger.info(`AST ingested: ${result.nodes_created} nodes, ${result.edges_created} edges (space: ${result.space})`);
       astIngested = true;
     } catch (err) {
@@ -190,7 +178,7 @@ async function runAstDelta(context: CommandContext, options: AstDeltaOptions): P
     }
   }
 
-  // 8. Ingest documents (batched)
+  // 8. Ingest documents (batched, isolated delta scope)
   let docIngested = false;
   if (documents.length > 0) {
     try {
@@ -201,12 +189,12 @@ async function runAstDelta(context: CommandContext, options: AstDeltaOptions): P
         const batch = documents.slice(i, i + MAX_DOCUMENTS_PER_BATCH);
         const payload: IngestMarkdownPayload = {
           context: 'technical',
-          scope: identity.scope,
+          scope: deltaScope,
           organization: identity.organization,
           repo: identity.repo,
           documents: batch,
         };
-        const result = await ingestMarkdown(baseUrl, payload, apiKey);
+        const result = await ingestMarkdown(baseUrl, payload, apiKey, timeoutMs);
         totalIngested += result.ingested_files;
         totalPoints += result.total_points;
       }

@@ -5,7 +5,7 @@
 - CLI framework: Commander.js
 - Test runner: `node:test` native, `node scripts/run-tests.mjs`
 
-## Command tree (12 commands, 11 subcommands)
+## Command tree (12 commands, 13 subcommands)
 
 | Command | Subcommands | Description |
 |---------|-------------|-------------|
