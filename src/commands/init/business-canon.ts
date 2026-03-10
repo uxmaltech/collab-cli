@@ -5,11 +5,17 @@ import path from 'node:path';
 
 import type { CanonsConfig, CollabConfig } from '../../lib/config';
 import { CliError } from '../../lib/errors';
-import { searchGitHubRepos } from '../../lib/github-search';
+import { searchGitHubRepos, listGitHubBranches } from '../../lib/github-search';
+import {
+  getAuthenticatedUser,
+  listUserOrgs,
+  createGitHubRepo,
+  createInitialReadme,
+} from '../../lib/github-api';
 import { loadGitHubAuth, isGitHubAuthValid, runGitHubDeviceFlow } from '../../lib/github-auth';
 import type { CollabMode } from '../../lib/mode';
 import type { Logger } from '../../lib/logger';
-import { promptChoice, promptText } from '../../lib/prompt';
+import { promptChoice, promptText, promptBoolean } from '../../lib/prompt';
 import { withSpinner } from '../../lib/spinner';
 
 import { LOCAL_PATH_RE } from './types';
@@ -159,7 +165,89 @@ async function resolveGitHubBusinessCanon(
   // Ensure GitHub auth
   const token = await ensureGitHubAuth(config.collabDir, logger);
 
-  // Search loop
+  // Choose action: search or create
+  const action = await promptChoice(
+    'Business canon repository:',
+    [
+      { value: 'search', label: 'Search existing repository' },
+      { value: 'create', label: 'Create new repository' },
+    ],
+    'search',
+  );
+
+  let repo: string;
+  let defaultBranch = 'main';
+
+  if (action === 'create') {
+    const result = await createNewBusinessCanonRepo(token, logger);
+    repo = result.fullName;
+    defaultBranch = result.defaultBranch;
+  } else {
+    const result = await searchAndSelectRepo(token, logger);
+    repo = result.repo;
+    defaultBranch = result.defaultBranch;
+  }
+
+  // Fetch real branches so the user picks from existing ones
+  const branches = await withSpinner(
+    'Fetching branches...',
+    () => listGitHubBranches(repo, token, defaultBranch),
+    logger.verbosity === 'quiet',
+  );
+
+  let effectiveBranch: string;
+
+  if (branches.length === 0) {
+    // Empty repo — offer to create initial branch with README.md
+    const branchName = await promptText('Branch name for initial commit:', 'main');
+    const proceed = await promptBoolean(
+      `Create branch "${branchName}" with a README.md placeholder?`,
+      true,
+    );
+
+    if (!proceed) {
+      throw new CliError('Cannot clone a repository with no branches. Create a branch first.');
+    }
+
+    await withSpinner(
+      `Creating initial commit on "${branchName}"...`,
+      () => createInitialReadme(repo, branchName, token),
+      logger.verbosity === 'quiet',
+    );
+
+    logger.info(`Created branch "${branchName}" with README.md.`);
+    effectiveBranch = branchName;
+  } else if (branches.length === 1) {
+    effectiveBranch = branches[0];
+    logger.info(`Branch: ${effectiveBranch}`);
+  } else {
+    const branchChoices = branches.map((b) => ({
+      value: b,
+      label: b === defaultBranch ? `${b} (default)` : b,
+    }));
+    effectiveBranch = await promptChoice('Branch:', branchChoices, branches[0]);
+  }
+
+  // Clone immediately so workspace detection finds the repo
+  await cloneGitHubRepo(repo, effectiveBranch, config.workspaceDir, token, logger);
+
+  return {
+    business: {
+      repo,
+      branch: effectiveBranch,
+      localDir: 'business',
+      source: 'github',
+    },
+  };
+}
+
+/**
+ * Interactive GitHub search loop: search → select from results → return repo slug.
+ */
+async function searchAndSelectRepo(
+  token: string,
+  logger: Logger,
+): Promise<{ repo: string; defaultBranch: string }> {
   let repo: string | undefined;
   let defaultBranch = 'main';
 
@@ -184,7 +272,7 @@ async function resolveGitHubBusinessCanon(
 
     const choices = results.items.map((r) => ({
       value: r.fullName,
-      label: `${r.fullName}${r.private ? ' \u{1F512}' : ''}${r.description ? ` — ${r.description}` : ''}`,
+      label: `${r.fullName}${r.private ? ' \u{1F512}' : ''}${r.description ? ` \u2014 ${r.description}` : ''}`,
     }));
     choices.push({ value: '__search_again__', label: '\u21BB Search again' });
 
@@ -198,19 +286,80 @@ async function resolveGitHubBusinessCanon(
       results.items.find((r) => r.fullName === selected)?.defaultBranch ?? 'main';
   }
 
-  const branch = await promptText('Branch:', defaultBranch);
-  const effectiveBranch = branch || defaultBranch;
+  return { repo, defaultBranch };
+}
 
-  // Clone immediately so workspace detection finds the repo
-  await cloneGitHubRepo(repo, effectiveBranch, config.workspaceDir, token, logger);
+/**
+ * Interactive flow to create a new GitHub repository for the business canon.
+ */
+async function createNewBusinessCanonRepo(
+  token: string,
+  logger: Logger,
+): Promise<{ fullName: string; defaultBranch: string }> {
+  // Resolve owner: user account + orgs
+  const [username, orgs] = await Promise.all([
+    withSpinner('Fetching GitHub account info...', () => getAuthenticatedUser(token), logger.verbosity === 'quiet'),
+    withSpinner('Fetching organizations...', () => listUserOrgs(token), logger.verbosity === 'quiet'),
+  ]);
+
+  let owner: string;
+  if (orgs.length === 0) {
+    owner = username;
+    logger.info(`Owner: ${username}`);
+  } else {
+    const ownerChoices = [
+      { value: username, label: `${username} (personal account)` },
+      ...orgs.map((org) => ({ value: org, label: org })),
+    ];
+    owner = await promptChoice('Repository owner:', ownerChoices, username);
+  }
+
+  // Prompt for repo name
+  const repoName = await promptText('Repository name:');
+  if (!repoName) {
+    throw new CliError('Repository name is required.');
+  }
+
+  // Validate repo name (basic GitHub name rules)
+  if (!/^[a-zA-Z0-9._-]+$/.test(repoName)) {
+    throw new CliError(
+      `Invalid repository name "${repoName}". Use only letters, numbers, hyphens, dots, and underscores.`,
+    );
+  }
+
+  // Visibility
+  const visibility = await promptChoice(
+    'Visibility:',
+    [
+      { value: 'private', label: 'Private' },
+      { value: 'public', label: 'Public' },
+    ],
+    'private',
+  );
+
+  // Optional description
+  const description = await promptText('Description (optional):');
+
+  // Create the repository
+  const result = await withSpinner(
+    `Creating ${owner}/${repoName}...`,
+    () => createGitHubRepo(
+      {
+        name: repoName,
+        description: description || undefined,
+        isPrivate: visibility === 'private',
+        org: owner === username ? undefined : owner,
+      },
+      token,
+    ),
+    logger.verbosity === 'quiet',
+  );
+
+  logger.info(`Repository created: ${result.fullName}${result.private ? ' \u{1F512}' : ''}`);
 
   return {
-    business: {
-      repo,
-      branch: effectiveBranch,
-      localDir: 'business',
-      source: 'github',
-    },
+    fullName: result.fullName,
+    defaultBranch: result.defaultBranch,
   };
 }
 

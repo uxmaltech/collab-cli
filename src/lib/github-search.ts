@@ -86,3 +86,76 @@ export async function searchGitHubRepos(
     clearTimeout(timer);
   }
 }
+
+/**
+ * Parses the `Link` header from a GitHub API response to extract the "next" page URL.
+ * Returns `null` if there is no next page.
+ */
+function parseNextLink(linkHeader: string | null): string | null {
+  if (!linkHeader) return null;
+
+  for (const part of linkHeader.split(',')) {
+    const match = part.match(/<([^>]+)>;\s*rel="next"/);
+    if (match) return match[1];
+  }
+
+  return null;
+}
+
+/**
+ * Lists branches for a GitHub repository.
+ * Paginates through all pages (per_page=100) and returns branch names
+ * sorted alphabetically, with the default branch first.
+ */
+export async function listGitHubBranches(
+  slug: string,
+  token: string,
+  defaultBranch?: string,
+): Promise<string[]> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), SEARCH_TIMEOUT_MS);
+
+  const headers = {
+    Authorization: `Bearer ${token}`,
+    Accept: 'application/vnd.github+json',
+    'X-GitHub-Api-Version': GITHUB_API_VERSION,
+  };
+
+  try {
+    const allNames: string[] = [];
+    let nextUrl: string | null = `https://api.github.com/repos/${slug}/branches?per_page=100`;
+
+    while (nextUrl) {
+      const response = await fetch(nextUrl, { headers, signal: controller.signal });
+
+      if (!response.ok) {
+        // On first page failure, fall back; on later pages, return what we have
+        if (allNames.length === 0) {
+          return defaultBranch ? [defaultBranch] : ['main'];
+        }
+        break;
+      }
+
+      const data = (await response.json()) as Array<{ name: string }>;
+      for (const b of data) {
+        allNames.push(b.name);
+      }
+
+      nextUrl = parseNextLink(response.headers.get('link'));
+    }
+
+    const names = allNames.sort();
+
+    // Move default branch to the front if present
+    if (defaultBranch && names.includes(defaultBranch)) {
+      return [defaultBranch, ...names.filter((n) => n !== defaultBranch)];
+    }
+
+    return names;
+  } catch {
+    // Graceful fallback — don't block init if branch listing fails
+    return defaultBranch ? [defaultBranch] : ['main'];
+  } finally {
+    clearTimeout(timer);
+  }
+}
