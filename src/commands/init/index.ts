@@ -7,7 +7,6 @@ import {
   defaultCollabConfig,
   resolveRepoConfigs,
 } from '../../lib/config';
-import { syncBusinessCanon } from '../../lib/canon-resolver';
 import { CliError } from '../../lib/errors';
 import { loadGitHubAuth } from '../../lib/github-auth';
 import { validateWorkspaceRepos } from '../../lib/github-api';
@@ -19,7 +18,7 @@ import { readCliVersion } from '../../lib/version';
 import type { InitOptions } from './types';
 import { runEcosystemChecks } from './mcp-helpers';
 import { resolveWizardSelection } from './wizard';
-import { resolveBusinessCanon } from './business-canon';
+import { resolveBusinessCanon, cloneGitHubRepo, ensureGitHubAuth } from './business-canon';
 import { resolveWorkspace } from './workspace';
 import { runInfraOnly } from './infra-only';
 import { runGitHubWorkflow } from './github-workflow';
@@ -138,18 +137,24 @@ Examples:
         if (canons) {
           effectiveConfig.canons = canons;
 
-          // Clone GitHub business canon now so workspace detection finds it
-          if (canons.business?.source === 'github' && !context.executor.dryRun) {
-            const token =
-              options.githubToken ?? loadGitHubAuth(effectiveConfig.collabDir)?.token;
-            const cloned = syncBusinessCanon(
-              effectiveConfig, (msg) => context.logger.info(msg), token,
+          // Non-interactive path: resolveBusinessCanon only returns config
+          // when --business-canon is passed via CLI. Clone it now so workspace
+          // detection finds the repo. The interactive path already clones inside
+          // resolveGitHubBusinessCanon.
+          if (
+            options.businessCanon
+            && canons.business?.source === 'github'
+            && !context.executor.dryRun
+          ) {
+            const token = options.githubToken
+              ?? (await ensureGitHubAuth(effectiveConfig.collabDir, context.logger));
+            await cloneGitHubRepo(
+              canons.business.repo,
+              canons.business.branch,
+              effectiveConfig.workspaceDir,
+              token,
+              context.logger,
             );
-            if (!cloned) {
-              context.logger.warn(
-                'Business canon clone failed; it will be retried during canon-sync stage.',
-              );
-            }
           }
         }
       }

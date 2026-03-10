@@ -44,13 +44,38 @@ export async function resolveWorkspace(
   const layout = detectWorkspaceLayout(workspaceDir);
 
   if (layout) {
-    // Indexed mode: reject mono-repo
+    // Indexed mode + mono-repo layout: distinguish true mono-repo (cwd IS a
+    // repo, repos=['.']) from "only 1 child repo" (e.g. business canon cloned).
     if (isIndexed && layout.type === 'mono-repo') {
-      throw new CliError(
-        'Indexed mode requires a multi-repo workspace (business-canon + at least 1 governed repo).\n' +
-          'Current directory is detected as mono-repo. ' +
-          'Run from a parent directory containing multiple git repositories.',
+      const isCwdRepo = layout.repos.length === 1 && layout.repos[0] === '.';
+
+      if (isCwdRepo) {
+        // True mono-repo — can't host a multi-repo workspace here.
+        throw new CliError(
+          'Indexed mode requires a multi-repo workspace (business-canon + at least 1 governed repo).\n' +
+            'Current directory is detected as mono-repo. ' +
+            'Run from a parent directory containing multiple git repositories.',
+        );
+      }
+
+      // One child repo (business canon) — need additional workspace repos.
+      if (options.yes) {
+        throw new CliError(
+          'Indexed mode requires a multi-repo workspace (business-canon + at least 1 governed repo).\n' +
+            'Only one git repository found in the workspace directory.\n' +
+            'Clone additional repos from GitHub and re-run, or pass --repos repo1,repo2.',
+        );
+      }
+
+      // Interactive: keep existing repo(s) and let user clone more
+      logger.info(
+        `Found ${layout.repos.join(', ')} in workspace. ` +
+          'Indexed mode requires additional governed repos.',
       );
+      const cloned = await searchAndCloneRepos(workspaceDir, collabDir, logger);
+      const allRepos = [...new Set([...layout.repos, ...cloned])].sort();
+      if (allRepos.length < 2) return null;
+      return { name, type: 'multi-repo', repos: allRepos };
     }
 
     if (options.yes) {
@@ -72,7 +97,7 @@ export async function resolveWorkspace(
       return { name, type: 'multi-repo', repos: selected };
     }
 
-    // mono-repo auto-detected (file-only only — indexed rejected above)
+    // mono-repo auto-detected (file-only only — indexed handled above)
     logger.info(`Mono-repo workspace detected: ${layout.repos.join(', ')}`);
     return { name, type: 'mono-repo', repos: layout.repos };
   }
