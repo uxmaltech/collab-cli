@@ -16,20 +16,35 @@ const ACCESS_CHECK_TIMEOUT_MS = 10_000;
  * Normalizes a git remote URL to a GitHub `owner/repo` slug.
  * Handles HTTPS (with or without embedded credentials), SSH (`git@`),
  * and `ssh://` URL formats.
+ * Validates the hostname exactly (rejects `notgithub.com`, `github.com.evil.tld`, etc.).
  * Returns `null` if the remote is not a `github.com` URL.
  */
 export function normalizeGitHubRemote(remoteUrl: string): string | null {
-  if (!/github\.com[:/]/i.test(remoteUrl)) {
-    return null;
-  }
+  const trimmed = remoteUrl.trim().replace(/\/+$/, '').replace(/\.git$/, '');
+  let slug: string;
 
-  const slug = remoteUrl
-    .trim()
-    .replace(/\/+$/, '')
-    .replace(/\.git$/, '')
-    .replace(/^https?:\/\/(?:[^@]+@)?github\.com\//i, '')
-    .replace(/^git@github\.com:/i, '')
-    .replace(/^ssh:\/\/git@github\.com\//i, '');
+  if (/^https?:\/\//i.test(trimmed)) {
+    // HTTPS URL — use URL constructor for exact hostname validation
+    let url: URL;
+    try {
+      url = new URL(trimmed);
+    } catch {
+      return null;
+    }
+    if (url.hostname.toLowerCase() !== 'github.com') {
+      return null;
+    }
+    slug = url.pathname.replace(/^\/+/, '');
+  } else {
+    // SSH forms: git@github.com:owner/repo or ssh://git@github.com/owner/repo
+    const sshMatch =
+      trimmed.match(/^git@github\.com:(.+)/i)
+      ?? trimmed.match(/^ssh:\/\/git@github\.com\/(.+)/i);
+    if (!sshMatch) {
+      return null;
+    }
+    slug = sshMatch[1];
+  }
 
   const parts = slug.split('/').filter(Boolean);
   if (parts.length < 2) {

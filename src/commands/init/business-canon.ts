@@ -1,4 +1,4 @@
-import { spawn, execFileSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import os from 'node:os';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -366,6 +366,9 @@ async function createNewBusinessCanonRepo(
 /**
  * Clones a GitHub repo into the workspace directory with a visible spinner.
  * Skips if the target directory already exists.
+ *
+ * Auth is passed via `git -c http.extraheader` so the token never appears
+ * in `remote.origin.url` inside `.git/config`.
  */
 export async function cloneGitHubRepo(
   slug: string,
@@ -382,22 +385,28 @@ export async function cloneGitHubRepo(
     return;
   }
 
-  const cloneUrl = `https://x-access-token:${token}@github.com/${slug}.git`;
+  // Clean URL — token is passed via http.extraheader, not embedded in the URL.
+  const cloneUrl = `https://github.com/${slug}.git`;
+  const basicAuth = Buffer.from(`x-access-token:${token}`).toString('base64');
+  const authHeader = `Authorization: basic ${basicAuth}`;
 
   await withSpinner(
     `Cloning ${slug}...`,
     () => new Promise<void>((resolve, reject) => {
       const child = spawn(
         'git',
-        ['clone', '--branch', branch, '--single-branch', '--progress', cloneUrl, repoName],
+        [
+          '-c', `http.https://github.com/.extraheader=${authHeader}`,
+          'clone', '--branch', branch, '--single-branch', '--progress',
+          cloneUrl, repoName,
+        ],
         { cwd: workspaceDir, stdio: ['ignore', 'pipe', 'pipe'] },
       );
       let stderr = '';
       child.stderr?.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
       child.on('close', (code) => {
         if (code !== 0) {
-          const sanitized = stderr.replace(/x-access-token:[^@]+@/g, 'x-access-token:***@');
-          reject(new Error(sanitized.trim() || `git clone exited with code ${code}`));
+          reject(new Error(stderr.trim() || `git clone exited with code ${code}`));
         } else {
           resolve();
         }
@@ -406,17 +415,6 @@ export async function cloneGitHubRepo(
     }),
     logger.verbosity === 'quiet',
   );
-
-  // Replace token-embedded remote with clean HTTPS URL so the token
-  // does not persist in .git/config.
-  const cleanUrl = `https://github.com/${slug}.git`;
-  try {
-    execFileSync('git', ['-C', targetDir, 'remote', 'set-url', 'origin', cleanUrl], {
-      stdio: 'ignore',
-    });
-  } catch {
-    // Non-fatal — clone succeeded, remote cleanup is best-effort
-  }
 }
 
 export async function ensureGitHubAuth(collabDir: string, logger: Logger): Promise<string> {

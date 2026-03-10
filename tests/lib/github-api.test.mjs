@@ -58,6 +58,14 @@ test('normalizeGitHubRemote parses HTTPS URL with user:pass credentials', () => 
   );
 });
 
+test('normalizeGitHubRemote rejects subdomain spoofing (notgithub.com)', () => {
+  assert.equal(normalizeGitHubRemote('https://notgithub.com/org/repo.git'), null);
+});
+
+test('normalizeGitHubRemote rejects domain suffix spoofing (github.com.evil.tld)', () => {
+  assert.equal(normalizeGitHubRemote('https://github.com.evil.tld/org/repo.git'), null);
+});
+
 test('normalizeGitHubRemote handles trailing slashes', () => {
   assert.equal(normalizeGitHubRemote('https://github.com/uxmaltech/collab-cli/'), 'uxmaltech/collab-cli');
 });

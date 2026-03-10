@@ -1,4 +1,3 @@
-import { spawn, execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -13,7 +12,7 @@ import type { Logger } from '../../lib/logger';
 import { promptChoice, promptMultiSelect, promptText } from '../../lib/prompt';
 import { withSpinner } from '../../lib/spinner';
 
-import { ensureGitHubAuth } from './business-canon';
+import { cloneGitHubRepo, ensureGitHubAuth } from './business-canon';
 import type { InitOptions, WorkspaceResolution } from './types';
 
 function parseRepos(value: string | undefined): string[] | null {
@@ -215,56 +214,21 @@ async function searchAndCloneRepos(
     return [];
   }
 
-  // Clone selected repos into workspace
+  // Clone selected repos using the shared helper
   logger.info(`Cloning ${selected.length} repo(s) into ${workspaceDir}...`);
   const cloned: string[] = [];
 
   for (const repo of selected) {
     const repoName = repo.fullName.split('/')[1];
-    const targetDir = path.join(workspaceDir, repoName);
 
-    if (fs.existsSync(targetDir)) {
+    if (fs.existsSync(path.join(workspaceDir, repoName))) {
       logger.info(`Directory "${repoName}" already exists, skipping clone.`);
       cloned.push(repoName);
       continue;
     }
 
-    const cloneUrl = `https://x-access-token:${token}@github.com/${repo.fullName}.git`;
-
     try {
-      await withSpinner(
-        `Cloning ${repo.fullName}...`,
-        () => new Promise<void>((resolve, reject) => {
-          const child = spawn('git', ['clone', cloneUrl, repoName], {
-            cwd: workspaceDir,
-            stdio: ['ignore', 'pipe', 'pipe'],
-          });
-          let stderr = '';
-          child.stderr?.on('data', (chunk: Buffer) => { stderr += chunk.toString(); });
-          child.on('close', (code) => {
-            if (code !== 0) {
-              const sanitized = stderr.replace(/x-access-token:[^@]+@/g, 'x-access-token:***@');
-              reject(new Error(sanitized.trim() || 'unknown error'));
-            } else {
-              resolve();
-            }
-          });
-          child.on('error', reject);
-        }),
-        logger.verbosity === 'quiet',
-      );
-
-      // Replace token-embedded remote with clean HTTPS URL so the token
-      // does not persist in .git/config.
-      const cleanUrl = `https://github.com/${repo.fullName}.git`;
-      try {
-        execFileSync('git', ['-C', targetDir, 'remote', 'set-url', 'origin', cleanUrl], {
-          stdio: 'ignore',
-        });
-      } catch {
-        // Non-fatal — clone succeeded, remote cleanup is best-effort
-      }
-
+      await cloneGitHubRepo(repo.fullName, repo.defaultBranch, workspaceDir, token, logger);
       cloned.push(repoName);
     } catch (error) {
       logger.warn(error instanceof Error ? error.message : String(error));
