@@ -5,7 +5,7 @@ import path from 'node:path';
 
 import type { CanonsConfig, CollabConfig } from '../../lib/config';
 import { CliError } from '../../lib/errors';
-import { searchGitHubRepos } from '../../lib/github-search';
+import { searchGitHubRepos, listGitHubBranches } from '../../lib/github-search';
 import { loadGitHubAuth, isGitHubAuthValid, runGitHubDeviceFlow } from '../../lib/github-auth';
 import type { CollabMode } from '../../lib/mode';
 import type { Logger } from '../../lib/logger';
@@ -198,8 +198,24 @@ async function resolveGitHubBusinessCanon(
       results.items.find((r) => r.fullName === selected)?.defaultBranch ?? 'main';
   }
 
-  const branch = await promptText('Branch:', defaultBranch);
-  const effectiveBranch = branch || defaultBranch;
+  // Fetch real branches so the user picks from existing ones
+  const branches = await withSpinner(
+    'Fetching branches...',
+    () => listGitHubBranches(repo, token, defaultBranch),
+    logger.verbosity === 'quiet',
+  );
+
+  let effectiveBranch: string;
+  if (branches.length === 1) {
+    effectiveBranch = branches[0];
+    logger.info(`Branch: ${effectiveBranch}`);
+  } else {
+    const branchChoices = branches.map((b) => ({
+      value: b,
+      label: b === defaultBranch ? `${b} (default)` : b,
+    }));
+    effectiveBranch = await promptChoice('Branch:', branchChoices, branches[0]);
+  }
 
   // Clone immediately so workspace detection finds the repo
   await cloneGitHubRepo(repo, effectiveBranch, config.workspaceDir, token, logger);

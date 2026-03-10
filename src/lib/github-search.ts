@@ -86,3 +86,48 @@ export async function searchGitHubRepos(
     clearTimeout(timer);
   }
 }
+
+/**
+ * Lists branches for a GitHub repository.
+ * Returns branch names sorted alphabetically, with the default branch first.
+ */
+export async function listGitHubBranches(
+  slug: string,
+  token: string,
+  defaultBranch?: string,
+): Promise<string[]> {
+  const url = `https://api.github.com/repos/${slug}/branches?per_page=100`;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), SEARCH_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': GITHUB_API_VERSION,
+      },
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      return defaultBranch ? [defaultBranch] : ['main'];
+    }
+
+    const data = (await response.json()) as Array<{ name: string }>;
+    const names = data.map((b) => b.name).sort();
+
+    // Move default branch to the front if present
+    if (defaultBranch && names.includes(defaultBranch)) {
+      return [defaultBranch, ...names.filter((n) => n !== defaultBranch)];
+    }
+
+    return names;
+  } catch {
+    // Graceful fallback — don't block init if branch listing fails
+    return defaultBranch ? [defaultBranch] : ['main'];
+  } finally {
+    clearTimeout(timer);
+  }
+}
