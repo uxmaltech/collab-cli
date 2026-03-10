@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
 import os from 'node:os';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -406,6 +406,17 @@ export async function cloneGitHubRepo(
     }),
     logger.verbosity === 'quiet',
   );
+
+  // Replace token-embedded remote with clean HTTPS URL so the token
+  // does not persist in .git/config.
+  const cleanUrl = `https://github.com/${slug}.git`;
+  try {
+    execFileSync('git', ['-C', targetDir, 'remote', 'set-url', 'origin', cleanUrl], {
+      stdio: 'ignore',
+    });
+  } catch {
+    // Non-fatal — clone succeeded, remote cleanup is best-effort
+  }
 }
 
 export async function ensureGitHubAuth(collabDir: string, logger: Logger): Promise<string> {
