@@ -7,6 +7,7 @@ import {
   defaultCollabConfig,
   resolveRepoConfigs,
 } from '../../lib/config';
+import { syncBusinessCanon } from '../../lib/canon-resolver';
 import { CliError } from '../../lib/errors';
 import { loadGitHubAuth } from '../../lib/github-auth';
 import { validateWorkspaceRepos } from '../../lib/github-api';
@@ -136,6 +137,19 @@ Examples:
         const canons = await resolveBusinessCanon(options, effectiveConfig, context.logger);
         if (canons) {
           effectiveConfig.canons = canons;
+
+          // Clone GitHub business canon now so workspace detection finds it
+          if (canons.business?.source === 'github' && !context.executor.dryRun) {
+            const auth = loadGitHubAuth(effectiveConfig.collabDir);
+            const cloned = syncBusinessCanon(
+              effectiveConfig, (msg) => context.logger.info(msg), auth?.token,
+            );
+            if (!cloned) {
+              context.logger.warn(
+                'Business canon clone failed; it will be retried during canon-sync stage.',
+              );
+            }
+          }
         }
       }
 
