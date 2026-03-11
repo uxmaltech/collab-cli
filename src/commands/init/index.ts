@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import path from 'node:path';
 
 import { Command } from 'commander';
 
@@ -199,9 +200,25 @@ Examples:
         ? effectiveConfig.canons.business.repo
         : undefined;
 
+      // Reuse cached workspace only if every repo dir still exists on disk.
+      const cachedWs = !options.force && !options.repos && context.config.workspace
+        ? context.config.workspace
+        : undefined;
+      const cachedReposValid = cachedWs
+        ? cachedWs.repos.every((r) =>
+            r === '.' || fs.existsSync(path.join(context.config.workspaceDir, r)),
+          )
+        : false;
+
+      if (cachedWs && !cachedReposValid) {
+        context.logger.warn(
+          'Some workspace repos from the previous config no longer exist on disk. Re-detecting workspace.',
+        );
+      }
+
       const ws =
-        !options.force && !options.repos && context.config.workspace
-          ? context.config.workspace
+        cachedWs && cachedReposValid
+          ? cachedWs
           : await resolveWorkspace(
               context.config.workspaceDir,
               effectiveConfig.collabDir,
