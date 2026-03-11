@@ -197,6 +197,7 @@ async function searchAndCloneRepos(
       value: r.fullName,
       label: `${r.fullName}${r.private ? ' \u{1F512}' : ''}${r.description ? ` \u2014 ${r.description}` : ''}`,
     }));
+    choices.push({ value: '__search_again__', label: '\u21BB Search again' });
 
     const picked = await promptMultiSelect(
       'Select repositories to clone:',
@@ -204,17 +205,13 @@ async function searchAndCloneRepos(
       [],
     );
 
-    if (picked.length === 0 && selected.length === 0) {
-      const retry = await promptChoice(
-        'No repositories selected. Search again?',
-        [
-          { value: 'yes', label: 'Yes, search again' },
-          { value: 'no', label: 'No, cancel' },
-        ],
-        'yes',
-      );
-      if (retry === 'no') return [];
+    // Handle "Search again" sentinel
+    if (picked.includes('__search_again__')) {
       continue;
+    }
+
+    if (picked.length === 0 && selected.length === 0) {
+      return [];
     }
 
     for (const fullName of picked) {
