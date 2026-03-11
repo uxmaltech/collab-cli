@@ -333,15 +333,16 @@ function buildDomainCanonPushStage(): OrchestrationStage {
       const commitMsg = `feat(domain): add ${result.domainName} from ${repoName}`;
       ctx.executor.run('git', ['-C', canonDir, 'commit', '-m', commitMsg]);
 
-      // Push — use token auth via http.extraHeader to avoid leaking secrets in logs
+      // Push — use token auth via http.extraheader to avoid leaking secrets in logs
       const auth = loadGitHubAuth(ctx.config.collabDir);
       if (auth?.token) {
         const canon = ctx.config.canons!.business!;
         const remoteUrl = `https://github.com/${canon.repo}.git`;
         const branch = canon.branch || 'main';
+        const basicAuth = Buffer.from(`x-access-token:${auth.token}`).toString('base64');
         ctx.executor.run('git', [
           '-C', canonDir,
-          '-c', `http.${remoteUrl}.extraHeader=Authorization: Bearer ${auth.token}`,
+          '-c', `http.https://github.com/.extraheader=Authorization: basic ${basicAuth}`,
           'push', remoteUrl, branch,
         ], { verboseOnly: true });
       } else {
