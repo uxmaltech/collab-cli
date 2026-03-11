@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import path from 'node:path';
 
 import { Command } from 'commander';
 
@@ -199,10 +200,30 @@ Examples:
         ? effectiveConfig.canons.business.repo
         : undefined;
 
-      const ws =
+      // Reuse cached workspace only when every repo dir contains a .git folder.
+      // Directories that exist but are not valid git repos (e.g. leftover empty
+      // dirs from a failed clone) must trigger re-detection.
+      const cachedWs =
         !options.force && !options.repos && context.config.workspace
           ? context.config.workspace
-          : await resolveWorkspace(
+          : undefined;
+      const cachedReposValid = cachedWs
+        ? cachedWs.repos.every((r: string) =>
+            r === '.' || fs.existsSync(
+              path.join(context.config.workspaceDir, r, '.git'),
+            ),
+          )
+        : false;
+
+      if (cachedWs && !cachedReposValid) {
+        context.logger.warn(
+          'Some workspace repos no longer exist on disk or are not valid git repos. Re-detecting workspace.',
+        );
+      }
+
+      const ws = cachedWs && cachedReposValid
+        ? cachedWs
+        : await resolveWorkspace(
               context.config.workspaceDir,
               effectiveConfig.collabDir,
               options,

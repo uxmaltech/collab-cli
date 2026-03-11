@@ -255,10 +255,17 @@ async function searchAndCloneRepos(
   for (const repo of selected) {
     const repoName = repo.fullName.split('/')[1];
 
-    if (fs.existsSync(path.join(workspaceDir, repoName))) {
-      logger.info(`Directory "${repoName}" already exists, skipping clone.`);
-      cloned.push(repoName);
-      continue;
+    const repoDir = path.join(workspaceDir, repoName);
+    if (fs.existsSync(repoDir)) {
+      if (!fs.existsSync(path.join(repoDir, '.git'))) {
+        // Directory exists but is not a valid git repo — remove so clone can proceed
+        logger.warn(`Directory "${repoName}" exists but is not a git repo. Removing and re-cloning.`);
+        fs.rmSync(repoDir, { recursive: true, force: true });
+      } else {
+        logger.info(`Directory "${repoName}" already exists, skipping clone.`);
+        cloned.push(repoName);
+        continue;
+      }
     }
 
     try {

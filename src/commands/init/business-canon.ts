@@ -381,8 +381,15 @@ export async function cloneGitHubRepo(
   const targetDir = path.join(workspaceDir, repoName);
 
   if (fs.existsSync(targetDir)) {
-    logger.info(`Directory "${repoName}" already exists, skipping clone.`);
-    return;
+    // Directory exists but is NOT a valid git repo (no .git folder).
+    // Remove the stale directory so the clone can proceed.
+    if (!fs.existsSync(path.join(targetDir, '.git'))) {
+      logger.warn(`Directory "${repoName}" exists but is not a git repo. Removing and re-cloning.`);
+      fs.rmSync(targetDir, { recursive: true, force: true });
+    } else {
+      logger.info(`Directory "${repoName}" already exists, skipping clone.`);
+      return;
+    }
   }
 
   // Clean URL — token is passed via http.extraheader, not embedded in the URL.
