@@ -239,18 +239,28 @@ export function syncBusinessCanon(
   const parentDir = path.dirname(canonsDir);
   const branch = canon.branch || 'main';
 
-  // Build repo URL — inject token for private repo access if available
-  let repoUrl: string;
+  // Clean URL — token is passed via http.extraheader, never embedded in the URL.
+  const repoUrl = `https://github.com/${canon.repo}.git`;
+
+  // Auth args: inject token via http.extraheader so it never persists in .git/config
+  const authArgs: string[] = [];
   if (token) {
-    repoUrl = `https://x-access-token:${token}@github.com/${canon.repo}.git`;
-  } else {
-    repoUrl = `https://github.com/${canon.repo}.git`;
+    const basicAuth = Buffer.from(`x-access-token:${token}`).toString('base64');
+    authArgs.push('-c', `http.https://github.com/.extraheader=Authorization: basic ${basicAuth}`);
   }
 
   try {
     if (fs.existsSync(path.join(canonsDir, '.git'))) {
       print(`Updating business canon in ${canonsDir}...`);
-      execFileSync('git', ['-C', canonsDir, 'fetch', 'origin', branch], {
+
+      // Ensure remote URL is clean (strip any previously embedded credentials)
+      try {
+        execFileSync('git', ['-C', canonsDir, 'remote', 'set-url', 'origin', repoUrl], {
+          stdio: ['ignore', 'pipe', 'pipe'],
+        });
+      } catch { /* non-fatal */ }
+
+      execFileSync('git', [...authArgs, '-C', canonsDir, 'fetch', 'origin', branch], {
         stdio: ['ignore', 'pipe', 'inherit'],
       });
       execFileSync('git', ['-C', canonsDir, 'checkout', branch], {
@@ -264,7 +274,7 @@ export function syncBusinessCanon(
       fs.mkdirSync(parentDir, { recursive: true });
       execFileSync(
         'git',
-        ['clone', '--branch', branch, '--single-branch', repoUrl, canonsDir],
+        [...authArgs, 'clone', '--branch', branch, '--single-branch', repoUrl, canonsDir],
         { stdio: ['ignore', 'inherit', 'inherit'] },
       );
     }
