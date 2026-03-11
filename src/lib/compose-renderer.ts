@@ -105,16 +105,26 @@ function scopeFromRepo(repo: string, fallback: string): string {
 }
 
 function computeEnvOverrides(config: CollabConfig): EnvMap {
-  const baseScope = 'uxmaltech';
+  const scopes = new Set<string>(['uxmaltech']);
+
+  // Business canon scope
   const businessRepo = config.canons?.business?.repo;
-  if (!businessRepo) {
-    return { MCP_TECHNICAL_SCOPES: baseScope };
+  if (businessRepo) {
+    scopes.add(scopeFromRepo(businessRepo, 'uxmaltech'));
   }
 
-  const businessScope = scopeFromRepo(businessRepo, baseScope);
+  // Workspace repo scopes — each governed repo gets its own technical scope
+  // so the MCP server can accept ingestion for repo-level architecture docs.
+  if (config.workspace?.repos) {
+    for (const repo of config.workspace.repos) {
+      if (repo && repo !== '.') {
+        scopes.add(repo);
+      }
+    }
+  }
+
   return {
-    MCP_TECHNICAL_SCOPES:
-      businessScope === baseScope ? baseScope : `${baseScope},${businessScope}`,
+    MCP_TECHNICAL_SCOPES: [...scopes].join(','),
   };
 }
 

@@ -130,13 +130,9 @@ export function buildInfraStages(
         'Run collab init --resume after MCP health endpoint responds.',
       ],
       run: async () => {
-        const env = loadRuntimeEnv(effectiveConfig);
-        const probe = await waitForMcpHealth(env, { ...health, retries: 1 });
-        if (probe.ok) {
-          logger.info('MCP service already running — skipping docker compose up.');
-          logServiceHealth(logger, 'mcp health', probe);
-          return;
-        }
+        // Always run `docker compose up -d` so the container picks up any .env
+        // changes (e.g. new MCP_TECHNICAL_SCOPES from workspace repos).
+        // Docker Compose recreates only when configuration actually changed.
         const selection = resolveMcpComposeFile(effectiveConfig, options.outputDir, undefined);
         await runMcpCompose(logger, executor, effectiveConfig, selection, 'up', { health });
       },
