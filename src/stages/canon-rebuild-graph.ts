@@ -1,7 +1,7 @@
 import {
   getMcpBaseUrl,
   resolveMcpApiKey,
-  resolveMcpHttpTimeoutMs,
+  resolveMcpHeavyTimeoutMs,
   triggerGraphSeed,
 } from '../lib/mcp-client';
 import { loadRuntimeEnv, REBUILD_HEALTH_OPTIONS, waitForMcpHealth } from '../lib/service-health';
@@ -35,7 +35,7 @@ export const canonRebuildGraphStage: OrchestrationStage = {
 
     const baseUrl = getMcpBaseUrl(ctx.config);
     const apiKey = resolveMcpApiKey(env);
-    const timeoutMs = resolveMcpHttpTimeoutMs(env);
+    const timeoutMs = resolveMcpHeavyTimeoutMs(env);
 
     ctx.logger.info('Triggering NebulaGraph re-seed via MCP...');
     const result = await triggerGraphSeed(baseUrl, apiKey, timeoutMs);

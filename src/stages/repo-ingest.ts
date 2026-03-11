@@ -18,7 +18,7 @@ import {
   ingestAst,
   ingestMarkdown,
   resolveMcpApiKey,
-  resolveMcpHttpTimeoutMs,
+  resolveMcpHeavyTimeoutMs,
 } from '../lib/mcp-client';
 import type { OrchestrationStage, StageContext } from '../lib/orchestrator';
 import { loadRuntimeEnv } from '../lib/service-health';
@@ -197,7 +197,7 @@ export async function runRepoIngest(ctx: StageContext): Promise<void> {
   const baseUrl = getMcpBaseUrl(ctx.config);
   const env = loadRuntimeEnv(ctx.config);
   const apiKey = resolveMcpApiKey(env);
-  const timeoutMs = resolveMcpHttpTimeoutMs(env);
+  const timeoutMs = resolveMcpHeavyTimeoutMs(env);
 
   // 5a. AST ingestion
   if (merged.nodes.length > 0 || merged.edges.length > 0) {

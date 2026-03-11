@@ -39,6 +39,8 @@ export interface SeedResult {
 }
 
 const DEFAULT_MCP_HTTP_TIMEOUT_MS = 30_000;
+/** Heavier operations (seed, ingest) get a longer default timeout. */
+const DEFAULT_MCP_HEAVY_TIMEOUT_MS = 120_000;
 
 function parseTimeoutMs(value: string | undefined, fallback: number): number {
   if (!value) {
@@ -78,6 +80,14 @@ export function resolveMcpHttpTimeoutMs(env: Record<string, string | undefined>)
   return parseTimeoutMs(env.MCP_HTTP_TIMEOUT_MS, DEFAULT_MCP_HTTP_TIMEOUT_MS);
 }
 
+/**
+ * Like `resolveMcpHttpTimeoutMs` but uses a longer fallback (120 s) for heavy
+ * operations such as graph seeding and document ingestion.
+ */
+export function resolveMcpHeavyTimeoutMs(env: Record<string, string | undefined>): number {
+  return parseTimeoutMs(env.MCP_HTTP_TIMEOUT_MS, DEFAULT_MCP_HEAVY_TIMEOUT_MS);
+}
+
 export function resolveMcpApiKey(env: Record<string, string | undefined>): string | undefined {
   const explicit = env.MCP_API_KEY?.trim();
   if (explicit) {
@@ -109,7 +119,7 @@ export async function ingestDocuments(
   baseUrl: string,
   payload: IngestPayload,
   apiKey?: string,
-  timeoutMs = DEFAULT_MCP_HTTP_TIMEOUT_MS,
+  timeoutMs = DEFAULT_MCP_HEAVY_TIMEOUT_MS,
 ): Promise<IngestResult> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -136,7 +146,7 @@ export async function ingestDocuments(
 export async function triggerGraphSeed(
   baseUrl: string,
   apiKey?: string,
-  timeoutMs = DEFAULT_MCP_HTTP_TIMEOUT_MS,
+  timeoutMs = DEFAULT_MCP_HEAVY_TIMEOUT_MS,
 ): Promise<SeedResult> {
   const headers: Record<string, string> = {};
 

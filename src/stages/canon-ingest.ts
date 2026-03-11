@@ -8,7 +8,7 @@ import {
   getMcpBaseUrl,
   ingestDocuments,
   resolveMcpApiKey,
-  resolveMcpHttpTimeoutMs,
+  resolveMcpHeavyTimeoutMs,
   type IngestDocument,
   type IngestPayload,
   type IngestResult,
@@ -216,7 +216,7 @@ export async function ingestCanonFiles(ctx: StageContext): Promise<void> {
   const baseUrl = getMcpBaseUrl(ctx.config);
   const env = loadRuntimeEnv(ctx.config);
   const apiKey = resolveMcpApiKey(env);
-  const timeoutMs = resolveMcpHttpTimeoutMs(env);
+  const timeoutMs = resolveMcpHeavyTimeoutMs(env);
 
   // --- Framework canon (uxmaltech) ---
   const uxmaltechFiles = collectMarkdownFiles(ctx.config.uxmaltechDir);

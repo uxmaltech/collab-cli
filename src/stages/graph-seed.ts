@@ -1,7 +1,7 @@
 import {
   getMcpBaseUrl,
   resolveMcpApiKey,
-  resolveMcpHttpTimeoutMs,
+  resolveMcpHeavyTimeoutMs,
   triggerGraphSeed,
 } from '../lib/mcp-client';
 import { loadRuntimeEnv } from '../lib/service-health';
@@ -25,7 +25,7 @@ export const graphSeedStage: OrchestrationStage = {
     const baseUrl = getMcpBaseUrl(ctx.config);
     const env = loadRuntimeEnv(ctx.config);
     const apiKey = resolveMcpApiKey(env);
-    const timeoutMs = resolveMcpHttpTimeoutMs(env);
+    const timeoutMs = resolveMcpHeavyTimeoutMs(env);
 
     const result = await triggerGraphSeed(baseUrl, apiKey, timeoutMs);
     ctx.logger.info(

@@ -22,7 +22,7 @@ import {
   getMcpBaseUrl,
   ingestDocuments,
   resolveMcpApiKey,
-  resolveMcpHttpTimeoutMs,
+  resolveMcpHeavyTimeoutMs,
   triggerGraphSeed,
   type IngestDocument,
 } from '../lib/mcp-client';
@@ -381,7 +381,7 @@ function buildDomainIngestStage(): OrchestrationStage {
       const baseUrl = getMcpBaseUrl(ctx.config);
       const env = loadRuntimeEnv(ctx.config);
       const apiKey = resolveMcpApiKey(env);
-      const timeoutMs = resolveMcpHttpTimeoutMs(env);
+      const timeoutMs = resolveMcpHeavyTimeoutMs(env);
 
       // Collect and ingest domain .md files
       const mdFiles = collectMarkdownFiles(domainDir);
