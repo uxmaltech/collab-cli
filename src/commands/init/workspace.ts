@@ -205,13 +205,9 @@ async function searchAndCloneRepos(
       [],
     );
 
-    // Handle "Search again" sentinel
-    if (picked.includes('__search_again__')) {
+    // Handle "Search again" sentinel or empty selection → re-search
+    if (picked.length === 0 || picked.includes('__search_again__')) {
       continue;
-    }
-
-    if (picked.length === 0 && selected.length === 0) {
-      return [];
     }
 
     for (const fullName of picked) {
