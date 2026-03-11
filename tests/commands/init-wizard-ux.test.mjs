@@ -36,12 +36,12 @@ test('wizard shows "Setup complete" outro on success', () => {
 });
 
 test('wizard does not show outro on failure', () => {
-  const workspace = makeTempWorkspace();
+  const workspace = makeMultiRepoWorkspace(['svc1', 'svc2']);
   const env = createFakeDockerEnv();
 
-  // Missing --business-canon in --yes mode → fails
+  // Missing --business-canon in indexed --yes mode → fails
   const result = runCli(
-    ['--cwd', workspace, '--dry-run', 'init', '--yes', '--mode', 'file-only'],
+    ['--cwd', workspace, '--dry-run', 'init', '--yes', '--repos', 'svc1,svc2', '--mode', 'indexed'],
     { cwd: workspace, env },
   );
 
@@ -307,7 +307,7 @@ test('indexed --yes with no repos and no workspace includes recovery hints', () 
   );
 });
 
-test('--yes without --business-canon in file-only mode includes recovery hint', () => {
+test('--yes without --business-canon in file-only mode defaults to skip', () => {
   const workspace = makeTempWorkspace();
   const env = createFakeDockerEnv();
 
@@ -316,10 +316,10 @@ test('--yes without --business-canon in file-only mode includes recovery hint', 
     { cwd: workspace, env },
   );
 
-  assert.notEqual(result.status, 0, 'should fail');
+  assert.equal(result.status, 0, result.stderr);
   assert.ok(
-    result.stderr.includes('--business-canon'),
-    'error should mention --business-canon flag',
+    result.stdout.includes('skipping business canon'),
+    'should log that business canon was skipped',
   );
 });
 

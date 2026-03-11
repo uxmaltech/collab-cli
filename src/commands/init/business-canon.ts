@@ -96,16 +96,16 @@ export async function resolveBusinessCanon(
     return parseBusinessCanonOption(options.businessCanon, config.mode);
   }
 
-  // --yes without --business-canon: mandatory error
+  // --yes without --business-canon
   if (options.yes) {
     if (isIndexed) {
       throw new CliError(
         '--business-canon owner/repo is required with --yes in indexed mode.',
       );
     }
-    throw new CliError(
-      '--business-canon is required with --yes. Use --business-canon owner/repo, --business-canon /local/path, or --business-canon none.',
-    );
+    // File-only: business canon is optional — default to skip
+    logger.info('No --business-canon specified; skipping business canon.');
+    return undefined;
   }
 
   // Interactive indexed: go straight to GitHub search (no local/skip options)

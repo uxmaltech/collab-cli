@@ -15,7 +15,7 @@ import { ensureWritableDirectory } from '../../lib/preconditions';
 import { getEnabledProviders, PROVIDER_DEFAULTS } from '../../lib/providers';
 import { readCliVersion } from '../../lib/version';
 
-import type { InitOptions } from './types';
+import type { InitOptions, WizardSelection } from './types';
 import { runEcosystemChecks } from './mcp-helpers';
 import { resolveWizardSelection } from './wizard';
 import { resolveBusinessCanon, cloneGitHubRepo, ensureGitHubAuth } from './business-canon';
@@ -114,19 +114,42 @@ Examples:
 
       // ── Step 1: Configuration wizard ────────────────────────
       let wizStep = 0;
-      context.logger.wizardStep(++wizStep, 'Configuration');
-
-      const selections = await resolveWizardSelection(
-        options, context.config, context.logger, context.executor.dryRun,
-      );
       const preserveExisting = configExistedBefore && !options.force;
+
+      let selections: WizardSelection;
+
+      if (preserveExisting && !options.yes) {
+        // Config already exists (interactive run without --force).
+        // Skip wizard prompts — the user didn't ask to reconfigure.
+        // Honour any explicit CLI flags; fall back to existing config values.
+        context.logger.info('Existing configuration found. Use --force to reconfigure.');
+        selections = {
+          mode: options.mode
+            ? (await import('../../lib/mode')).parseMode(options.mode)
+            : (context.config.mode ?? 'file-only'),
+          infraType: options.infraType
+            ? (await import('../../lib/infra-type')).parseInfraType(options.infraType)
+            : (context.config.infraType ?? 'local'),
+          mcpUrl: options.mcpUrl ?? context.config.mcpUrl,
+          composeMode: 'consolidated',
+        };
+      } else {
+        if (!preserveExisting) {
+          context.logger.wizardStep(++wizStep, 'Configuration');
+        }
+        selections = await resolveWizardSelection(
+          options, context.config, context.logger, context.executor.dryRun,
+        );
+      }
 
       const effectiveConfig = {
         ...defaultCollabConfig(context.config.workspaceDir),
         ...context.config,
-        mode: preserveExisting ? context.config.mode : selections.mode,
-        infraType: preserveExisting ? context.config.infraType : selections.infraType,
-        mcpUrl: preserveExisting ? context.config.mcpUrl : selections.mcpUrl,
+        // Honour existing config when preserving; selections drive the pipeline
+        // routing while effectiveConfig drives serialization/persistence.
+        mode: preserveExisting ? (context.config.mode ?? selections.mode) : selections.mode,
+        infraType: preserveExisting ? (context.config.infraType ?? selections.infraType) : selections.infraType,
+        mcpUrl: preserveExisting ? (context.config.mcpUrl ?? selections.mcpUrl) : selections.mcpUrl,
       };
 
       // ── Step 2: Business canon configuration ──────────────────
