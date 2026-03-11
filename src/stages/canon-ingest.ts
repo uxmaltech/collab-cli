@@ -17,7 +17,9 @@ import { loadRuntimeEnv } from '../lib/service-health';
 import { withSpinner } from '../lib/spinner';
 import type { OrchestrationStage, StageContext } from '../lib/orchestrator';
 
-const MAX_DOCS_PER_REQUEST = 100;
+const MAX_DOCS_PER_REQUEST = 50;
+/** Soft cap on the serialized JSON size per request (~512 KB). */
+const MAX_PAYLOAD_BYTES = 512 * 1024;
 
 interface RepoIdentity {
   organization: string;
@@ -58,11 +60,39 @@ function filesToDocuments(files: string[], baseDir: string): IngestDocument[] {
   }));
 }
 
-function chunkDocuments(documents: IngestDocument[], batchSize: number): IngestDocument[][] {
+/**
+ * Splits documents into batches respecting both count and payload-size limits.
+ * Each batch contains at most `maxDocs` documents AND at most `maxBytes` of
+ * combined content (approximated by summing `path.length + content.length`).
+ * A single document that exceeds the byte cap is placed alone in its own batch.
+ */
+function chunkDocuments(
+  documents: IngestDocument[],
+  maxDocs: number = MAX_DOCS_PER_REQUEST,
+  maxBytes: number = MAX_PAYLOAD_BYTES,
+): IngestDocument[][] {
   const chunks: IngestDocument[][] = [];
-  for (let index = 0; index < documents.length; index += batchSize) {
-    chunks.push(documents.slice(index, index + batchSize));
+  let current: IngestDocument[] = [];
+  let currentBytes = 0;
+
+  for (const doc of documents) {
+    const docBytes = doc.path.length + doc.content.length;
+
+    // If adding this doc would exceed either limit, flush the current batch.
+    if (current.length > 0 && (current.length >= maxDocs || currentBytes + docBytes > maxBytes)) {
+      chunks.push(current);
+      current = [];
+      currentBytes = 0;
+    }
+
+    current.push(doc);
+    currentBytes += docBytes;
   }
+
+  if (current.length > 0) {
+    chunks.push(current);
+  }
+
   return chunks;
 }
 
@@ -145,8 +175,9 @@ async function ingestInBatches(
   payload: IngestPayload,
   apiKey: string | undefined,
   timeoutMs: number,
+  logger?: import('../lib/logger').Logger,
 ): Promise<IngestResult> {
-  const chunks = chunkDocuments(payload.documents, MAX_DOCS_PER_REQUEST);
+  const chunks = chunkDocuments(payload.documents);
   let totalFiles = 0;
   let totalPoints = 0;
   let totalNodes = 0;
@@ -154,7 +185,10 @@ async function ingestInBatches(
   let collection = '';
   let space = '';
 
-  for (const documents of chunks) {
+  for (const [idx, documents] of chunks.entries()) {
+    if (chunks.length > 1) {
+      logger?.debug(`Ingesting batch ${idx + 1}/${chunks.length} (${documents.length} docs)...`);
+    }
     const result = await ingestDocuments(baseUrl, { ...payload, documents }, apiKey, timeoutMs);
     totalFiles += result.vector.ingested_files;
     totalPoints += result.vector.total_points;
@@ -198,7 +232,7 @@ export async function ingestCanonFiles(ctx: StageContext): Promise<void> {
 
     const result = await withSpinner(
       `Ingesting ${uxmaltechFiles.length} framework architecture file(s)...`,
-      () => ingestInBatches(baseUrl, payload, apiKey, timeoutMs),
+      () => ingestInBatches(baseUrl, payload, apiKey, timeoutMs, ctx.logger),
       ctx.logger.verbosity === 'quiet',
     );
     ctx.logger.info(
@@ -234,7 +268,7 @@ export async function ingestCanonFiles(ctx: StageContext): Promise<void> {
 
       const result = await withSpinner(
         `Ingesting ${businessFiles.length} business architecture file(s)...`,
-        () => ingestInBatches(baseUrl, payload, apiKey, timeoutMs),
+        () => ingestInBatches(baseUrl, payload, apiKey, timeoutMs, ctx.logger),
         ctx.logger.verbosity === 'quiet',
       );
       ctx.logger.info(
@@ -266,7 +300,7 @@ export async function ingestCanonFiles(ctx: StageContext): Promise<void> {
 
       const result = await withSpinner(
         `Ingesting ${repoFiles.length} file(s) from ${repoIdentity.repo}...`,
-        () => ingestInBatches(baseUrl, payload, apiKey, timeoutMs),
+        () => ingestInBatches(baseUrl, payload, apiKey, timeoutMs, ctx.logger),
         ctx.logger.verbosity === 'quiet',
       );
       ctx.logger.info(
@@ -293,7 +327,7 @@ export async function ingestCanonFiles(ctx: StageContext): Promise<void> {
 
     const result = await withSpinner(
       `Ingesting ${repoFiles.length} local repo architecture file(s)...`,
-      () => ingestInBatches(baseUrl, payload, apiKey, timeoutMs),
+      () => ingestInBatches(baseUrl, payload, apiKey, timeoutMs, ctx.logger),
       ctx.logger.verbosity === 'quiet',
     );
     ctx.logger.info(
