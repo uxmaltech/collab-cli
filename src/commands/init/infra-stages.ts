@@ -130,11 +130,12 @@ export function buildInfraStages(
         'Run collab init --resume after MCP health endpoint responds.',
       ],
       run: async () => {
-        // Always run `docker compose up -d` so the container picks up any .env
-        // changes (e.g. new MCP_TECHNICAL_SCOPES from workspace repos).
-        // Docker Compose recreates only when configuration actually changed.
+        // Always run `docker compose up -d --no-deps` so the MCP container
+        // picks up any .env changes (e.g. new MCP_TECHNICAL_SCOPES from
+        // workspace repos) without restarting infra dependencies (qdrant,
+        // nebula) that are already running on their bound ports.
         const selection = resolveMcpComposeFile(effectiveConfig, options.outputDir, undefined);
-        await runMcpCompose(logger, executor, effectiveConfig, selection, 'up', { health });
+        await runMcpCompose(logger, executor, effectiveConfig, selection, 'up', { health, noDeps: true });
       },
     },
     buildMcpClientConfigStage(effectiveConfig, executor, logger, options),

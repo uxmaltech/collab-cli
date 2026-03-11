@@ -63,6 +63,9 @@ export async function runMcpCompose(
   }
 
   const args = action === 'up' ? ['up', '-d'] : action === 'stop' ? ['stop'] : ['ps'];
+  if (action === 'up' && options.noDeps) {
+    args.push('--no-deps');
+  }
   const serviceScope = selection.source === 'consolidated' ? ['mcp'] : [];
 
   const spinner = action === 'up'
