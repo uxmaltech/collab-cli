@@ -170,6 +170,13 @@ Examples:
       };
 
       // ── Workspace detection ───────────────────────────────────
+      // Derive business canon directory name so it can be excluded
+      // from the governed repos list (it is managed separately).
+      const businessCanonSlug = effectiveConfig.canons?.business?.source === 'github'
+        ? effectiveConfig.canons.business.repo
+        : undefined;
+      const businessCanonDir = businessCanonSlug?.split('/').pop();
+
       const ws =
         !options.force && !options.repos && context.config.workspace
           ? context.config.workspace
@@ -179,6 +186,7 @@ Examples:
               options,
               context.logger,
               selections.mode,
+              businessCanonDir,
             );
 
       if (ws) {
