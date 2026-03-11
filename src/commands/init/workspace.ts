@@ -26,11 +26,14 @@ export async function resolveWorkspace(
   options: InitOptions,
   logger: Logger,
   mode: CollabMode = 'file-only',
-  /** Directory name to exclude from governed repos (e.g. business canon). */
-  excludeRepo?: string,
+  /** GitHub slug (owner/repo) of the business canon to exclude. */
+  excludeCanonSlug?: string,
 ): Promise<WorkspaceResolution | null> {
   const name = deriveWorkspaceName(workspaceDir);
   const isIndexed = mode === 'indexed';
+
+  // Derive directory name from slug for local filtering
+  const excludeRepo = excludeCanonSlug?.split('/').pop();
 
   /** Filter out the business canon from a repo list. */
   const filterRepos = (repos: string[]): string[] =>
@@ -80,7 +83,7 @@ export async function resolveWorkspace(
             'Indexed mode requires additional governed repos.',
         );
       }
-      const cloned = await searchAndCloneRepos(workspaceDir, collabDir, logger);
+      const cloned = await searchAndCloneRepos(workspaceDir, collabDir, logger, excludeCanonSlug);
       if (cloned.length === 0) return null;
       return { name, type: 'multi-repo', repos: cloned };
     }
@@ -99,7 +102,7 @@ export async function resolveWorkspace(
         `Found ${governedRepos.join(', ')} in workspace. ` +
           'Indexed mode requires additional governed repos.',
       );
-      const cloned = await searchAndCloneRepos(workspaceDir, collabDir, logger);
+      const cloned = await searchAndCloneRepos(workspaceDir, collabDir, logger, excludeCanonSlug);
       const allRepos = [...new Set([...governedRepos, ...cloned])].sort();
       if (allRepos.length < 2) return null;
       return { name, type: 'multi-repo', repos: allRepos };
@@ -144,7 +147,7 @@ export async function resolveWorkspace(
 
     // Interactive: let user search and clone repos from GitHub
     logger.info('No repositories found in the workspace. Search GitHub to select and clone repos.');
-    const cloned = await searchAndCloneRepos(workspaceDir, collabDir, logger);
+    const cloned = await searchAndCloneRepos(workspaceDir, collabDir, logger, excludeCanonSlug);
     if (cloned.length === 0) return null;
     return { name, type: 'multi-repo', repos: cloned };
   }
@@ -167,6 +170,8 @@ async function searchAndCloneRepos(
   workspaceDir: string,
   collabDir: string,
   logger: Logger,
+  /** GitHub slug to exclude from search results (e.g. business canon). */
+  excludeSlug?: string,
 ): Promise<string[]> {
   const token = await ensureGitHubAuth(collabDir, logger);
 
@@ -186,14 +191,19 @@ async function searchAndCloneRepos(
       logger.verbosity === 'quiet',
     );
 
-    if (results.items.length === 0) {
+    // Filter out the business canon repo from search results
+    const filtered = excludeSlug
+      ? results.items.filter((r) => r.fullName !== excludeSlug)
+      : results.items;
+
+    if (filtered.length === 0) {
       logger.info(`No repositories found for "${query}". Try a different search.`);
       continue;
     }
 
-    logger.info(`Found ${results.items.length} results (of ${results.totalCount} total):`);
+    logger.info(`Found ${filtered.length} results (of ${results.totalCount} total):`);
 
-    const choices = results.items.map((r) => ({
+    const choices = filtered.map((r) => ({
       value: r.fullName,
       label: `${r.fullName}${r.private ? ' \u{1F512}' : ''}${r.description ? ` \u2014 ${r.description}` : ''}`,
     }));
