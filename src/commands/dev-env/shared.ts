@@ -382,15 +382,33 @@ function ensureArchitectureInfrastructureCompose(
   architectureMcpSource: string,
 ): string {
   const infraFile = path.join(architectureMcpSource, 'infra', 'docker-compose.yml');
+  const infraTemplateFile = path.join(
+    architectureMcpSource,
+    'infra',
+    'docker-compose.template.yml',
+  );
+  const templateContent = renderArchitectureInfrastructureCompose();
+
+  if (!fs.existsSync(infraTemplateFile)) {
+    logger.info(`Writing collab-architecture-mcp infrastructure template: ${infraTemplateFile}`);
+    executor.writeFile(
+      infraTemplateFile,
+      templateContent,
+      { description: 'write dev-env infrastructure template file' },
+    );
+  }
+
   if (fs.existsSync(infraFile)) {
     logger.info(`Using collab-architecture-mcp infrastructure compose: ${infraFile}`);
     return infraFile;
   }
 
-  logger.info(`Generating collab-architecture-mcp infrastructure compose in ${architectureMcpSource}`);
+  logger.info(`Copying collab-architecture-mcp infrastructure template into ${infraFile}`);
   executor.writeFile(
     infraFile,
-    renderArchitectureInfrastructureCompose(),
+    fs.existsSync(infraTemplateFile)
+      ? fs.readFileSync(infraTemplateFile, 'utf8')
+      : templateContent,
     { description: 'write dev-env infrastructure compose file' },
   );
   return infraFile;

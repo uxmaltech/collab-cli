@@ -139,7 +139,9 @@ test('collab dev-env start uses an explicit local collab-architecture-mcp source
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /Using explicit collab-architecture-mcp source/);
   assert.match(result.stdout, new RegExp(sourceDir.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
-  assert.match(result.stdout, /Generating collab-architecture-mcp infrastructure compose/);
+  assert.match(result.stdout, /Writing collab-architecture-mcp infrastructure template/);
+  assert.match(result.stdout, /write dev-env infrastructure template file/);
+  assert.match(result.stdout, /Copying collab-architecture-mcp infrastructure template into/);
   assert.match(result.stdout, /write dev-env infrastructure compose file/);
   assert.match(result.stdout, /write dev-env MCP Dockerfile/);
   assert.match(result.stdout, /write dev-env MCP compose file/);
@@ -201,7 +203,8 @@ test('collab dev-env start resolves a single born agent workspace and generates 
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /Using born agent workspace for dev-env/);
   assert.match(result.stdout, new RegExp(agentRoot.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
-  assert.match(result.stdout, /Generating collab-architecture-mcp infrastructure compose/);
+  assert.match(result.stdout, /Writing collab-architecture-mcp infrastructure template/);
+  assert.match(result.stdout, /Copying collab-architecture-mcp infrastructure template into/);
   assert.match(result.stdout, new RegExp(path.join(sourceDir, 'infra', 'docker-compose.yml').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.match(result.stdout, /Development environment started/);
 });
