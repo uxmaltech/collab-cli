@@ -1,0 +1,288 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import test from 'node:test';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+const {
+  generateAgentBootstrap,
+  summarizeAgentBootstrap,
+} = require('../../dist/lib/agent-bootstrap/generate.js');
+const {
+  loadExistingAgentBootstrapInput,
+} = require('../../dist/lib/agent-bootstrap/existing-state.js');
+
+test('generateAgentBootstrap returns deterministic file paths and valid JSON outputs', () => {
+  const workspace = '/tmp/collab-bootstrap-example';
+  const result = generateAgentBootstrap({
+    cwd: workspace,
+    agentName: 'Collab Runtime Architect',
+    operatorId: 'operator.telegram.130149339',
+    telegramEnabled: true,
+    telegramBotToken: 'telegram-token',
+  });
+
+  assert.equal(result.options.agentSlug, 'collab-runtime-architect');
+  assert.equal(result.options.cognitiveMcpUrl, 'http://127.0.0.1:8787/mcp');
+  assert.equal(result.options.selfRepository, 'local/collab-runtime-architect');
+  assert.deepEqual(result.options.assignedRepositories, []);
+  assert.equal(result.files.length, 15);
+  assert.deepEqual(
+    result.files.map((file) => file.relativePath),
+    [
+      '.collab/config.json',
+      '.env.example',
+      '.env',
+      '.gitignore',
+      'package.json',
+      'Dockerfile',
+      'index.js',
+      path.join('fixtures', 'collab-runtime-architect', 'agent-birth.json'),
+      path.join('fixtures', 'collab-runtime-architect', 'visible-prompts.json'),
+      path.join('docs', 'collab-runtime-architect-birth.md'),
+      path.join('skills', 'collab-runtime-architect-bootstrap', 'SKILL.md'),
+      path.join('skills', 'collab-runtime-architect-bootstrap', 'skill.json'),
+      path.join('infra', 'docker-compose.yml'),
+      path.join('infra', 'docker-compose.infra.yml'),
+      path.join('infra', 'docker-compose.mcp.yml'),
+    ],
+  );
+
+  const configFile = result.files.find((file) => file.relativePath === '.collab/config.json');
+  const packageJsonFile = result.files.find((file) => file.relativePath === 'package.json');
+  const entrypointFile = result.files.find((file) => file.relativePath === 'index.js');
+  const birthFile = result.files.find((file) => file.relativePath.endsWith('agent-birth.json'));
+  const promptsFile = result.files.find((file) => file.relativePath.endsWith('visible-prompts.json'));
+
+  assert.ok(configFile);
+  assert.ok(packageJsonFile);
+  assert.ok(entrypointFile);
+  assert.ok(birthFile);
+  assert.ok(promptsFile);
+  assert.doesNotThrow(() => JSON.parse(configFile.content));
+  assert.doesNotThrow(() => JSON.parse(packageJsonFile.content));
+  assert.doesNotThrow(() => JSON.parse(birthFile.content));
+  assert.doesNotThrow(() => JSON.parse(promptsFile.content));
+  assert.match(entrypointFile.content, /runDevelopmentHost/);
+  assert.match(entrypointFile.content, /collab-agent-runtime/);
+  assert.match(entrypointFile.content, /TELEGRAM_WEBHOOK_PUBLIC_BASE_URL/);
+  const packageJsonPayload = JSON.parse(packageJsonFile.content);
+  assert.equal(
+    packageJsonPayload.dependencies['collab-agent-runtime'],
+    'git+https://github.com/uxmaltech/collab-agent-runtime.git#codex/fase-0-start-agent-runtime',
+  );
+});
+
+test('summarizeAgentBootstrap returns a stable machine-readable manifest', () => {
+  const summary = summarizeAgentBootstrap(
+    generateAgentBootstrap({
+      cwd: '/tmp/collab-bootstrap-summary',
+      agentName: 'Collab Runtime Architect',
+      operatorId: 'operator.telegram.130149339',
+      telegramEnabled: true,
+      telegramBotToken: 'telegram-token',
+    }),
+  );
+
+  assert.equal(summary.agent.slug, 'collab-runtime-architect');
+  assert.equal(summary.agent.id, 'agent.collab-runtime-architect');
+  assert.equal(summary.agent.cognitiveMcpUrl, 'http://127.0.0.1:8787/mcp');
+  assert.equal(summary.agent.selfRepository, 'local/collab-runtime-architect');
+  assert.deepEqual(summary.agent.assignedRepositories, []);
+  assert.equal(summary.files.length, 15);
+  assert.deepEqual(summary.files[0], { path: '.collab/config.json' });
+});
+
+test('generateAgentBootstrap honors explicit role, purpose, and soul mission in the birth profile', () => {
+  const result = generateAgentBootstrap({
+    cwd: '/tmp/collab-bootstrap-persona',
+    agentName: 'AnyStream IoT Agent',
+    operatorId: 'operator.telegram.130149339',
+    selfRepository: 'anystream/iot-development-agent',
+    assignedRepositories: 'anystream/balena-ws-player',
+    telegramEnabled: true,
+    telegramBotToken: 'telegram-token',
+    birthProfile: {
+      personaRole: 'Senior IoT Software Engineer',
+      purpose: 'Build and evolve IoT delivery systems backed by GitHub and Collab contracts.',
+      soulMission: 'Keep IoT delivery explicit, durable, and operationally visible.',
+    },
+  });
+
+  assert.equal(result.options.birthProfile.personaRole, 'Senior IoT Software Engineer');
+  assert.equal(
+    result.options.birthProfile.purpose,
+    'Build and evolve IoT delivery systems backed by GitHub and Collab contracts.',
+  );
+  assert.equal(
+    result.options.birthProfile.soulMission,
+    'Keep IoT delivery explicit, durable, and operationally visible.',
+  );
+  assert.match(result.options.birthProfile.systemPrompt, /Senior IoT Software Engineer/);
+  assert.match(
+    result.options.birthProfile.systemPrompt,
+    /Build and evolve IoT delivery systems backed by GitHub and Collab contracts\./,
+  );
+  assert.match(
+    result.options.birthProfile.systemPrompt,
+    /Keep IoT delivery explicit, durable, and operationally visible\./,
+  );
+
+  const birthFile = result.files.find((file) => file.relativePath.endsWith('agent-birth.json'));
+  assert.ok(birthFile);
+  const birthPayload = JSON.parse(birthFile.content);
+  assert.equal(birthPayload.persona.role, 'Senior IoT Software Engineer');
+  assert.equal(
+    birthPayload.purpose,
+    'Build and evolve IoT delivery systems backed by GitHub and Collab contracts.',
+  );
+  assert.equal(
+    birthPayload.soul.mission,
+    'Keep IoT delivery explicit, durable, and operationally visible.',
+  );
+});
+
+test('generateAgentBootstrap allows Telegram operator DM fallback when operator id is operator.telegram.<user-id>', () => {
+  const result = generateAgentBootstrap({
+    cwd: '/tmp/collab-bootstrap-telegram-operator',
+    agentName: 'Operator Routed Agent',
+    operatorId: 'operator.telegram.130149339,operator.telegram.222222222,operator.github.enrique',
+    telegramEnabled: true,
+    telegramBotToken: 'telegram-token',
+  });
+
+  assert.equal(result.options.operatorId, 'operator.telegram.130149339');
+  assert.deepEqual(result.options.operatorIds, [
+    'operator.telegram.130149339',
+    'operator.telegram.222222222',
+    'operator.github.enrique',
+  ]);
+  assert.equal(result.options.telegramEnabled, true);
+  assert.equal(result.options.telegramDefaultChatId, '');
+  assert.equal(result.options.telegramThreadId, '');
+
+  const configFile = result.files.find((file) => file.relativePath === '.collab/config.json');
+  const envExampleFile = result.files.find((file) => file.relativePath === '.env.example');
+  const entrypointFile = result.files.find((file) => file.relativePath === 'index.js');
+
+  assert.ok(configFile);
+  assert.ok(envExampleFile);
+  assert.ok(entrypointFile);
+
+  const configPayload = JSON.parse(configFile.content);
+  assert.equal(configPayload.agent.notifications.telegram.operationalOutput.mode, 'originating-operator');
+  assert.equal(configPayload.agent.notifications.telegram.operationalOutput.primaryOperatorProfileId, 'operator.telegram.130149339');
+  assert.deepEqual(configPayload.agent.notifications.telegram.operationalOutput.operatorProfileIds, [
+    'operator.telegram.130149339',
+    'operator.telegram.222222222',
+    'operator.github.enrique',
+  ]);
+  assert.deepEqual(configPayload.agent.notifications.telegram.operationalOutput.operatorTelegramUserIds, [
+    '130149339',
+    '222222222',
+  ]);
+  assert.equal(configPayload.agent.notifications.telegram.teamSummary.mode, 'disabled');
+  assert.equal(configPayload.agent.notifications.telegram.commandIngress.allowDirectMessagesFromOperator, true);
+
+  assert.deepEqual(configPayload.agent.profiles.operator.ids, [
+    'operator.telegram.130149339',
+    'operator.telegram.222222222',
+    'operator.github.enrique',
+  ]);
+  assert.match(envExampleFile.content, /Operational output goes to the originating operator by DM/);
+  assert.match(entrypointFile.content, /runDevelopmentHost/);
+  assert.match(entrypointFile.content, /TELEGRAM_WEBHOOK_PUBLIC_BASE_URL/);
+});
+
+test('generateAgentBootstrap normalizes a raw Telegram user id into an operator.telegram profile id', () => {
+  const result = generateAgentBootstrap({
+    cwd: '/tmp/collab-bootstrap-raw-telegram-operator',
+    agentName: 'Raw Telegram Operator Agent',
+    operatorId: '130149339',
+    telegramEnabled: true,
+    telegramBotToken: 'telegram-token',
+  });
+
+  assert.equal(result.options.operatorId, 'operator.telegram.130149339');
+  assert.deepEqual(result.options.operatorIds, ['operator.telegram.130149339']);
+
+  const configFile = result.files.find((file) => file.relativePath === '.collab/config.json');
+  assert.ok(configFile);
+  const configPayload = JSON.parse(configFile.content);
+  assert.equal(configPayload.agent.profiles.operator.id, 'operator.telegram.130149339');
+});
+
+test('generateAgentBootstrap repopulates managed env values when an existing .env only contains blanks', () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'collab-bootstrap-env-blank-'));
+  fs.writeFileSync(
+    path.join(workspace, '.env'),
+    [
+      'TELEGRAM_BOT_TOKEN=',
+      'TELEGRAM_DEFAULT_CHAT_ID=',
+      'TELEGRAM_THREAD_ID=',
+      'COGNITIVE_MCP_API_KEY=',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+
+  const result = generateAgentBootstrap({
+    cwd: workspace,
+    output: workspace,
+    agentName: 'Env Hydrated Agent',
+    operatorId: 'operator.telegram.130149339',
+    telegramEnabled: true,
+    telegramBotToken: 'telegram-token',
+    telegramDefaultChatId: '-1003895414389',
+    telegramThreadId: '2',
+    cognitiveMcpApiKey: 'mcp-key',
+  });
+
+  const envFile = result.files.find((file) => file.relativePath === '.env');
+  assert.ok(envFile);
+  assert.match(envFile.content, /^TELEGRAM_BOT_TOKEN=telegram-token$/m);
+  assert.match(envFile.content, /^TELEGRAM_DEFAULT_CHAT_ID=-1003895414389$/m);
+  assert.match(envFile.content, /^TELEGRAM_THREAD_ID=2$/m);
+  assert.match(envFile.content, /^COGNITIVE_MCP_API_KEY=mcp-key$/m);
+});
+
+test('loadExistingAgentBootstrapInput keeps Telegram enabled even when the current .env is blank', () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'collab-bootstrap-existing-telegram-'));
+  fs.mkdirSync(path.join(workspace, '.collab'), { recursive: true });
+  fs.writeFileSync(
+    path.join(workspace, '.collab', 'config.json'),
+    JSON.stringify({
+      envFile: '.env',
+      agent: {
+        notifications: {
+          telegram: {
+            enabled: true,
+            botTokenEnvVar: 'TELEGRAM_BOT_TOKEN',
+            defaultChatIdEnvVar: 'TELEGRAM_DEFAULT_CHAT_ID',
+            threadIdEnvVar: 'TELEGRAM_THREAD_ID',
+          },
+        },
+      },
+    }, null, 2),
+    'utf8',
+  );
+  fs.writeFileSync(
+    path.join(workspace, '.env'),
+    [
+      'TELEGRAM_BOT_TOKEN=',
+      'TELEGRAM_DEFAULT_CHAT_ID=',
+      'TELEGRAM_THREAD_ID=',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+
+  const input = loadExistingAgentBootstrapInput(workspace);
+
+  assert.equal(input.telegramEnabled, true);
+  assert.equal(input.telegramBotToken, '');
+  assert.equal(input.telegramDefaultChatId, '');
+  assert.equal(input.telegramThreadId, '');
+});

@@ -12,7 +12,7 @@ test('repo-analysis skips when no providers are enabled (dry-run)', () => {
   // Remove any AI provider keys
   delete env.OPENAI_API_KEY;
   delete env.ANTHROPIC_API_KEY;
-  delete env.GOOGLE_AI_API_KEY;
+  delete env.GEMINI_API_KEY;
 
   // Restrict PATH to prevent CLI auto-detection (keep fake docker + node only)
   const fakeBinDir = env.PATH.split(':').find((d) => d.includes('collab-cli-bin'));

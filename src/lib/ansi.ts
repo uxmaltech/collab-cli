@@ -60,5 +60,9 @@ export const CHECK = '\u2713';
 export const CROSS = '\u2717';
 export const BULLET = '\u2022';
 
-/** ANSI: clear entire screen and move cursor to top-left. */
+/**
+ * ANSI: clear entire screen and move cursor to top-left.
+ * @deprecated Retained for backward compatibility but no longer used by the logger.
+ *             Clearing the screen erases valuable wizard context for the user.
+ */
 export const CLEAR_SCREEN = '\x1b[2J\x1b[H';

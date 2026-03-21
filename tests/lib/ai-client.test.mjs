@@ -33,7 +33,7 @@ test('createAiClient returns null when no credentials available', () => {
   const saved = { ...process.env };
   delete process.env.OPENAI_API_KEY;
   delete process.env.ANTHROPIC_API_KEY;
-  delete process.env.GOOGLE_AI_API_KEY;
+  delete process.env.GEMINI_API_KEY;
 
   try {
     const client = createAiClient('codex', baseConfig, mockLogger);
@@ -80,7 +80,7 @@ test('createFirstAvailableClient returns null when none available', () => {
   const saved = { ...process.env };
   delete process.env.OPENAI_API_KEY;
   delete process.env.ANTHROPIC_API_KEY;
-  delete process.env.GOOGLE_AI_API_KEY;
+  delete process.env.GEMINI_API_KEY;
 
   try {
     const client = createFirstAvailableClient(['codex', 'claude', 'gemini'], baseConfig, mockLogger);
@@ -180,7 +180,7 @@ test('createFirstAvailableClient works with CLI-configured provider', () => {
   const saved = { ...process.env };
   delete process.env.OPENAI_API_KEY;
   delete process.env.ANTHROPIC_API_KEY;
-  delete process.env.GOOGLE_AI_API_KEY;
+  delete process.env.GEMINI_API_KEY;
 
   try {
     const configWithCli = {

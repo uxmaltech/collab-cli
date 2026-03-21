@@ -36,6 +36,25 @@ function parsePort(value: string | undefined, fallback: number): number {
   return parsed;
 }
 
+function resolveMcpHealthUrl(env: EnvMap): string {
+  const configuredUrl = env.COGNITIVE_MCP_URL?.trim();
+  if (configuredUrl) {
+    try {
+      const parsed = new URL(configuredUrl);
+      parsed.pathname = '/health';
+      parsed.search = '';
+      parsed.hash = '';
+      return parsed.toString();
+    } catch {
+      // Fall through to the legacy host/port path below.
+    }
+  }
+
+  const host = env.MCP_HOST || '127.0.0.1';
+  const port = parsePort(env.MCP_PORT, 7337);
+  return `http://${host}:${port}/health`;
+}
+
 export function loadRuntimeEnv(config: CollabConfig): EnvMap {
   const existing = readEnvFile(config.envFile);
   return mergeEnvWithDefaults(existing, COMPOSE_ENV_DEFAULTS);
@@ -69,9 +88,7 @@ export async function waitForMcpHealth(
   env: EnvMap,
   options: ServiceHealthOptions,
 ): Promise<ServiceHealthSummary> {
-  const host = env.MCP_HOST || '127.0.0.1';
-  const port = parsePort(env.MCP_PORT, 7337);
-  const mcp = await checkHttpHealth('mcp', `http://${host}:${port}/health`, options);
+  const mcp = await checkHttpHealth('mcp', resolveMcpHealthUrl(env), options);
 
   return {
     ok: mcp.ok,

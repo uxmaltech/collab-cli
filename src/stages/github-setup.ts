@@ -63,7 +63,7 @@ export const githubSetupStage: OrchestrationStage = {
       }
 
       // Branch model + protection + merge strategy
-      await configureRepo(identity.slug, token, ctx.logger);
+      await configureRepo(identity.slug, token, ctx.logger, ctx.config.github);
 
       // guard-main-pr.yml
       const guardPath = path.join(rc.repoDir, '.github', 'workflows', 'guard-main-pr.yml');
@@ -107,7 +107,7 @@ export const githubSetupStage: OrchestrationStage = {
     // Configure business-canon repo (same branch model, but no canon-sync-trigger)
     if (canonSlug) {
       ctx.logger.info(`Configuring business-canon repo: ${canonSlug}...`);
-      await configureRepo(canonSlug, token, ctx.logger);
+      await configureRepo(canonSlug, token, ctx.logger, ctx.config.github);
 
       // guard-main-pr.yml for the canon repo (write to local clone if available)
       const canonLocalDir = ctx.config.canons?.business?.localDir;

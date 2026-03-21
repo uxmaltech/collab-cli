@@ -8,15 +8,18 @@ import {
   getMcpBaseUrl,
   ingestDocuments,
   resolveMcpApiKey,
-  resolveMcpHttpTimeoutMs,
+  resolveMcpHeavyTimeoutMs,
   type IngestDocument,
   type IngestPayload,
   type IngestResult,
 } from '../lib/mcp-client';
 import { loadRuntimeEnv } from '../lib/service-health';
+import { withSpinner } from '../lib/spinner';
 import type { OrchestrationStage, StageContext } from '../lib/orchestrator';
 
-const MAX_DOCS_PER_REQUEST = 100;
+const MAX_DOCS_PER_REQUEST = 50;
+/** Soft cap on the serialized JSON size per request (~512 KB). */
+const MAX_PAYLOAD_BYTES = 512 * 1024;
 
 interface RepoIdentity {
   organization: string;
@@ -57,11 +60,39 @@ function filesToDocuments(files: string[], baseDir: string): IngestDocument[] {
   }));
 }
 
-function chunkDocuments(documents: IngestDocument[], batchSize: number): IngestDocument[][] {
+/**
+ * Splits documents into batches respecting both count and payload-size limits.
+ * Each batch contains at most `maxDocs` documents AND at most `maxBytes` of
+ * combined content (approximated by summing `path.length + content.length`).
+ * A single document that exceeds the byte cap is placed alone in its own batch.
+ */
+function chunkDocuments(
+  documents: IngestDocument[],
+  maxDocs: number = MAX_DOCS_PER_REQUEST,
+  maxBytes: number = MAX_PAYLOAD_BYTES,
+): IngestDocument[][] {
   const chunks: IngestDocument[][] = [];
-  for (let index = 0; index < documents.length; index += batchSize) {
-    chunks.push(documents.slice(index, index + batchSize));
+  let current: IngestDocument[] = [];
+  let currentBytes = 0;
+
+  for (const doc of documents) {
+    const docBytes = doc.path.length + doc.content.length;
+
+    // If adding this doc would exceed either limit, flush the current batch.
+    if (current.length > 0 && (current.length >= maxDocs || currentBytes + docBytes > maxBytes)) {
+      chunks.push(current);
+      current = [];
+      currentBytes = 0;
+    }
+
+    current.push(doc);
+    currentBytes += docBytes;
   }
+
+  if (current.length > 0) {
+    chunks.push(current);
+  }
+
   return chunks;
 }
 
@@ -144,8 +175,9 @@ async function ingestInBatches(
   payload: IngestPayload,
   apiKey: string | undefined,
   timeoutMs: number,
+  logger?: import('../lib/logger').Logger,
 ): Promise<IngestResult> {
-  const chunks = chunkDocuments(payload.documents, MAX_DOCS_PER_REQUEST);
+  const chunks = chunkDocuments(payload.documents);
   let totalFiles = 0;
   let totalPoints = 0;
   let totalNodes = 0;
@@ -153,7 +185,10 @@ async function ingestInBatches(
   let collection = '';
   let space = '';
 
-  for (const documents of chunks) {
+  for (const [idx, documents] of chunks.entries()) {
+    if (chunks.length > 1) {
+      logger?.debug(`Ingesting batch ${idx + 1}/${chunks.length} (${documents.length} docs)...`);
+    }
     const result = await ingestDocuments(baseUrl, { ...payload, documents }, apiKey, timeoutMs);
     totalFiles += result.vector.ingested_files;
     totalPoints += result.vector.total_points;
@@ -181,14 +216,12 @@ export async function ingestCanonFiles(ctx: StageContext): Promise<void> {
   const baseUrl = getMcpBaseUrl(ctx.config);
   const env = loadRuntimeEnv(ctx.config);
   const apiKey = resolveMcpApiKey(env);
-  const timeoutMs = resolveMcpHttpTimeoutMs(env);
+  const timeoutMs = resolveMcpHeavyTimeoutMs(env);
 
   // --- Framework canon (uxmaltech) ---
   const uxmaltechFiles = collectMarkdownFiles(ctx.config.uxmaltechDir);
 
   if (uxmaltechFiles.length > 0) {
-    ctx.logger.info(`Ingesting ${uxmaltechFiles.length} framework architecture file(s) via HTTP.`);
-
     const payload: IngestPayload = {
       context: 'technical',
       scope: 'uxmaltech',
@@ -197,7 +230,11 @@ export async function ingestCanonFiles(ctx: StageContext): Promise<void> {
       documents: filesToDocuments(uxmaltechFiles, ctx.config.uxmaltechDir),
     };
 
-    const result = await ingestInBatches(baseUrl, payload, apiKey, timeoutMs);
+    const result = await withSpinner(
+      `Ingesting ${uxmaltechFiles.length} framework architecture file(s)...`,
+      () => ingestInBatches(baseUrl, payload, apiKey, timeoutMs, ctx.logger),
+      ctx.logger.verbosity === 'quiet',
+    );
     ctx.logger.info(
       `Framework canon ingested: ${result.vector.ingested_files} files, ` +
         `${result.vector.total_points} vectors, ${result.graph.nodes_created} graph nodes.`,
@@ -221,8 +258,6 @@ export async function ingestCanonFiles(ctx: StageContext): Promise<void> {
         ? normalizedBusinessRepo
         : `${businessOrg}/${normalizedBusinessRepo}`;
 
-      ctx.logger.info(`Ingesting ${businessFiles.length} business architecture file(s) via HTTP.`);
-
       const payload: IngestPayload = {
         context: 'technical',
         scope: businessScope,
@@ -231,7 +266,11 @@ export async function ingestCanonFiles(ctx: StageContext): Promise<void> {
         documents: filesToDocuments(businessFiles, businessDir),
       };
 
-      const result = await ingestInBatches(baseUrl, payload, apiKey, timeoutMs);
+      const result = await withSpinner(
+        `Ingesting ${businessFiles.length} business architecture file(s)...`,
+        () => ingestInBatches(baseUrl, payload, apiKey, timeoutMs, ctx.logger),
+        ctx.logger.verbosity === 'quiet',
+      );
       ctx.logger.info(
         `Business canon ingested: ${result.vector.ingested_files} files, ` +
           `${result.vector.total_points} vectors, ${result.graph.nodes_created} graph nodes.`,
@@ -250,9 +289,6 @@ export async function ingestCanonFiles(ctx: StageContext): Promise<void> {
       }
 
       const repoIdentity = resolveRepoIdentity(rc.repoDir, rc.name);
-      ctx.logger.info(
-        `Ingesting ${repoFiles.length} file(s) from repo ${repoIdentity.repo} via HTTP.`,
-      );
 
       const payload: IngestPayload = {
         context: 'technical',
@@ -262,7 +298,11 @@ export async function ingestCanonFiles(ctx: StageContext): Promise<void> {
         documents: filesToDocuments(repoFiles, rc.architectureRepoDir),
       };
 
-      const result = await ingestInBatches(baseUrl, payload, apiKey, timeoutMs);
+      const result = await withSpinner(
+        `Ingesting ${repoFiles.length} file(s) from ${repoIdentity.repo}...`,
+        () => ingestInBatches(baseUrl, payload, apiKey, timeoutMs, ctx.logger),
+        ctx.logger.verbosity === 'quiet',
+      );
       ctx.logger.info(
         `Repo ${repoIdentity.repo} ingested: ${result.vector.ingested_files} files, ` +
           `${result.vector.total_points} vectors.`,
@@ -276,9 +316,6 @@ export async function ingestCanonFiles(ctx: StageContext): Promise<void> {
   if (repoFiles.length > 0) {
     const fallbackScope = path.basename(ctx.config.workspaceDir);
     const repoIdentity = resolveRepoIdentity(ctx.config.workspaceDir, fallbackScope);
-    ctx.logger.info(
-      `Ingesting ${repoFiles.length} file(s) from local repo architecture via HTTP.`,
-    );
 
     const payload: IngestPayload = {
       context: 'technical',
@@ -288,7 +325,11 @@ export async function ingestCanonFiles(ctx: StageContext): Promise<void> {
       documents: filesToDocuments(repoFiles, ctx.config.repoDir),
     };
 
-    const result = await ingestInBatches(baseUrl, payload, apiKey, timeoutMs);
+    const result = await withSpinner(
+      `Ingesting ${repoFiles.length} local repo architecture file(s)...`,
+      () => ingestInBatches(baseUrl, payload, apiKey, timeoutMs, ctx.logger),
+      ctx.logger.verbosity === 'quiet',
+    );
     ctx.logger.info(
       `Repo architecture ingested: ${result.vector.ingested_files} files, ` +
         `${result.vector.total_points} vectors.`,

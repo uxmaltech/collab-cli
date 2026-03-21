@@ -20,7 +20,7 @@
 ## Canon Management
 - Canon sync from GitHub repositories (`collab update-canons`).
 - Canon scaffold generation for new repos (templates for governance, knowledge, domains, evolution).
-- Domain generation via `collab init --repo=<package>` — analyzes code and generates domain files.
+- Domain generation via `collab init repos <package...>` — analyzes code and generates domain files (multi-repo support).
 
 ## Compose Generation Domain
 - Template rendering for consolidated and split compose topologies.
@@ -43,17 +43,14 @@
 - Ecosystem manifest-driven version checks across CLI, canon schema, and MCP.
 - Compatibility warnings surfaced in wizard summary and doctor.
 
-## GitHub Setup (indexed mode)
+## GitHub Setup (`collab init github-workflow`)
+- Standalone subcommand: `collab init github-workflow` runs auth + github-setup + ci-setup as a pipeline.
 - GitHub API repo configuration: branch model (main/development), protection rules, merge strategy.
 - CI workflow generation: guard-main-pr (blocks non-development PRs to main), canon-sync-trigger (creates issues on merge to main).
+- Architecture CI: architecture-pr.yml (both modes), architecture-merge.yml (indexed only).
+- Delta AST CI: ast-delta-pr.yml (indexed only) — extracts AST diffs on PRs, ingests into MCP, posts architecture impact comment on PRs. CLI: `collab ci ast-delta --base <sha>`.
 - Secret management: CANON_SYNC_PAT via `gh secret set` (stdin).
-- Orchestration stage with `--skip-github-setup` flag.
-
-## Work Finalization (`collab end`)
-- Context detection: branch name → issue number parsing (e.g., `feature/42-add-login` → #42).
-- PR creation with governance references and GOV-R-001 phase checklist (indexed mode).
-- Canon sync PR generation: detects architecture changes and creates PR in business-canon repo.
-- Options: `--dry-run`, `--skip-canon-sync`, `--title`, `--base`.
+- Skip flags: `--skip-github-setup` (skip branch model/protection), `--skip-ci` (skip CI workflows), `--skip-ast-delta` (skip AST delta workflow).
 
 ## Testing and Validation
 - Template-level snapshot/parameter tests for compose assets.

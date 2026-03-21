@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import path from 'node:path';
 
 import { createFirstAvailableClient, type AiMessage } from '../lib/ai-client';
@@ -6,6 +7,30 @@ import { getRepoBaseDir, type OrchestrationStage } from '../lib/orchestrator';
 import { getEnabledProviders, type ProviderKey } from '../lib/providers';
 import { buildUserMessage, extractJson, generateAiHelpers, writeAnalysisResults, type AnalysisResult } from '../lib/repo-analysis-helpers';
 import { scanRepository } from '../lib/repo-scanner';
+
+/**
+ * Checks whether a previous AI analysis already produced output files in the
+ * repo's architecture knowledge directory.  Returns `true` when at least one
+ * `.md` file exists under `knowledge/`.
+ */
+function hasExistingAnalysis(repoDir: string): boolean {
+  const knowledgeDir = path.join(repoDir, 'knowledge');
+  if (!fs.existsSync(knowledgeDir)) return false;
+
+  // Quick recursive check for any .md file
+  const walk = (dir: string): boolean => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (entry.isDirectory()) {
+        if (walk(path.join(dir, entry.name))) return true;
+      } else if (entry.isFile() && entry.name.endsWith('.md')) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  return walk(knowledgeDir);
+}
 
 /**
  * Checks if copilot is the only enabled provider.
@@ -24,6 +49,12 @@ export const repoAnalysisStage: OrchestrationStage = {
   run: async (ctx) => {
     if (ctx.options?.skipAnalysis) {
       ctx.logger.info('Skipping repository analysis by user choice.');
+      return;
+    }
+
+    // Skip re-analysis when existing results are present (no --force).
+    if (!ctx.options?.force && hasExistingAnalysis(ctx.config.repoDir)) {
+      ctx.logger.info('Repository analysis already exists. Use --force to regenerate.');
       return;
     }
 

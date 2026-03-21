@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { getRepoBaseDir, type OrchestrationStage } from '../lib/orchestrator';
-import { architecturePrTemplate, architectureMergeTemplate } from '../templates/ci';
+import { architecturePrTemplate, architectureMergeTemplate, astDeltaPrTemplate } from '../templates/ci';
 
 export const ciSetupStage: OrchestrationStage = {
   id: 'ci-setup',
@@ -44,6 +44,21 @@ export const ciSetupStage: OrchestrationStage = {
         ctx.executor.ensureDirectory(workflowDir);
         ctx.executor.writeFile(mergeFile, architectureMergeTemplate, {
           description: 'write architecture merge ingestion workflow',
+        });
+        created++;
+      }
+    }
+
+    // AST delta PR workflow — indexed mode only, skippable independently
+    if (ctx.config.mode === 'indexed' && !ctx.options?.skipAstDelta) {
+      const astDeltaFile = path.join(workflowDir, 'ast-delta-pr.yml');
+      if (!ctx.executor.dryRun && fs.existsSync(astDeltaFile)) {
+        ctx.logger.debug('AST delta workflow already exists, skipping: ast-delta-pr.yml');
+        skipped++;
+      } else {
+        ctx.executor.ensureDirectory(workflowDir);
+        ctx.executor.writeFile(astDeltaFile, astDeltaPrTemplate, {
+          description: 'write AST delta PR extraction workflow',
         });
         created++;
       }

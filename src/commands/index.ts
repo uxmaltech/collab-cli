@@ -1,9 +1,11 @@
 import type { Command } from 'commander';
 
+import { registerAgentCommand } from './agent';
 import { registerCanonCommand } from './canon';
+import { registerCiCommand } from './ci';
 import { registerComposeCommand } from './compose';
+import { registerDevEnvCommand } from './dev-env';
 import { registerDoctorCommand } from './doctor';
-import { registerEndCommand } from './end';
 import { registerInfraCommand } from './infra';
 import { registerInitCommand } from './init';
 import { registerMcpCommand } from './mcp';
@@ -14,10 +16,12 @@ import { registerUpdateCanonsCommand } from './update-canons';
 import { registerUpgradeCommand } from './upgrade';
 
 export function registerCommands(program: Command): void {
+  registerAgentCommand(program);
   registerInitCommand(program);
-  registerEndCommand(program);
   registerCanonCommand(program);
+  registerCiCommand(program);
   registerComposeCommand(program);
+  registerDevEnvCommand(program);
   registerInfraCommand(program);
   registerMcpCommand(program);
   registerUpCommand(program);

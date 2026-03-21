@@ -46,7 +46,7 @@ export const PROVIDER_DEFAULTS: Record<ProviderKey, ProviderDefaults> = {
   gemini: {
     label: 'Gemini (Google)',
     description: 'Google AI models via gemini CLI or API key',
-    envVar: 'GOOGLE_AI_API_KEY',
+    envVar: 'GEMINI_API_KEY',
     models: ['gemini-2.5-pro', 'gemini-2.5-flash'],
   },
   copilot: {

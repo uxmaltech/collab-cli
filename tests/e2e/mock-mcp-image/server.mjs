@@ -133,7 +133,7 @@ const server = http.createServer(async (req, res) => {
         mcpSuccess(requestId, {
           tools: [
             {
-              name: 'context.scopes.list.v2',
+              name: 'architecture.scopes.list',
               description: 'Mock scope listing tool for collab-cli E2E workflow',
               inputSchema: {
                 type: 'object',
@@ -149,7 +149,7 @@ const server = http.createServer(async (req, res) => {
 
     if (method === 'tools/call') {
       const toolName = payload?.params?.name;
-      if (toolName !== 'context.scopes.list.v2') {
+      if (toolName !== 'architecture.scopes.list') {
         sendJson(res, 404, {
           jsonrpc: '2.0',
           id: requestId,

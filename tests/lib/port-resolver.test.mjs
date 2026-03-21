@@ -5,16 +5,28 @@ import test from 'node:test';
 const { resolveAvailablePorts } = await import('../../dist/lib/port-resolver.js');
 
 /**
- * Binds an ephemeral port (OS-assigned) and returns the server + port.
- * This avoids hardcoding port numbers that may be in use.
+ * Reserves a free port in a safe range so arithmetic offsets stay within
+ * the valid TCP port space during tests.
  */
+let nextCandidatePort = 42000;
+
 async function reserveFreePort() {
-  const server = net.createServer();
-  await new Promise((resolve) => {
-    server.listen(0, '127.0.0.1', resolve);
-  });
-  const port = server.address().port;
-  return { server, port };
+  for (let port = nextCandidatePort; port <= 65000; port++) {
+    const server = net.createServer();
+    try {
+      await new Promise((resolve, reject) => {
+        server.once('error', reject);
+        server.listen(port, '127.0.0.1', resolve);
+      });
+
+      nextCandidatePort = port + 1;
+      return { server, port };
+    } catch {
+      server.close();
+    }
+  }
+
+  throw new Error('Could not reserve a free port in the safe test range.');
 }
 
 test('resolveAvailablePorts returns defaults when ports are free', async () => {

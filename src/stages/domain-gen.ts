@@ -22,7 +22,7 @@ import {
   getMcpBaseUrl,
   ingestDocuments,
   resolveMcpApiKey,
-  resolveMcpHttpTimeoutMs,
+  resolveMcpHeavyTimeoutMs,
   triggerGraphSeed,
   type IngestDocument,
 } from '../lib/mcp-client';
@@ -30,6 +30,7 @@ import type { OrchestrationStage } from '../lib/orchestrator';
 import { getEnabledProviders, type ProviderKey } from '../lib/providers';
 import { scanRepository } from '../lib/repo-scanner';
 import { loadRuntimeEnv } from '../lib/service-health';
+import { withSpinner } from '../lib/spinner';
 
 // ────────────────────────────────────────────────────────────────
 // Helper: collect markdown files recursively
@@ -67,7 +68,7 @@ function buildDomainAnalysisStage(): OrchestrationStage {
     title: 'Analyze repository and generate domain definition',
     recovery: [
       'Ensure an AI provider is configured (OPENAI_API_KEY, claude CLI, etc.).',
-      'Run collab init --repo <package> --resume to retry analysis.',
+      'Run collab init repos <package> --resume to retry analysis.',
     ],
     run: async (ctx) => {
       const repoPath = ctx.options?._repoPath as string;
@@ -126,16 +127,16 @@ function buildDomainAnalysisStage(): OrchestrationStage {
       }
 
       // 4. Call AI
-      ctx.logger.info('Generating domain definition via AI...');
       const messages: AiMessage[] = [
         { role: 'system', content: prompt.system },
         { role: 'user', content: prompt.user },
       ];
 
-      const rawResponse = await client.complete(messages, {
-        maxTokens: 8192,
-        temperature: 0.2,
-      });
+      const rawResponse = await withSpinner(
+        'Generating domain definition via AI...',
+        () => client.complete(messages, { maxTokens: 8192, temperature: 0.2 }),
+        ctx.logger.verbosity === 'quiet',
+      );
 
       // 5. Parse response
       const result = parseDomainGenerationResponse(rawResponse);
@@ -167,7 +168,7 @@ function buildDomainFileWriteLocalStage(): OrchestrationStage {
     title: 'Write domain files to local repo',
     recovery: [
       'Verify write permissions for the target repo directory.',
-      'Run collab init --repo <package> --resume to retry.',
+      'Run collab init repos <package> --resume to retry.',
     ],
     run: (ctx) => {
       const repoPath = ctx.options?._repoPath as string;
@@ -202,7 +203,7 @@ function buildDomainCanonSyncStage(): OrchestrationStage {
     title: 'Sync business canon repository',
     recovery: [
       'Ensure GitHub access is configured.',
-      'Run collab init --repo <package> --resume to retry.',
+      'Run collab init repos <package> --resume to retry.',
     ],
     run: (ctx) => {
       if (!isBusinessCanonConfigured(ctx.config)) {
@@ -233,7 +234,7 @@ function buildDomainFileWriteCanonStage(): OrchestrationStage {
     title: 'Write domain files to business canon',
     recovery: [
       'Verify write permissions for the business canon directory.',
-      'Run collab init --repo <package> --resume to retry.',
+      'Run collab init repos <package> --resume to retry.',
     ],
     run: (ctx) => {
       const result = ctx.options?._domainResult as DomainGenerationResult | undefined;
@@ -264,7 +265,7 @@ function buildDomainGraphUpdateStage(): OrchestrationStage {
     title: 'Update graph seed with domain vertices',
     recovery: [
       'Verify write permissions for the business canon graph/seed directory.',
-      'Run collab init --repo <package> --resume to retry.',
+      'Run collab init repos <package> --resume to retry.',
     ],
     run: (ctx) => {
       const result = ctx.options?._domainResult as DomainGenerationResult | undefined;
@@ -303,7 +304,7 @@ function buildDomainCanonPushStage(): OrchestrationStage {
     title: 'Commit and push domain to business canon',
     recovery: [
       'Ensure GitHub access is configured with push permissions.',
-      'Run collab init --repo <package> --resume to retry.',
+      'Run collab init repos <package> --resume to retry.',
     ],
     run: (ctx) => {
       const result = ctx.options?._domainResult as DomainGenerationResult | undefined;
@@ -332,15 +333,16 @@ function buildDomainCanonPushStage(): OrchestrationStage {
       const commitMsg = `feat(domain): add ${result.domainName} from ${repoName}`;
       ctx.executor.run('git', ['-C', canonDir, 'commit', '-m', commitMsg]);
 
-      // Push — use token auth via http.extraHeader to avoid leaking secrets in logs
+      // Push — use token auth via http.extraheader to avoid leaking secrets in logs
       const auth = loadGitHubAuth(ctx.config.collabDir);
       if (auth?.token) {
         const canon = ctx.config.canons!.business!;
         const remoteUrl = `https://github.com/${canon.repo}.git`;
         const branch = canon.branch || 'main';
+        const basicAuth = Buffer.from(`x-access-token:${auth.token}`).toString('base64');
         ctx.executor.run('git', [
           '-C', canonDir,
-          '-c', `http.${remoteUrl}.extraHeader=Authorization: Bearer ${auth.token}`,
+          '-c', `http.https://github.com/.extraheader=Authorization: basic ${basicAuth}`,
           'push', remoteUrl, branch,
         ], { verboseOnly: true });
       } else {
@@ -359,7 +361,7 @@ function buildDomainIngestStage(): OrchestrationStage {
     title: 'Ingest domain files into MCP',
     recovery: [
       'Ensure MCP service is running and accessible.',
-      'Run collab init --repo <package> --resume to retry ingestion.',
+      'Run collab init repos <package> --resume to retry ingestion.',
     ],
     run: async (ctx) => {
       const result = ctx.options?._domainResult as DomainGenerationResult | undefined;
@@ -379,7 +381,7 @@ function buildDomainIngestStage(): OrchestrationStage {
       const baseUrl = getMcpBaseUrl(ctx.config);
       const env = loadRuntimeEnv(ctx.config);
       const apiKey = resolveMcpApiKey(env);
-      const timeoutMs = resolveMcpHttpTimeoutMs(env);
+      const timeoutMs = resolveMcpHeavyTimeoutMs(env);
 
       // Collect and ingest domain .md files
       const mdFiles = collectMarkdownFiles(domainDir);

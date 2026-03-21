@@ -1,4 +1,5 @@
 import type { CollabConfig } from './config';
+import type { IngestAstPayload, IngestMarkdownPayload } from './ingest/types';
 import { loadRuntimeEnv } from './service-health';
 
 export interface IngestDocument {
@@ -38,6 +39,8 @@ export interface SeedResult {
 }
 
 const DEFAULT_MCP_HTTP_TIMEOUT_MS = 30_000;
+/** Heavier operations (seed, ingest) get a longer default timeout. */
+const DEFAULT_MCP_HEAVY_TIMEOUT_MS = 120_000;
 
 function parseTimeoutMs(value: string | undefined, fallback: number): number {
   if (!value) {
@@ -77,6 +80,14 @@ export function resolveMcpHttpTimeoutMs(env: Record<string, string | undefined>)
   return parseTimeoutMs(env.MCP_HTTP_TIMEOUT_MS, DEFAULT_MCP_HTTP_TIMEOUT_MS);
 }
 
+/**
+ * Like `resolveMcpHttpTimeoutMs` but uses a longer fallback (120 s) for heavy
+ * operations such as graph seeding and document ingestion.
+ */
+export function resolveMcpHeavyTimeoutMs(env: Record<string, string | undefined>): number {
+  return parseTimeoutMs(env.MCP_HTTP_TIMEOUT_MS, DEFAULT_MCP_HEAVY_TIMEOUT_MS);
+}
+
 export function resolveMcpApiKey(env: Record<string, string | undefined>): string | undefined {
   const explicit = env.MCP_API_KEY?.trim();
   if (explicit) {
@@ -108,7 +119,7 @@ export async function ingestDocuments(
   baseUrl: string,
   payload: IngestPayload,
   apiKey?: string,
-  timeoutMs = DEFAULT_MCP_HTTP_TIMEOUT_MS,
+  timeoutMs = DEFAULT_MCP_HEAVY_TIMEOUT_MS,
 ): Promise<IngestResult> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -135,7 +146,7 @@ export async function ingestDocuments(
 export async function triggerGraphSeed(
   baseUrl: string,
   apiKey?: string,
-  timeoutMs = DEFAULT_MCP_HTTP_TIMEOUT_MS,
+  timeoutMs = DEFAULT_MCP_HEAVY_TIMEOUT_MS,
 ): Promise<SeedResult> {
   const headers: Record<string, string> = {};
 
@@ -154,4 +165,72 @@ export async function triggerGraphSeed(
   }
 
   return (await response.json()) as SeedResult;
+}
+
+export interface IngestAstResult {
+  nodes_created: number;
+  edges_created: number;
+  space: string;
+}
+
+export async function ingestAst(
+  baseUrl: string,
+  payload: IngestAstPayload,
+  apiKey?: string,
+  timeoutMs = DEFAULT_MCP_HTTP_TIMEOUT_MS,
+): Promise<IngestAstResult> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+
+  if (apiKey) {
+    headers.Authorization = `Bearer ${apiKey}`;
+  }
+
+  const response = await fetchWithTimeout(`${baseUrl}/api/v1/ingest/ast`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(payload),
+  }, timeoutMs, 'MCP AST ingest request');
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`MCP AST ingest failed (${response.status}): ${body}`);
+  }
+
+  return (await response.json()) as IngestAstResult;
+}
+
+export interface IngestMarkdownResult {
+  ingested_files: number;
+  total_points: number;
+  collection: string;
+}
+
+export async function ingestMarkdown(
+  baseUrl: string,
+  payload: IngestMarkdownPayload,
+  apiKey?: string,
+  timeoutMs = DEFAULT_MCP_HTTP_TIMEOUT_MS,
+): Promise<IngestMarkdownResult> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+
+  if (apiKey) {
+    headers.Authorization = `Bearer ${apiKey}`;
+  }
+
+  const response = await fetchWithTimeout(`${baseUrl}/api/v1/ingest/markdown`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(payload),
+  }, timeoutMs, 'MCP markdown ingest request');
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`MCP markdown ingest failed (${response.status}): ${body}`);
+  }
+
+  return (await response.json()) as IngestMarkdownResult;
 }

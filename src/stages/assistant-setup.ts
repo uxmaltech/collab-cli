@@ -349,6 +349,22 @@ export const assistantSetupStage: OrchestrationStage = {
     const isNonInteractive = Boolean(ctx.options?.yes);
     const providersFlag = ctx.options?.providers as string | undefined;
 
+    // When existing config has providers already configured and user didn't
+    // explicitly request reconfiguration (--force / --providers), skip.
+    const existingProviders = ctx.config.assistants?.providers;
+    const hasConfiguredProviders = existingProviders
+      && Object.values(existingProviders).some((p) => p?.enabled);
+
+    if (hasConfiguredProviders && !providersFlag && !ctx.options?.force) {
+      const names = Object.entries(existingProviders!)
+        .filter(([, p]) => p?.enabled)
+        .map(([k, p]) => `${PROVIDER_DEFAULTS[k as ProviderKey]?.label ?? k} (model: ${p?.model ?? 'default'})`)
+        .join(', ');
+      ctx.logger.info(`Existing provider configuration preserved: ${names}`);
+      ctx.logger.info('Use --force to reconfigure providers.');
+      return;
+    }
+
     // Determine which providers to configure
     let selectedProviders: ProviderKey[];
 

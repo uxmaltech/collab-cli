@@ -49,6 +49,12 @@ export function createBufferedLogger(store = []) {
     result(message) {
       store.push(message);
     },
+    assistantThought(provider, title, body) {
+      store.push(`${provider}: ${title}${body ? ` ${body}` : ''}`);
+    },
+    assistantMessage(provider, message) {
+      store.push(`${provider} interview: ${message}`);
+    },
     command(parts) {
       store.push(parts.join(' '));
     },
@@ -60,6 +66,22 @@ export function createBufferedLogger(store = []) {
     },
     workflowHeader(workflow, mode) {
       store.push(`${workflow} — ${mode}`);
+    },
+    repoHeader(repoName, index, total) {
+      store.push(`[repo ${index}/${total}] ${repoName}`);
+    },
+    phaseHeader(title, subtitle) {
+      store.push(subtitle ? `${title} — ${subtitle}` : title);
+    },
+    wizardStep(current, title, subtitle) {
+      const sub = subtitle ? ` · ${subtitle}` : '';
+      store.push(`[Step ${current}] ${title}${sub}`);
+    },
+    wizardIntro(title) {
+      store.push(`┌ ${title}`);
+    },
+    wizardOutro(message) {
+      store.push(`└ ${message}`);
     },
     summaryFooter(entries) {
       for (const entry of entries) {

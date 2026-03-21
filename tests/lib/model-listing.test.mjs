@@ -42,9 +42,9 @@ test('listModels rejects with invalid Anthropic key', async () => {
   );
 });
 
-// Integration test: runs only when GOOGLE_AI_API_KEY is set and valid
-test('listModels returns Gemini models with valid key', { skip: !process.env.GOOGLE_AI_API_KEY }, async () => {
-  const models = await listModels('gemini', process.env.GOOGLE_AI_API_KEY);
+// Integration test: runs only when GEMINI_API_KEY is set and valid
+test('listModels returns Gemini models with valid key', { skip: !process.env.GEMINI_API_KEY }, async () => {
+  const models = await listModels('gemini', process.env.GEMINI_API_KEY);
 
   assert.ok(Array.isArray(models), 'should return an array');
   assert.ok(models.length > 0, 'should return at least one model');

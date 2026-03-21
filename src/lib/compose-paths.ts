@@ -31,6 +31,8 @@ export interface ComposeServiceSelection {
  */
 export interface ComposeRunOptions {
   health?: ServiceHealthOptions;
+  /** When true, passes `--no-deps` to `docker compose up` so dependency services are not started. */
+  noDeps?: boolean;
 }
 
 export function getComposeFilePaths(config: CollabConfig, outputDirectory?: string): ComposeFilePaths {
