@@ -172,6 +172,71 @@ test('createBirthDraftAssistant deduplicates repeated Gemini thought titles and 
   }
 });
 
+test('createBirthDraftAssistant retries when Gemini returns invalid CLI-owned fields or malformed values', async (t) => {
+  const savedApiKey = process.env.GEMINI_API_KEY;
+  const savedModel = process.env.GEMINI_MODEL;
+  process.env.GEMINI_API_KEY = 'gemini-key';
+  process.env.GEMINI_MODEL = 'gemini-2.5-pro';
+  let callCount = 0;
+
+  t.mock.method(globalThis, 'fetch', async (_url, init) => {
+    callCount += 1;
+    const payload = JSON.parse(init.body);
+    const prompt = payload.contents[0].parts[0].text;
+
+    if (callCount === 2) {
+      assert.match(prompt, /previous json response was rejected/i);
+      assert.match(prompt, /TELEGRAM_BOT_TOKEN must not be emitted by the model/i);
+      assert.match(prompt, /purpose must be a non-empty string/i);
+    }
+
+    const text =
+      callCount === 1
+        ? '{"purpose":123,"TELEGRAM_BOT_TOKEN":"secret"}'
+        : '{"purpose":"Deliver IoT work.","personaRole":"Senior IoT Engineer"}';
+
+    return new Response(
+      JSON.stringify({
+        candidates: [
+          {
+            content: {
+              parts: [{ text }],
+            },
+          },
+        ],
+      }),
+      {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      },
+    );
+  });
+
+  try {
+    const { logger, messages } = createLoggerCapture();
+    const assistant = createBirthDraftAssistant(logger);
+    const result = await assistant.draftProfile(createOptions());
+
+    assert.equal(callCount, 2);
+    assert.equal(result?.purpose, 'Deliver IoT work.');
+    assert.equal(result?.personaRole, 'Senior IoT Engineer');
+    assert.ok(messages.warn.some((message) => /invalid birth draft payload/i.test(message)));
+  } finally {
+    if (savedApiKey === undefined) {
+      delete process.env.GEMINI_API_KEY;
+    } else {
+      process.env.GEMINI_API_KEY = savedApiKey;
+    }
+    if (savedModel === undefined) {
+      delete process.env.GEMINI_MODEL;
+    } else {
+      process.env.GEMINI_MODEL = savedModel;
+    }
+  }
+});
+
 test('createBirthDraftAssistant renders OpenAI reasoning summaries in interactive mode', async (t) => {
   const savedOpenAiKey = process.env.OPENAI_API_KEY;
   const savedOpenAiModel = process.env.OPENAI_MODEL;
@@ -388,6 +453,100 @@ test('createBirthInterviewAssistant returns the next conversational turn with ca
     assert.equal(result?.capture.birthProfile?.personaRole, 'IoT delivery agent');
     assert.match(result?.assistantMessage ?? '', /IoT work/);
     assert.equal(messages.thoughts[0]?.provider, 'Gemini');
+  } finally {
+    if (savedApiKey === undefined) {
+      delete process.env.GEMINI_API_KEY;
+    } else {
+      process.env.GEMINI_API_KEY = savedApiKey;
+    }
+    if (savedModel === undefined) {
+      delete process.env.GEMINI_MODEL;
+    } else {
+      process.env.GEMINI_MODEL = savedModel;
+    }
+  }
+});
+
+test('createBirthInterviewAssistant retries when Gemini asks for deterministic CLI-owned fields', async (t) => {
+  const savedApiKey = process.env.GEMINI_API_KEY;
+  const savedModel = process.env.GEMINI_MODEL;
+  process.env.GEMINI_API_KEY = 'gemini-key';
+  process.env.GEMINI_MODEL = 'gemini-2.5-pro';
+  let callCount = 0;
+
+  t.mock.method(globalThis, 'fetch', async (_url, init) => {
+    callCount += 1;
+    const payload = JSON.parse(init.body);
+    const prompt = payload.contents[0].parts[0].text;
+
+    if (callCount === 2) {
+      assert.match(prompt, /assistantMessage must not ask for operator ids, chat ids, thread ids, or bot tokens/i);
+      assert.match(prompt, /capture\.operatorIds must not be emitted by the model/i);
+      assert.match(prompt, /capture\.telegramThreadId must not be emitted by the model/i);
+    }
+
+    const text =
+      callCount === 1
+        ? JSON.stringify({
+            status: 'complete',
+            assistantMessage: 'What are the operator ids and thread id for Telegram?',
+            missing: [],
+            capture: {
+              operatorIds: ['operator.telegram.130149339'],
+              telegramThreadId: '2',
+            },
+          })
+        : JSON.stringify({
+            status: 'needs_input',
+            assistantMessage: 'What kind of IoT work will this agent own?',
+            missing: ['birthProfile.purpose'],
+            capture: {
+              agentName: 'AnyStream IoT Development Agent',
+              scope: 'anystream.iot',
+              birthProfile: {
+                personaRole: 'IoT delivery agent',
+              },
+            },
+          });
+
+    return new Response(
+      JSON.stringify({
+        candidates: [
+          {
+            content: {
+              parts: [{ text }],
+            },
+          },
+        ],
+      }),
+      {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      },
+    );
+  });
+
+  try {
+    const { logger, messages } = createLoggerCapture();
+    const assistant = createBirthInterviewAssistant(logger);
+    const result = await assistant.planTurn(
+      'codex',
+      {
+        agentName: 'AnyStream IoT Development Agent',
+        scope: 'anystream.iot',
+        telegramEnabled: true,
+      },
+      [],
+    );
+
+    assert.equal(callCount, 2);
+    assert.equal(result?.status, 'needs_input');
+    assert.equal(result?.capture.agentName, 'AnyStream IoT Development Agent');
+    assert.equal(result?.capture.birthProfile?.personaRole, 'IoT delivery agent');
+    assert.match(result?.assistantMessage ?? '', /IoT work/);
+    assert.ok(messages.warn.some((message) => /invalid birth interview payload/i.test(message)));
   } finally {
     if (savedApiKey === undefined) {
       delete process.env.GEMINI_API_KEY;

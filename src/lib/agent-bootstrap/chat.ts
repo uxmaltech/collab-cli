@@ -97,6 +97,259 @@ interface BirthInterviewPayload extends ParsedObject {
   capture?: unknown;
 }
 
+type BirthJsonValidator = (payload: ParsedObject) => string[];
+
+const MAX_BIRTH_MODEL_ATTEMPTS = 3;
+const PROFILE_STRING_FIELDS = [
+  'purpose',
+  'personaRole',
+  'personaTone',
+  'personaSummary',
+  'soulMission',
+  'soulEthos',
+  'systemPrompt',
+  'workStylePlanningMode',
+  'workStyleApprovalPosture',
+  'workStyleCollaborationStyle',
+] as const;
+const PROFILE_ARRAY_FIELDS = [
+  'soulGuardrails',
+  'styleRules',
+] as const;
+const FORBIDDEN_MODEL_KEYS = [
+  'operatorId',
+  'operatorIds',
+  'telegramEnabled',
+  'telegramDefaultChatId',
+  'telegramThreadId',
+  'telegramAllowTopicCommands',
+  'TELEGRAM_BOT_TOKEN',
+  'TELEGRAM_DEFAULT_CHAT_ID',
+  'TELEGRAM_THREAD_ID',
+  'COGNITIVE_MCP_API_KEY',
+  'REDIS_PASSWORD',
+  'GEMINI_API_KEY',
+  'OPENAI_API_KEY',
+  'XAI_API_KEY',
+  'ANTHROPIC_API_KEY',
+] as const;
+const INTERVIEW_CAPTURE_STRING_FIELDS = [
+  'agentName',
+  'agentSlug',
+  'agentId',
+  'scope',
+  'selfRepository',
+  'model',
+  'cognitiveMcpUrl',
+  'redisUrl',
+] as const;
+const INTERVIEW_CAPTURE_ARRAY_FIELDS = [
+  'assignedRepositories',
+  'approvedNamespaces',
+  'egressUrl',
+] as const;
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value)
+    && value.every((item) => typeof item === 'string' && item.trim().length > 0);
+}
+
+function buildRetryPrompt(
+  basePrompt: string,
+  issues: readonly string[],
+  previousPayload: ParsedObject,
+): string {
+  return [
+    basePrompt,
+    '',
+    'The previous JSON response was rejected.',
+    'Validation issues:',
+    ...issues.map((issue) => `- ${issue}`),
+    '',
+    'Return a corrected JSON object only.',
+    'Do not repeat invalid fields.',
+    'Previous JSON response:',
+    JSON.stringify(previousPayload, null, 2),
+  ].join('\n');
+}
+
+function validateBirthProfilePayload(
+  payload: ParsedObject,
+  options: {
+    requireAtLeastOneField: boolean;
+    pathPrefix?: string;
+  },
+): string[] {
+  const issues: string[] = [];
+  let recognizedFieldCount = 0;
+  const prefix = options.pathPrefix ? `${options.pathPrefix}.` : '';
+
+  for (const key of FORBIDDEN_MODEL_KEYS) {
+    if (key in payload) {
+      issues.push(`${prefix}${key} must not be emitted by the model.`);
+    }
+  }
+
+  for (const key of PROFILE_STRING_FIELDS) {
+    if (!(key in payload)) {
+      continue;
+    }
+
+    recognizedFieldCount += 1;
+    if (typeof payload[key] !== 'string' || payload[key].trim().length === 0) {
+      issues.push(`${prefix}${key} must be a non-empty string.`);
+    }
+  }
+
+  for (const key of PROFILE_ARRAY_FIELDS) {
+    if (!(key in payload)) {
+      continue;
+    }
+
+    recognizedFieldCount += 1;
+    if (!isStringArray(payload[key])) {
+      issues.push(`${prefix}${key} must be an array of non-empty strings.`);
+    }
+  }
+
+  if (options.requireAtLeastOneField && recognizedFieldCount === 0) {
+    issues.push(`${prefix || 'birth profile.'}at least one birth profile field must be populated by the model.`);
+  }
+
+  return issues;
+}
+
+function validateBirthDraftPayload(payload: ParsedObject): string[] {
+  return validateBirthProfilePayload(payload, {
+    requireAtLeastOneField: true,
+  });
+}
+
+function validateBirthInterviewPayload(payload: ParsedObject): string[] {
+  const issues: string[] = [];
+  const status = payload.status;
+  const assistantMessage = payload.assistantMessage;
+  const missing = payload.missing;
+  const capture = payload.capture;
+
+  if (status !== undefined && status !== 'needs_input' && status !== 'complete') {
+    issues.push('status must be "needs_input" or "complete".');
+  }
+
+  if (typeof assistantMessage !== 'string' || assistantMessage.trim().length === 0) {
+    issues.push('assistantMessage must be a non-empty string.');
+  } else if (/(operator ids?|chat id|thread id|bot token)/i.test(assistantMessage)) {
+    issues.push('assistantMessage must not ask for operator ids, chat ids, thread ids, or bot tokens.');
+  }
+
+  if (missing !== undefined && !isStringArray(missing)) {
+    issues.push('missing must be an array of non-empty strings.');
+  }
+
+  if (capture === undefined) {
+    return issues;
+  }
+
+  if (!capture || typeof capture !== 'object' || Array.isArray(capture)) {
+    issues.push('capture must be an object when present.');
+    return issues;
+  }
+
+  const capturePayload = capture as ParsedObject;
+
+  for (const key of FORBIDDEN_MODEL_KEYS) {
+    if (key in capturePayload) {
+      issues.push(`capture.${key} must not be emitted by the model.`);
+    }
+  }
+
+  for (const key of INTERVIEW_CAPTURE_STRING_FIELDS) {
+    if (!(key in capturePayload)) {
+      continue;
+    }
+
+    if (typeof capturePayload[key] !== 'string' || capturePayload[key].trim().length === 0) {
+      issues.push(`capture.${key} must be a non-empty string.`);
+    }
+  }
+
+  for (const key of INTERVIEW_CAPTURE_ARRAY_FIELDS) {
+    if (!(key in capturePayload)) {
+      continue;
+    }
+
+    if (!isStringArray(capturePayload[key])) {
+      issues.push(`capture.${key} must be an array of non-empty strings.`);
+    }
+  }
+
+  if ('provider' in capturePayload && toOptionalProviderKey(capturePayload.provider) === undefined) {
+    issues.push('capture.provider must be one of codex, claude, gemini, or copilot.');
+  }
+
+  if (
+    'providerAuthMethod' in capturePayload
+    && toOptionalAuthMethod(capturePayload.providerAuthMethod) === undefined
+  ) {
+    issues.push('capture.providerAuthMethod must be "api-key" or "cli".');
+  }
+
+  if ('birthProfile' in capturePayload) {
+    if (
+      !capturePayload.birthProfile
+      || typeof capturePayload.birthProfile !== 'object'
+      || Array.isArray(capturePayload.birthProfile)
+    ) {
+      issues.push('capture.birthProfile must be an object when present.');
+    } else {
+      issues.push(
+        ...validateBirthProfilePayload(capturePayload.birthProfile as ParsedObject, {
+          requireAtLeastOneField: false,
+          pathPrefix: 'capture.birthProfile',
+        }),
+      );
+    }
+  }
+
+  return issues;
+}
+
+async function generateValidatedJsonWithSelectedProvider(
+  selected: NonNullable<ReturnType<typeof selectBirthLlmProvider>>,
+  prompt: string,
+  logger: Logger,
+  interactiveSession: boolean,
+  validator: BirthJsonValidator,
+  contextLabel: string,
+): Promise<ParsedObject> {
+  let currentPrompt = prompt;
+  let lastIssues: string[] = [];
+
+  for (let attempt = 1; attempt <= MAX_BIRTH_MODEL_ATTEMPTS; attempt += 1) {
+    const payload = await generateJsonWithSelectedProvider(
+      selected,
+      currentPrompt,
+      logger,
+      interactiveSession,
+    );
+    const issues = validator(payload);
+
+    if (issues.length === 0) {
+      return payload;
+    }
+
+    lastIssues = issues;
+    logger.warn(
+      `${selected.label} returned an invalid ${contextLabel} payload on attempt ${attempt}/${MAX_BIRTH_MODEL_ATTEMPTS}. Retrying with validation feedback.`,
+    );
+    currentPrompt = buildRetryPrompt(prompt, issues, payload);
+  }
+
+  throw new Error(
+    `${selected.label} could not produce a valid ${contextLabel} payload after ${MAX_BIRTH_MODEL_ATTEMPTS} attempts. ${lastIssues.join(' ')}`,
+  );
+}
+
 function parseThoughtDisplay(rawText: string): { title: string; body?: string } {
   const text = rawText.trim();
   const markdownHeadingMatch = text.match(/^\*\*(.+?)\*\*\s*([\s\S]*)$/);
@@ -397,6 +650,7 @@ function buildDraftPrompt(options: AgentBootstrapOptions): string {
         'Treat persona and soul as behavior-shaping instructions.',
         'Keep durable state behind agent.* and approved MCP boundaries.',
         'Mention the self repository and assigned repositories when relevant.',
+        'Do not emit operator ids, Telegram routing fields, env vars, or secret placeholders. The CLI owns those values.',
       ],
       input: {
         agentName: options.agentName,
@@ -438,8 +692,6 @@ function buildInterviewPrompt(
           agentSlug: 'string?',
           agentId: 'string?',
           scope: 'string?',
-          operatorId: 'string?',
-          operatorIds: ['string'],
           selfRepository: 'string?',
           assignedRepositories: ['string'],
           provider: '"codex" | "claude" | "gemini" | "copilot"?',
@@ -447,10 +699,6 @@ function buildInterviewPrompt(
           model: 'string?',
           cognitiveMcpUrl: 'string?',
           redisUrl: 'string?',
-          telegramEnabled: 'boolean?',
-          telegramDefaultChatId: 'string?',
-          telegramThreadId: 'string?',
-          telegramAllowTopicCommands: 'boolean?',
           approvedNamespaces: ['string'],
           egressUrl: ['string'],
           birthProfile: {
@@ -475,6 +723,7 @@ function buildInterviewPrompt(
         'Do not ask for a model if providerAuthMethod is cli or provider is copilot.',
         'Treat Telegram as required operational infrastructure for the agent birth.',
         'Do not ask for raw secrets such as bot tokens or API keys. The CLI will collect them locally.',
+        'Do not emit operator ids, Telegram routing fields, or any env/config variables in capture. The CLI owns those values.',
         'Treat role, purpose, soul, and durable boundaries as the highest-priority gaps.',
         'Do not set status to complete until telegramEnabled and the operator roster are known.',
         'Use safe defaults for low-risk fields when the user intent is already clear.',
@@ -1338,11 +1587,13 @@ export function createBirthDraftAssistant(
 
       const prompt = buildDraftPrompt(options);
       return toProfileDraft(
-        await generateJsonWithSelectedProvider(
+        await generateValidatedJsonWithSelectedProvider(
           selected,
           prompt,
           logger,
           Boolean(assistantOptions.interactiveSession),
+          validateBirthDraftPayload,
+          'birth draft',
         ),
       );
     },
@@ -1366,11 +1617,13 @@ export function createBirthInterviewAssistant(
       );
 
       const prompt = buildInterviewPrompt(currentState, transcript);
-      const payload = await generateJsonWithSelectedProvider(
+      const payload = await generateValidatedJsonWithSelectedProvider(
         selected,
         prompt,
         logger,
         Boolean(assistantOptions.interactiveSession),
+        validateBirthInterviewPayload,
+        'birth interview',
       );
 
       return toBirthInterviewTurn(payload as BirthInterviewPayload);
