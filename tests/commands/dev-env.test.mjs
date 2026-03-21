@@ -99,6 +99,25 @@ function writeBornAgentWorkspace(controlWorkspace, agentDirectoryName = 'iot-dev
   return agentRoot;
 }
 
+function writeDevEnvState(workspace, composeFiles, overrides = {}) {
+  const stateDir = path.join(workspace, '.collab', 'dev-env');
+  fs.mkdirSync(stateDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(stateDir, 'state.json'),
+    JSON.stringify(
+      {
+        startedAt: '2026-03-21T00:00:00.000Z',
+        workspaceDir: workspace,
+        composeFiles,
+        ...overrides,
+      },
+      null,
+      2,
+    ),
+    'utf8',
+  );
+}
+
 test('collab --help lists dev-env command', () => {
   const result = runCli(['--help']);
   assert.equal(result.status, 0, result.stderr);
@@ -111,6 +130,14 @@ test('collab dev-env start --help shows only the corrected MCP source flag', () 
   assert.match(result.stdout, /source-architecture-mcp/);
   assert.doesNotMatch(result.stdout, /source-architecure-mcp/);
   assert.match(result.stdout, /collab dev-env start/);
+});
+
+test('collab dev-env stop --help shows the stop subcommand', () => {
+  const result = runCli(['dev-env', 'stop', '--help']);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /collab dev-env stop/);
+  assert.match(result.stdout, /--infra-file/);
+  assert.match(result.stdout, /--mcp-file/);
 });
 
 test('collab dev-env start uses an explicit local collab-architecture-mcp source in dry-run mode', () => {
@@ -207,4 +234,74 @@ test('collab dev-env start resolves a single born agent workspace and generates 
   assert.match(result.stdout, /Copying collab-architecture-mcp infrastructure template into/);
   assert.match(result.stdout, new RegExp(path.join(sourceDir, 'infra', 'docker-compose.yml').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.match(result.stdout, /Development environment started/);
+});
+
+test('collab dev-env stop uses persisted dev-env state compose files', () => {
+  const workspace = makeTempWorkspace();
+  writeDevEnvWorkspace(workspace);
+
+  const infraFile = path.join(workspace, 'infra', 'docker-compose.yml');
+  const mcpFile = path.join(workspace, '.collab', 'dev-env', 'docker-compose.mcp.generated.yml');
+  fs.mkdirSync(path.dirname(infraFile), { recursive: true });
+  fs.mkdirSync(path.dirname(mcpFile), { recursive: true });
+  fs.writeFileSync(infraFile, 'services:\n', 'utf8');
+  fs.writeFileSync(mcpFile, 'services:\n', 'utf8');
+  writeDevEnvState(workspace, [infraFile, mcpFile]);
+
+  const result = runCli(
+    ['--cwd', workspace, '--dry-run', 'dev-env', 'stop'],
+    {
+      cwd: workspace,
+      env: createFakeDockerEnv(),
+    },
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /docker compose/);
+  assert.match(result.stdout, /Development environment stopped/);
+  assert.match(result.stdout, new RegExp(infraFile.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.match(result.stdout, new RegExp(mcpFile.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+});
+
+test('collab dev-env stop resolves a single born agent workspace from the control workspace', () => {
+  const workspace = makeTempWorkspace();
+  const agentRoot = writeBornAgentWorkspace(workspace, 'iot-developmet-agent');
+
+  const infraFile = path.join(agentRoot, 'infra', 'docker-compose.yml');
+  const mcpFile = path.join(agentRoot, '.collab', 'dev-env', 'docker-compose.mcp.generated.yml');
+  fs.mkdirSync(path.dirname(infraFile), { recursive: true });
+  fs.mkdirSync(path.dirname(mcpFile), { recursive: true });
+  fs.writeFileSync(infraFile, 'services:\n', 'utf8');
+  fs.writeFileSync(mcpFile, 'services:\n', 'utf8');
+  writeDevEnvState(agentRoot, [infraFile, mcpFile]);
+
+  const result = runCli(
+    ['--cwd', workspace, '--dry-run', 'dev-env', 'stop'],
+    {
+      cwd: workspace,
+      env: createFakeDockerEnv(),
+    },
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Using born agent workspace for dev-env/);
+  assert.match(result.stdout, new RegExp(agentRoot.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.match(result.stdout, /Development environment stopped/);
+});
+
+test('collab dev-env stop fails clearly when there is no saved dev-env state', () => {
+  const workspace = makeTempWorkspace();
+  writeDevEnvWorkspace(workspace);
+
+  const result = runCli(
+    ['--cwd', workspace, 'dev-env', 'stop'],
+    {
+      cwd: workspace,
+      env: createFakeDockerEnv(),
+    },
+  );
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /No dev-env state was found/);
+  assert.match(result.stderr, /Run collab dev-env start first/);
 });

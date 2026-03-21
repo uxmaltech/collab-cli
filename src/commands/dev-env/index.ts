@@ -1,6 +1,7 @@
 import type { Command } from 'commander';
 
 import { registerDevEnvStartCommand } from './start';
+import { registerDevEnvStopCommand } from './stop';
 
 export function registerDevEnvCommand(program: Command): void {
   const devEnv = program
@@ -12,8 +13,10 @@ export function registerDevEnvCommand(program: Command): void {
 Examples:
   collab dev-env start
   collab dev-env start --source-architecture-mcp ../collab-architecture-mcp
+  collab dev-env stop
 `,
     );
 
   registerDevEnvStartCommand(devEnv);
+  registerDevEnvStopCommand(devEnv);
 }

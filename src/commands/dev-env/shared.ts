@@ -34,6 +34,12 @@ export interface DevEnvStartOptions {
   retryDelayMs?: string;
 }
 
+export interface DevEnvStopOptions {
+  outputDir?: string;
+  infraFile?: string;
+  mcpFile?: string;
+}
+
 export interface PreparedDevEnv {
   readonly workspaceDir: string;
   readonly infraFile: string;
@@ -41,6 +47,23 @@ export interface PreparedDevEnv {
   readonly dockerfile: string;
   readonly architectureMcpSource: string;
   readonly architectureMcpImage: string;
+}
+
+interface PersistedDevEnvState {
+  startedAt?: string;
+  stoppedAt?: string;
+  workspaceDir?: string;
+  architectureMcpSource?: string;
+  architectureMcpImage?: string;
+  dockerfile?: string;
+  composeFiles?: string[];
+}
+
+export interface ResolvedDevEnvStop {
+  readonly workspaceDir: string;
+  readonly infraFile: string;
+  readonly mcpFile: string;
+  readonly stateFile: string;
 }
 
 function hasLocalWorkspaceConfig(config: CollabConfig): boolean {
@@ -170,6 +193,25 @@ export function resolveArchitectureMcpSource(
 
 function yamlQuote(value: string): string {
   return JSON.stringify(value);
+}
+
+function getDevEnvStateFile(config: CollabConfig): string {
+  return path.join(config.collabDir, 'dev-env', 'state.json');
+}
+
+function loadPersistedDevEnvState(stateFile: string): PersistedDevEnvState | null {
+  if (!fs.existsSync(stateFile)) {
+    return null;
+  }
+
+  const raw = fs.readFileSync(stateFile, 'utf8');
+  try {
+    return JSON.parse(raw) as PersistedDevEnvState;
+  } catch (error) {
+    throw new CliError(
+      `The dev-env state file is invalid JSON: ${stateFile} (${error instanceof Error ? error.message : String(error)})`,
+    );
+  }
 }
 
 export function renderArchitectureMcpDockerfile(): string {
@@ -465,6 +507,42 @@ export function prepareDevEnv(
   };
 }
 
+export function resolveDevEnvStop(
+  logger: Logger,
+  config: CollabConfig,
+  options: DevEnvStopOptions,
+): ResolvedDevEnvStop {
+  const stateFile = getDevEnvStateFile(config);
+  const persisted = loadPersistedDevEnvState(stateFile);
+  const persistedComposeFiles = persisted?.composeFiles ?? [];
+
+  const infraFile = options.infraFile
+    ? path.resolve(config.workspaceDir, options.infraFile)
+    : persistedComposeFiles[0];
+  const mcpFile = options.mcpFile
+    ? path.resolve(config.workspaceDir, options.mcpFile)
+    : persistedComposeFiles[1];
+
+  if (!infraFile || !mcpFile) {
+    throw new CliError(
+      `No dev-env state was found in ${stateFile}. Run collab dev-env start first or provide --infra-file and --mcp-file explicitly.`,
+    );
+  }
+
+  if (persisted?.workspaceDir && persisted.workspaceDir !== config.workspaceDir) {
+    logger.warn(
+      `The saved dev-env state references ${persisted.workspaceDir}, but the current workspace is ${config.workspaceDir}. Using the current workspace with the saved compose files.`,
+    );
+  }
+
+  return {
+    workspaceDir: config.workspaceDir,
+    infraFile,
+    mcpFile,
+    stateFile,
+  };
+}
+
 export async function startDevEnv(
   logger: Logger,
   executor: Executor,
@@ -539,6 +617,47 @@ export async function startDevEnv(
   };
   executor.writeFile(
     stateFile,
+    JSON.stringify(payload, null, 2) + '\n',
+    { description: 'write dev-env state file' },
+  );
+}
+
+export async function stopDevEnv(
+  logger: Logger,
+  executor: Executor,
+  config: CollabConfig,
+  resolved: ResolvedDevEnvStop,
+): Promise<void> {
+  ensureCommandAvailable('docker', { dryRun: executor.dryRun });
+  if (!executor.dryRun) {
+    ensureFileExists(resolved.infraFile, 'Infrastructure compose file');
+    ensureFileExists(resolved.mcpFile, 'Generated dev environment MCP compose file');
+  }
+
+  const spinner = await startSpinner(
+    'Stopping local development environment...',
+    logger.verbosity === 'quiet',
+  );
+
+  runDockerCompose({
+    executor,
+    files: [resolved.infraFile, resolved.mcpFile],
+    arguments: ['stop'],
+    cwd: config.workspaceDir,
+    projectName: config.compose.projectName,
+  });
+
+  spinner.stop('Development environment stopped');
+
+  const existingState = loadPersistedDevEnvState(resolved.stateFile) ?? {};
+  const payload = {
+    ...existingState,
+    workspaceDir: config.workspaceDir,
+    composeFiles: [resolved.infraFile, resolved.mcpFile],
+    stoppedAt: new Date().toISOString(),
+  };
+  executor.writeFile(
+    resolved.stateFile,
     JSON.stringify(payload, null, 2) + '\n',
     { description: 'write dev-env state file' },
   );
