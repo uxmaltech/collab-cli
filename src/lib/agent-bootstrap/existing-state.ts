@@ -150,12 +150,6 @@ export function loadExistingAgentBootstrapInput(outputDir: string): Partial<Agen
     config.agent.notifications?.telegram?.threadIdEnvVar
       ? env[config.agent.notifications.telegram.threadIdEnvVar]
       : undefined;
-  const telegramConfigured = Boolean(
-    (telegramBotToken && telegramBotToken.trim().length > 0)
-    || (telegramDefaultChatId && telegramDefaultChatId.trim().length > 0)
-    || (telegramThreadId && telegramThreadId.trim().length > 0),
-  );
-
   return {
     output: outputDir,
     agentName: config.agent.name,
@@ -180,10 +174,7 @@ export function loadExistingAgentBootstrapInput(outputDir: string): Partial<Agen
     redisPassword: env.REDIS_PASSWORD,
     approvedNamespaces: config.agent.profiles?.worker?.approvedNamespaces?.join(','),
     egressUrl: config.agent.egress?.allow,
-    telegramEnabled:
-      config.agent.notifications?.telegram?.enabled === true
-        ? telegramConfigured
-        : config.agent.notifications?.telegram?.enabled,
+    telegramEnabled: config.agent.notifications?.telegram?.enabled,
     telegramBotToken,
     telegramDefaultChatId,
     telegramThreadId,

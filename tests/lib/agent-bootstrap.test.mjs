@@ -10,6 +10,9 @@ const {
   generateAgentBootstrap,
   summarizeAgentBootstrap,
 } = require('../../dist/lib/agent-bootstrap/generate.js');
+const {
+  loadExistingAgentBootstrapInput,
+} = require('../../dist/lib/agent-bootstrap/existing-state.js');
 
 test('generateAgentBootstrap returns deterministic file paths and valid JSON outputs', () => {
   const workspace = '/tmp/collab-bootstrap-example';
@@ -234,4 +237,43 @@ test('generateAgentBootstrap repopulates managed env values when an existing .en
   assert.match(envFile.content, /^TELEGRAM_DEFAULT_CHAT_ID=-1003895414389$/m);
   assert.match(envFile.content, /^TELEGRAM_THREAD_ID=2$/m);
   assert.match(envFile.content, /^COGNITIVE_MCP_API_KEY=mcp-key$/m);
+});
+
+test('loadExistingAgentBootstrapInput keeps Telegram enabled even when the current .env is blank', () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'collab-bootstrap-existing-telegram-'));
+  fs.mkdirSync(path.join(workspace, '.collab'), { recursive: true });
+  fs.writeFileSync(
+    path.join(workspace, '.collab', 'config.json'),
+    JSON.stringify({
+      envFile: '.env',
+      agent: {
+        notifications: {
+          telegram: {
+            enabled: true,
+            botTokenEnvVar: 'TELEGRAM_BOT_TOKEN',
+            defaultChatIdEnvVar: 'TELEGRAM_DEFAULT_CHAT_ID',
+            threadIdEnvVar: 'TELEGRAM_THREAD_ID',
+          },
+        },
+      },
+    }, null, 2),
+    'utf8',
+  );
+  fs.writeFileSync(
+    path.join(workspace, '.env'),
+    [
+      'TELEGRAM_BOT_TOKEN=',
+      'TELEGRAM_DEFAULT_CHAT_ID=',
+      'TELEGRAM_THREAD_ID=',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+
+  const input = loadExistingAgentBootstrapInput(workspace);
+
+  assert.equal(input.telegramEnabled, true);
+  assert.equal(input.telegramBotToken, '');
+  assert.equal(input.telegramDefaultChatId, '');
+  assert.equal(input.telegramThreadId, '');
 });
