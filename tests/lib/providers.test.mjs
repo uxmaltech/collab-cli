@@ -80,7 +80,7 @@ test('autoDetectProviders detects from environment and CLIs', async () => {
     // Clear any existing keys
     delete process.env.OPENAI_API_KEY;
     delete process.env.ANTHROPIC_API_KEY;
-    delete process.env.GOOGLE_AI_API_KEY;
+    delete process.env.GEMINI_API_KEY;
 
     // Without env vars, autoDetectProviders may still detect installed CLIs on PATH
     const baseline = await autoDetectProviders();
@@ -99,8 +99,20 @@ test('autoDetectProviders detects from environment and CLIs', async () => {
     assert.ok(withBoth.length >= baseline.length, 'env vars should only add providers');
   } finally {
     // Restore original env
-    process.env.OPENAI_API_KEY = originalEnv.OPENAI_API_KEY;
-    process.env.ANTHROPIC_API_KEY = originalEnv.ANTHROPIC_API_KEY;
-    process.env.GOOGLE_AI_API_KEY = originalEnv.GOOGLE_AI_API_KEY;
+    if (originalEnv.OPENAI_API_KEY === undefined) {
+      delete process.env.OPENAI_API_KEY;
+    } else {
+      process.env.OPENAI_API_KEY = originalEnv.OPENAI_API_KEY;
+    }
+    if (originalEnv.ANTHROPIC_API_KEY === undefined) {
+      delete process.env.ANTHROPIC_API_KEY;
+    } else {
+      process.env.ANTHROPIC_API_KEY = originalEnv.ANTHROPIC_API_KEY;
+    }
+    if (originalEnv.GEMINI_API_KEY === undefined) {
+      delete process.env.GEMINI_API_KEY;
+    } else {
+      process.env.GEMINI_API_KEY = originalEnv.GEMINI_API_KEY;
+    }
   }
 });

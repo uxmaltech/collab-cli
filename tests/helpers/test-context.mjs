@@ -49,6 +49,12 @@ export function createBufferedLogger(store = []) {
     result(message) {
       store.push(message);
     },
+    assistantThought(provider, title, body) {
+      store.push(`${provider}: ${title}${body ? ` ${body}` : ''}`);
+    },
+    assistantMessage(provider, message) {
+      store.push(`${provider} interview: ${message}`);
+    },
     command(parts) {
       store.push(parts.join(' '));
     },

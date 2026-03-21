@@ -19,6 +19,8 @@ export interface Logger {
   warn(message: string): void;
   error(message: string): void;
   result(message: string): void;
+  assistantThought(provider: string, title: string, body?: string): void;
+  assistantMessage(provider: string, message: string): void;
   command(parts: readonly string[], options?: CommandLogOptions): void;
   stageHeader(index: number, total: number, title: string): void;
   step(ok: boolean, message: string): void;
@@ -29,6 +31,47 @@ export interface Logger {
   wizardIntro(title: string): void;
   wizardOutro(message: string): void;
   summaryFooter(entries: readonly SummaryEntry[]): void;
+}
+
+function wrapParagraph(text: string, width: number): string[] {
+  const words = text.trim().split(/\s+/).filter((word) => word.length > 0);
+  if (words.length === 0) {
+    return [''];
+  }
+
+  const lines: string[] = [];
+  let current = '';
+
+  for (const word of words) {
+    const candidate = current.length > 0 ? `${current} ${word}` : word;
+    if (candidate.length <= width) {
+      current = candidate;
+      continue;
+    }
+
+    if (current.length > 0) {
+      lines.push(current);
+    }
+    current = word;
+  }
+
+  if (current.length > 0) {
+    lines.push(current);
+  }
+
+  return lines;
+}
+
+function wrapThoughtBody(text: string, width = 84): string[] {
+  return text
+    .split(/\r?\n\r?\n/)
+    .flatMap((paragraph, index, all) => {
+      const lines = wrapParagraph(paragraph, width);
+      if (index === all.length - 1) {
+        return lines;
+      }
+      return [...lines, ''];
+    });
 }
 
 class ConsoleLogger implements Logger {
@@ -64,6 +107,50 @@ class ConsoleLogger implements Logger {
 
   result(message: string): void {
     process.stdout.write(`${message}\n`);
+  }
+
+  assistantThought(provider: string, title: string, body?: string): void {
+    if (this.verbosity === 'quiet') {
+      return;
+    }
+
+    const bar = dim('\u2502');
+    const dot = bold(cyan('\u25c6'));
+    const heading = `${dot}  ${bold(cyan(`${provider} Thought`))} ${dim('\u00b7')} ${bold(title)}`;
+
+    process.stdout.write(`\n  ${bar}\n  ${heading}\n`);
+
+    const bodyLines = wrapThoughtBody(body ?? '');
+    for (const line of bodyLines) {
+      if (line.length === 0) {
+        process.stdout.write(`  ${bar}\n`);
+        continue;
+      }
+
+      process.stdout.write(`  ${bar}  ${line}\n`);
+    }
+  }
+
+  assistantMessage(provider: string, message: string): void {
+    if (this.verbosity === 'quiet') {
+      return;
+    }
+
+    const bar = dim('\u2502');
+    const dot = bold(green('\u25c7'));
+    const heading = `${dot}  ${bold(green(`${provider} Interview`))}`;
+
+    process.stdout.write(`\n  ${bar}\n  ${heading}\n`);
+
+    const bodyLines = wrapThoughtBody(message, 88);
+    for (const line of bodyLines) {
+      if (line.length === 0) {
+        process.stdout.write(`  ${bar}\n`);
+        continue;
+      }
+
+      process.stdout.write(`  ${bar}  ${line}\n`);
+    }
   }
 
   command(parts: readonly string[], options?: CommandLogOptions): void {

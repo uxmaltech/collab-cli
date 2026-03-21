@@ -98,7 +98,7 @@ test('init --yes with no env vars and no CLIs skips assistant-setup gracefully',
   // Remove any AI provider keys from env
   delete env.OPENAI_API_KEY;
   delete env.ANTHROPIC_API_KEY;
-  delete env.GOOGLE_AI_API_KEY;
+  delete env.GEMINI_API_KEY;
 
   // Restrict PATH to prevent CLI auto-detection (keep fake docker + node only)
   const fakeBinDir = env.PATH.split(':').find((d) => d.includes('collab-cli-bin'));
