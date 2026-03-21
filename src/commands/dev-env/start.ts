@@ -2,7 +2,12 @@ import { Command } from 'commander';
 
 import { createCommandContext } from '../../lib/command-context';
 import { parseHealthOptions } from '../../lib/parsers';
-import { prepareDevEnv, startDevEnv, type DevEnvStartOptions } from './shared';
+import {
+  prepareDevEnv,
+  resolveDevEnvConfig,
+  startDevEnv,
+  type DevEnvStartOptions,
+} from './shared';
 
 export function registerDevEnvStartCommand(program: Command): void {
   program
@@ -28,24 +33,25 @@ Examples:
     )
     .action(async (options: DevEnvStartOptions, command: Command) => {
       const context = createCommandContext(command);
+      const targetConfig = resolveDevEnvConfig(context.logger, context.config);
       const prepared = prepareDevEnv(
         context.logger,
         context.executor,
-        context.config,
+        targetConfig,
         options,
       );
 
       await startDevEnv(
         context.logger,
         context.executor,
-        context.config,
+        targetConfig,
         prepared,
         parseHealthOptions(options),
       );
 
       context.logger.result('Development environment started');
       context.logger.summaryFooter([
-        { label: 'workspace', value: context.config.workspaceDir },
+        { label: 'workspace', value: targetConfig.workspaceDir },
         { label: 'infra compose', value: prepared.infraFile },
         { label: 'mcp compose', value: prepared.mcpFile },
         { label: 'mcp source compose', value: prepared.sourceMcpFile },

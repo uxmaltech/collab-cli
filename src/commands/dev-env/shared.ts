@@ -2,7 +2,11 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
+import { loadBornAgents, resolveBornAgentRootDir } from '../../lib/agent-registry';
+import { generateComposeFiles } from '../../lib/compose-renderer';
+import { fileExists, getComposeFilePaths } from '../../lib/compose-paths';
 import type { CollabConfig } from '../../lib/config';
+import { loadCollabConfig } from '../../lib/config';
 import { runDockerCompose } from '../../lib/docker-compose';
 import { CliError } from '../../lib/errors';
 import type { Executor } from '../../lib/executor';
@@ -35,12 +39,67 @@ export interface DevEnvStartOptions {
 }
 
 export interface PreparedDevEnv {
+  readonly workspaceDir: string;
   readonly infraFile: string;
   readonly sourceMcpFile: string;
   readonly mcpFile: string;
   readonly dockerfile: string;
   readonly architectureMcpSource: string;
   readonly architectureMcpImage: string;
+}
+
+function hasLocalWorkspaceConfig(config: CollabConfig): boolean {
+  return fs.existsSync(config.configFile);
+}
+
+export function resolveDevEnvConfig(
+  logger: Logger,
+  controlConfig: CollabConfig,
+): CollabConfig {
+  if (hasLocalWorkspaceConfig(controlConfig)) {
+    return controlConfig;
+  }
+
+  const agents = loadBornAgents(controlConfig.workspaceDir);
+  if (agents.length === 1) {
+    const agentRootDir = resolveBornAgentRootDir(controlConfig.workspaceDir, agents[0]);
+    logger.info(`Using born agent workspace for dev-env: ${agentRootDir}`);
+    return loadCollabConfig(agentRootDir);
+  }
+
+  if (agents.length > 1) {
+    throw new CliError(
+      `No local .collab/config.json was found in ${controlConfig.workspaceDir}, and multiple born agents exist there. Re-run from the target agent root or use --cwd on that agent directory.`,
+    );
+  }
+
+  return controlConfig;
+}
+
+function ensureBaseComposeFiles(
+  logger: Logger,
+  executor: Executor,
+  config: CollabConfig,
+  outputDirectory: string | undefined,
+): boolean {
+  const composePaths = getComposeFilePaths(config, outputDirectory);
+  const missingCompose =
+    !fileExists(composePaths.infra)
+    || !fileExists(composePaths.mcp);
+
+  if (!missingCompose) {
+    return false;
+  }
+
+  logger.info(`Generating split compose files in ${config.workspaceDir} for dev-env start`);
+  generateComposeFiles({
+    config,
+    logger,
+    executor,
+    mode: 'split',
+    outputDirectory,
+  });
+  return true;
 }
 
 function candidateSourceRoots(): string[] {
@@ -230,8 +289,14 @@ export function prepareDevEnv(
   config: CollabConfig,
   options: DevEnvStartOptions,
 ): PreparedDevEnv {
-  const infraSelection = resolveInfraComposeFile(config, options.outputDir, options.infraFile);
-  const mcpSelection = resolveMcpComposeFile(config, options.outputDir, options.mcpFile);
+  const generatedSplitCompose = ensureBaseComposeFiles(logger, executor, config, options.outputDir);
+  const composePaths = getComposeFilePaths(config, options.outputDir);
+  const infraSelection = generatedSplitCompose && !options.infraFile
+    ? { filePath: composePaths.infra, source: 'split' as const }
+    : resolveInfraComposeFile(config, options.outputDir, options.infraFile);
+  const mcpSelection = generatedSplitCompose && !options.mcpFile
+    ? { filePath: composePaths.mcp, source: 'split' as const }
+    : resolveMcpComposeFile(config, options.outputDir, options.mcpFile);
   const architectureMcpSource = resolveArchitectureMcpSource(
     logger,
     executor,
@@ -262,6 +327,7 @@ export function prepareDevEnv(
   );
 
   return {
+    workspaceDir: config.workspaceDir,
     infraFile: infraSelection.filePath,
     sourceMcpFile: mcpSelection.filePath,
     mcpFile,
