@@ -54,7 +54,6 @@ Examples:
         { label: 'workspace', value: targetConfig.workspaceDir },
         { label: 'infra compose', value: prepared.infraFile },
         { label: 'mcp compose', value: prepared.mcpFile },
-        { label: 'mcp source compose', value: prepared.sourceMcpFile },
         { label: 'mcp dockerfile', value: prepared.dockerfile },
         { label: 'mcp image', value: prepared.architectureMcpImage },
         { label: 'mcp source', value: prepared.architectureMcpSource },

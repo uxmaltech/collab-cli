@@ -10,7 +10,6 @@ import { makeTempWorkspace } from '../helpers/workspace.mjs';
 
 function writeDevEnvWorkspace(workspace) {
   fs.mkdirSync(path.join(workspace, '.collab'), { recursive: true });
-  fs.mkdirSync(path.join(workspace, 'infra'), { recursive: true });
   fs.writeFileSync(
     path.join(workspace, '.collab', 'config.json'),
     JSON.stringify(
@@ -34,16 +33,6 @@ function writeDevEnvWorkspace(workspace) {
       'REDIS_PASSWORD=collab-dev-redis',
       '',
     ].join('\n'),
-    'utf8',
-  );
-  fs.writeFileSync(
-    path.join(workspace, 'infra', 'docker-compose.infra.yml'),
-    'services:\n  redis:\n    image: redis:7-alpine\n',
-    'utf8',
-  );
-  fs.writeFileSync(
-    path.join(workspace, 'infra', 'docker-compose.mcp.yml'),
-    'services:\n  cognitive-mcp:\n    image: ghcr.io/uxmaltech/collab-architecture-mcp:latest\n',
     'utf8',
   );
 }
@@ -150,6 +139,8 @@ test('collab dev-env start uses an explicit local collab-architecture-mcp source
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /Using explicit collab-architecture-mcp source/);
   assert.match(result.stdout, new RegExp(sourceDir.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.match(result.stdout, /Generating collab-architecture-mcp infrastructure compose/);
+  assert.match(result.stdout, /write dev-env infrastructure compose file/);
   assert.match(result.stdout, /write dev-env MCP Dockerfile/);
   assert.match(result.stdout, /write dev-env MCP compose file/);
   assert.match(result.stdout, /docker build/);
@@ -210,8 +201,7 @@ test('collab dev-env start resolves a single born agent workspace and generates 
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /Using born agent workspace for dev-env/);
   assert.match(result.stdout, new RegExp(agentRoot.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
-  assert.match(result.stdout, /Generating split compose files/);
-  assert.match(result.stdout, /infra\/docker-compose\.infra\.yml/);
-  assert.match(result.stdout, /infra\/docker-compose\.mcp\.yml/);
+  assert.match(result.stdout, /Generating collab-architecture-mcp infrastructure compose/);
+  assert.match(result.stdout, new RegExp(path.join(sourceDir, 'infra', 'docker-compose.yml').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.match(result.stdout, /Development environment started/);
 });

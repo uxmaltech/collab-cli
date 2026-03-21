@@ -3,8 +3,6 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { loadBornAgents, resolveBornAgentRootDir } from '../../lib/agent-registry';
-import { generateComposeFiles } from '../../lib/compose-renderer';
-import { fileExists, getComposeFilePaths } from '../../lib/compose-paths';
 import type { CollabConfig } from '../../lib/config';
 import { loadCollabConfig } from '../../lib/config';
 import { runDockerCompose } from '../../lib/docker-compose';
@@ -21,8 +19,6 @@ import {
   type ServiceHealthOptions,
 } from '../../lib/service-health';
 import { startSpinner } from '../../lib/spinner';
-import { resolveInfraComposeFile } from '../infra/shared';
-import { resolveMcpComposeFile } from '../mcp/shared';
 
 const ARCHITECTURE_MCP_REPO = 'collab-architecture-mcp';
 const ARCHITECTURE_MCP_CLONE_URL = 'https://github.com/uxmaltech/collab-architecture-mcp.git';
@@ -41,7 +37,6 @@ export interface DevEnvStartOptions {
 export interface PreparedDevEnv {
   readonly workspaceDir: string;
   readonly infraFile: string;
-  readonly sourceMcpFile: string;
   readonly mcpFile: string;
   readonly dockerfile: string;
   readonly architectureMcpSource: string;
@@ -74,32 +69,6 @@ export function resolveDevEnvConfig(
   }
 
   return controlConfig;
-}
-
-function ensureBaseComposeFiles(
-  logger: Logger,
-  executor: Executor,
-  config: CollabConfig,
-  outputDirectory: string | undefined,
-): boolean {
-  const composePaths = getComposeFilePaths(config, outputDirectory);
-  const missingCompose =
-    !fileExists(composePaths.infra)
-    || !fileExists(composePaths.mcp);
-
-  if (!missingCompose) {
-    return false;
-  }
-
-  logger.info(`Generating split compose files in ${config.workspaceDir} for dev-env start`);
-  generateComposeFiles({
-    config,
-    logger,
-    executor,
-    mode: 'split',
-    outputDirectory,
-  });
-  return true;
 }
 
 function candidateSourceRoots(): string[] {
@@ -264,13 +233,17 @@ export function renderDevelopmentMcpCompose(
     '      REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD:-collab-dev-redis}@redis:6379}',
     '      QDRANT_URL: http://qdrant:6333',
     '      QDRANT_API_KEY: ""',
-    '      NEBULA_GRAPHD_ADDRESS: nebula-graphd:9669',
-    '      NEBULA_USERNAME: root',
+    '      NEBULA_ADDR: nebula-graphd',
+    '      NEBULA_PORT: "9669"',
+    '      NEBULA_USER: root',
     '      NEBULA_PASSWORD: nebula',
-    '      MINIO_ENDPOINT: http://minio:9000',
-    '      MINIO_ACCESS_KEY: collabminio',
-    '      MINIO_SECRET_KEY: collabminiosecret',
-    '      MINIO_BUCKET: collab',
+    '      RECOVERY_S3_ENDPOINT: http://minio:9000',
+    '      RECOVERY_S3_REGION: us-east-1',
+    '      RECOVERY_S3_BUCKET: ${RECOVERY_S3_BUCKET:-collab-recovery}',
+    '      RECOVERY_S3_PREFIX: ${RECOVERY_S3_PREFIX:-recovery}',
+    '      RECOVERY_S3_ACCESS_KEY: ${RECOVERY_S3_ACCESS_KEY:-collabminio}',
+    '      RECOVERY_S3_SECRET_KEY: ${RECOVERY_S3_SECRET_KEY:-collabminiosecret}',
+    '      RECOVERY_S3_FORCE_PATH_STYLE: ${RECOVERY_S3_FORCE_PATH_STYLE:-true}',
     '      COGNITIVE_MCP_API_KEY: ${COGNITIVE_MCP_API_KEY:-}',
     '    ports:',
     '      - "${COGNITIVE_MCP_PORT:-8787}:7337"',
@@ -283,20 +256,152 @@ export function renderDevelopmentMcpCompose(
   ].join('\n');
 }
 
+export function renderArchitectureInfrastructureCompose(): string {
+  return [
+    'services:',
+    '  redis:',
+    '    image: redis:7.4-alpine',
+    '    container_name: collab-agent-redis',
+    '    command:',
+    '      - redis-server',
+    '      - --appendonly',
+    '      - "yes"',
+    '      - --requirepass',
+    '      - ${REDIS_PASSWORD:-collab-dev-redis}',
+    '    ports:',
+    '      - "6379:6379"',
+    '    volumes:',
+    '      - redis-data:/data',
+    '',
+    '  qdrant:',
+    '    image: qdrant/qdrant:v1.8.1',
+    '    container_name: collab-agent-qdrant',
+    '    ports:',
+    '      - "6333:6333"',
+    '    volumes:',
+    '      - qdrant-data:/qdrant/storage',
+    '',
+    '  metad0:',
+    '    image: vesoft/nebula-metad:${NEBULA_VERSION:-v3.6.0}',
+    '    container_name: nebula-metad0',
+    '    ports:',
+    '      - "9559:9559"',
+    '      - "19559:19559"',
+    '    volumes:',
+    '      - nebula-metad0:/usr/local/nebula/data/meta',
+    '    command:',
+    '      - nebula-metad',
+    '      - --meta_server_addrs=metad0:9559',
+    '      - --local_ip=metad0',
+    '      - --ws_ip=metad0',
+    '      - --port=9559',
+    '      - --ws_http_port=19559',
+    '      - --data_path=/usr/local/nebula/data/meta',
+    '',
+    '  storaged0:',
+    '    image: vesoft/nebula-storaged:${NEBULA_VERSION:-v3.6.0}',
+    '    container_name: nebula-storaged0',
+    '    depends_on:',
+    '      - metad0',
+    '    ports:',
+    '      - "9779:9779"',
+    '      - "19779:19779"',
+    '    volumes:',
+    '      - nebula-storaged0:/usr/local/nebula/data/storage',
+    '    command:',
+    '      - nebula-storaged',
+    '      - --meta_server_addrs=metad0:9559',
+    '      - --local_ip=storaged0',
+    '      - --ws_ip=storaged0',
+    '      - --port=9779',
+    '      - --ws_http_port=19779',
+    '      - --data_path=/usr/local/nebula/data/storage',
+    '',
+    '  nebula-graphd:',
+    '    image: vesoft/nebula-graphd:${NEBULA_VERSION:-v3.6.0}',
+    '    container_name: nebula-graphd',
+    '    depends_on:',
+    '      - metad0',
+    '      - storaged0',
+    '    ports:',
+    '      - "9669:9669"',
+    '      - "19669:19669"',
+    '    volumes:',
+    '      - ../graph/seed:/seed:ro',
+    '    command:',
+    '      - nebula-graphd',
+    '      - --meta_server_addrs=metad0:9559',
+    '      - --local_ip=graphd',
+    '      - --ws_ip=graphd',
+    '      - --port=9669',
+    '      - --ws_http_port=19669',
+    '',
+    '  minio:',
+    '    image: minio/minio:RELEASE.2026-01-18T00-31-37Z',
+    '    container_name: collab-recovery-minio',
+    '    command: server /data --console-address ":9001"',
+    '    environment:',
+    '      MINIO_ROOT_USER: ${RECOVERY_S3_ACCESS_KEY:-collabminio}',
+    '      MINIO_ROOT_PASSWORD: ${RECOVERY_S3_SECRET_KEY:-collabminiosecret}',
+    '    ports:',
+    '      - "9000:9000"',
+    '      - "9001:9001"',
+    '    volumes:',
+    '      - minio-data:/data',
+    '',
+    '  minio-init:',
+    '    image: minio/mc:RELEASE.2025-08-13T08-35-41Z',
+    '    container_name: collab-recovery-minio-init',
+    '    depends_on:',
+    '      - minio',
+    '    environment:',
+    '      MINIO_ROOT_USER: ${RECOVERY_S3_ACCESS_KEY:-collabminio}',
+    '      MINIO_ROOT_PASSWORD: ${RECOVERY_S3_SECRET_KEY:-collabminiosecret}',
+    '      RECOVERY_S3_BUCKET: ${RECOVERY_S3_BUCKET:-collab-recovery}',
+    '    entrypoint: >',
+    '      /bin/sh -c "',
+    '      until /usr/bin/mc alias set local http://minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD; do',
+    '        sleep 1;',
+    '      done;',
+    '      /usr/bin/mc mb --ignore-existing local/$$RECOVERY_S3_BUCKET;',
+    '      "',
+    '',
+    'volumes:',
+    '  redis-data:',
+    '  qdrant-data:',
+    '  nebula-metad0:',
+    '  nebula-storaged0:',
+    '  minio-data:',
+    '',
+  ].join('\n');
+}
+
+function ensureArchitectureInfrastructureCompose(
+  logger: Logger,
+  executor: Executor,
+  architectureMcpSource: string,
+): string {
+  const infraFile = path.join(architectureMcpSource, 'infra', 'docker-compose.yml');
+  if (fs.existsSync(infraFile)) {
+    logger.info(`Using collab-architecture-mcp infrastructure compose: ${infraFile}`);
+    return infraFile;
+  }
+
+  logger.info(`Generating collab-architecture-mcp infrastructure compose in ${architectureMcpSource}`);
+  executor.writeFile(
+    infraFile,
+    renderArchitectureInfrastructureCompose(),
+    { description: 'write dev-env infrastructure compose file' },
+  );
+  return infraFile;
+}
+
 export function prepareDevEnv(
   logger: Logger,
   executor: Executor,
   config: CollabConfig,
   options: DevEnvStartOptions,
 ): PreparedDevEnv {
-  const generatedSplitCompose = ensureBaseComposeFiles(logger, executor, config, options.outputDir);
-  const composePaths = getComposeFilePaths(config, options.outputDir);
-  const infraSelection = generatedSplitCompose && !options.infraFile
-    ? { filePath: composePaths.infra, source: 'split' as const }
-    : resolveInfraComposeFile(config, options.outputDir, options.infraFile);
-  const mcpSelection = generatedSplitCompose && !options.mcpFile
-    ? { filePath: composePaths.mcp, source: 'split' as const }
-    : resolveMcpComposeFile(config, options.outputDir, options.mcpFile);
   const architectureMcpSource = resolveArchitectureMcpSource(
     logger,
     executor,
@@ -304,6 +409,9 @@ export function prepareDevEnv(
     config.collabDir,
     options.sourceArchitectureMcp,
   );
+  const infraFile = options.infraFile
+    ? path.resolve(config.workspaceDir, options.infraFile)
+    : ensureArchitectureInfrastructureCompose(logger, executor, architectureMcpSource);
   const dockerfile = path.join(
     config.collabDir,
     'dev-env',
@@ -322,14 +430,16 @@ export function prepareDevEnv(
   );
   executor.writeFile(
     mcpFile,
-    renderDevelopmentMcpCompose(config.envFile, DEV_ARCHITECTURE_MCP_IMAGE),
+    renderDevelopmentMcpCompose(
+      path.resolve(config.workspaceDir, config.envFile),
+      DEV_ARCHITECTURE_MCP_IMAGE,
+    ),
     { description: 'write dev-env MCP compose file' },
   );
 
   return {
     workspaceDir: config.workspaceDir,
-    infraFile: infraSelection.filePath,
-    sourceMcpFile: mcpSelection.filePath,
+    infraFile,
     mcpFile,
     dockerfile,
     architectureMcpSource,
@@ -347,7 +457,6 @@ export async function startDevEnv(
   ensureCommandAvailable('docker', { dryRun: executor.dryRun });
   if (!executor.dryRun) {
     ensureFileExists(prepared.infraFile, 'Infrastructure compose file');
-    ensureFileExists(prepared.sourceMcpFile, 'Source MCP compose file');
     ensureFileExists(prepared.mcpFile, 'Generated dev environment MCP compose file');
   }
 
@@ -408,7 +517,6 @@ export async function startDevEnv(
     architectureMcpSource: prepared.architectureMcpSource,
     architectureMcpImage: prepared.architectureMcpImage,
     dockerfile: prepared.dockerfile,
-    sourceMcpFile: prepared.sourceMcpFile,
     composeFiles: [prepared.infraFile, prepared.mcpFile],
   };
   executor.writeFile(
