@@ -424,6 +424,9 @@ test('collectAgentBirthInteractiveInput skips model prompt for CLI-auth provider
           return answer;
         },
         async choice(question) {
+          if (question === 'Accept commands from the team thread?') {
+            return 'yes';
+          }
           if (question === 'Default provider') {
             return 'codex';
           }
@@ -511,8 +514,11 @@ test('collectAgentBirthInteractiveInput uses conversational birth mode when auto
       conversationAssistant: {
         async planTurn(_preferredProvider, currentState, transcript) {
           conversationTurns += 1;
-          assert.equal(currentState.agentName, undefined);
-          assert.equal(currentState.scope, undefined);
+          assert.equal(currentState.agentName, 'AnyStream IoT Development Agent');
+          assert.equal(currentState.scope, 'anystream.iot');
+          assert.equal(currentState.operatorIds?.join(','), 'operator.telegram.130149339');
+          assert.equal(currentState.telegramEnabled, true);
+          assert.equal(currentState.telegramThreadId, '12');
           assert.equal(transcript.length, 1);
           return {
             status: 'complete',
@@ -562,6 +568,24 @@ test('collectAgentBirthInteractiveInput uses conversational birth mode when auto
           if (question === 'Output directory') {
             return '/tmp/iot-agent-chat';
           }
+          if (question === 'Agent name') {
+            return 'AnyStream IoT Development Agent';
+          }
+          if (question === 'Agent slug') {
+            return 'iot-development-agent';
+          }
+          if (question === 'Agent id') {
+            return 'agent.iot-development-agent';
+          }
+          if (question === 'Primary scope') {
+            return 'anystream.iot';
+          }
+          if (question === 'Primary operator id') {
+            return 'operator.telegram.130149339';
+          }
+          if (question === 'Additional operators (comma-separated, optional)') {
+            return '';
+          }
           if (question === 'TELEGRAM_BOT_TOKEN') {
             return 'telegram-token';
           }
@@ -590,7 +614,7 @@ test('collectAgentBirthInteractiveInput uses conversational birth mode when auto
   assert.equal(input.provider, 'codex');
   assert.equal(input.providerAuthMethod, 'cli');
   assert.equal(input.model, undefined);
-  assert.equal(input.operatorId, 'operator.telegram.130149339,operator.github.enrique');
+  assert.equal(input.operatorId, 'operator.telegram.130149339');
   assert.equal(input.selfRepository, 'anystream/iot-development-agent');
   assert.equal(input.assignedRepositories, 'anystream/iot-platform');
   assert.equal(input.birthProfile?.personaRole, 'Senior IoT Development Agent');
@@ -601,10 +625,16 @@ test('collectAgentBirthInteractiveInput uses conversational birth mode when auto
   assert.equal(conversationTurns, 1);
   assert.equal(repositoryPickerCalls, 0);
   assert.ok(logs.some((line) => line.includes('Gemini interview')));
-  assert.equal(promptedTexts.includes('Agent name'), false);
+  assert.equal(promptedTexts.includes('Agent name'), true);
   assert.equal(promptedTexts.includes('Default provider'), false);
   assert.deepEqual(promptedTexts, [
     'Output directory',
+    'Agent name',
+    'Agent slug',
+    'Agent id',
+    'Primary scope',
+    'Primary operator id',
+    'Additional operators (comma-separated, optional)',
     'TELEGRAM_BOT_TOKEN',
     'Cognitive MCP API key (optional)',
     'Redis password',
@@ -860,6 +890,181 @@ test('collectAgentBirthInteractiveInput resumes a saved conversational interview
   assert.deepEqual(input.egressUrl, ['*']);
   assert.ok(logs.some((line) => line.includes('Resuming saved birth answers')));
   assert.ok(logs.some((line) => line.includes("Where will this agent's own code and configuration live?")));
+});
+
+test('collectAgentBirthInteractiveInput resets stale conversational transcript entries for Telegram and operators', async (t) => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'collab-agent-birth-stale-transcript-'));
+  const outputDir = path.join(workspace, 'iot-agent');
+  const logs = [];
+  const logger = createBufferedLogger(logs);
+  let conversationTurns = 0;
+
+  t.mock.method(globalThis, 'fetch', async (url) => {
+    const href = String(url);
+
+    if (href.includes('/getMe')) {
+      return telegramResponse({
+        id: 1,
+        username: 'stale_transcript_bot',
+      });
+    }
+
+    if (href.includes('/getUpdates')) {
+      return telegramResponse([
+        {
+          update_id: 401,
+          message: {
+            message_id: 3,
+            message_thread_id: 21,
+            text: '/collab-bind AAAA',
+            chat: {
+              id: -1001234567890,
+              type: 'supergroup',
+              title: 'Stale Transcript Ops',
+            },
+          },
+        },
+      ]);
+    }
+
+    throw new Error(`unexpected fetch url: ${href}`);
+  });
+
+  saveBirthWizardDraft(outputDir, {
+    output: outputDir,
+    agentName: 'IoT Developer Agent',
+    agentSlug: 'iot-development-agent',
+    agentId: 'agent.iot-development-agent',
+    scope: 'anystream.iot',
+    operatorId: 'operator.telegram.130149339',
+    telegramEnabled: true,
+    telegramBotToken: 'telegram-token',
+    interviewTranscript: [
+      {
+        role: 'assistant',
+        content:
+          'I will define the birth of this agent with you. I will ask only for the gaps that matter to start the agent correctly.',
+      },
+      {
+        role: 'assistant',
+        content:
+          'What is the destination chat ID and thread ID for Telegram, and what are the stable operator IDs for this agent?',
+      },
+    ],
+  });
+
+  const input = await collectAgentBirthInteractiveInput(
+    {
+      cwd: workspace,
+      output: outputDir,
+    },
+    {
+      logger,
+      collabDir: path.join(outputDir, '.collab'),
+      isInteractiveSession: true,
+      wizardMode: 'auto',
+      wizardPrevalidationResolver() {
+        return {
+          mode: 'conversational',
+          selectedProvider: {
+            provider: 'gemini',
+            apiKeyEnvVar: 'GEMINI_API_KEY',
+            apiKey: 'gemini-key',
+            modelEnvVar: 'GEMINI_MODEL',
+            model: 'gemini-2.5-pro',
+            label: 'Gemini',
+          },
+          reason: 'Using Gemini from GEMINI_API_KEY for the conversational birth interview.',
+        };
+      },
+      conversationAssistant: {
+        async planTurn(_preferredProvider, _currentState, transcript) {
+          conversationTurns += 1;
+          assert.equal(transcript.length, 1);
+          assert.ok(
+            !transcript.some((message) => /chat id|thread id|operator ids/i.test(message.content)),
+          );
+          return {
+            status: 'complete',
+            assistantMessage: 'I have enough to finish the birth package.',
+            missing: [],
+            capture: {
+              birthProfile: {
+                personaRole: 'Senior Engineer',
+                purpose: 'Implement production-ready features across the assigned IoT repositories.',
+                soulMission: 'Deliver stable and maintainable code from GitHub issues.',
+              },
+            },
+          };
+        },
+      },
+      repositoryPicker: {
+        async pickRepositories() {
+          return {
+            selfRepository: 'anystream/iot-development-agent',
+            assignedRepositories: ['anystream/iot-websocket-relay'],
+          };
+        },
+      },
+      providerCliResolver() {
+        return {
+          command: 'codex',
+          available: true,
+          configuredModel: 'gpt-5.4',
+        };
+      },
+      prompt: {
+        async text(question) {
+          if (question === 'Cognitive MCP API key (optional)') {
+            return '';
+          }
+          if (question === 'Redis password') {
+            return 'collab-dev-redis';
+          }
+          if (question === 'Runtime provider (codex, claude, gemini, copilot)') {
+            return 'codex';
+          }
+          if (question === 'Authentication for Codex (OpenAI) (cli or api-key)') {
+            return 'cli';
+          }
+          if (question === 'Cognitive MCP URL') {
+            return 'http://localhost:8787/mcp';
+          }
+          if (question === 'Redis URL') {
+            return 'redis://localhost:6379';
+          }
+          if (question === 'Approved namespaces (comma-separated)') {
+            return 'context.*,agent.*';
+          }
+          if (question === 'Egress URLs (comma-separated, or * for all)') {
+            return '*';
+          }
+          throw new Error(`unexpected text prompt: ${question}`);
+        },
+        async choice(question) {
+          if (question === 'Accept commands from the team thread?') {
+            return 'yes';
+          }
+          if (question === 'Default provider') {
+            return 'codex';
+          }
+          if (question === 'Authentication for Codex (OpenAI)') {
+            return 'cli';
+          }
+          throw new Error(`unexpected choice prompt: ${question}`);
+        },
+        async multiSelect() {
+          return [];
+        },
+      },
+    },
+  );
+
+  assert.equal(conversationTurns, 1);
+  assert.equal(input.telegramBotToken, 'telegram-token');
+  assert.ok(
+    logs.some((line) => line.includes('Resetting the saved conversational interview transcript')),
+  );
 });
 
 test('collectAgentBirthInteractiveInput ignores saved answers when force mode is rebirth', async (t) => {

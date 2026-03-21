@@ -312,6 +312,18 @@ function mergeRepositoryList(
   return [...new Set(merged)].join(',');
 }
 
+function shouldResetDeterministicInterviewTranscript(
+  transcript: readonly BirthInterviewMessage[],
+): boolean {
+  if (transcript.length === 0) {
+    return false;
+  }
+
+  return transcript.some((message) =>
+    /(telegram|chat id|thread id|stable operator ids?|operator ids?)/i.test(message.content),
+  );
+}
+
 function normalizeConversationPatch(
   capture: BirthInterviewCapture,
 ): Partial<AgentBootstrapInput> {
@@ -665,34 +677,6 @@ export async function collectAgentBirthInteractiveInput(
         })
       : undefined);
 
-  if (wizardMode === 'auto') {
-    const preferredProvider =
-      hasTextValue(workingSeed.provider)
-        ? (workingSeed.provider.trim().toLowerCase() as ProviderKey)
-        : 'gemini';
-    const prevalidation = wizardPrevalidationResolver(preferredProvider);
-
-    if (prevalidation.mode === 'conversational' && conversationAssistant) {
-      workingSeed = await runConversationalBirthInterview(
-        {
-          ...workingSeed,
-          output: outputDir,
-        },
-        undefined,
-        prompt,
-        logger,
-        persistDraft,
-        conversationAssistant,
-        prevalidation,
-        ++step,
-        resolveBirthCollabDir(input, dependencies, outputDir),
-        draftAnswers?.interviewTranscript ?? [],
-      );
-    } else {
-      logger?.info(prevalidation.reason);
-    }
-  }
-
   logger?.wizardStep(++step, 'Identity');
   const agentName = hasTextValue(workingSeed.agentName)
     ? workingSeed.agentName
@@ -792,6 +776,54 @@ export async function collectAgentBirthInteractiveInput(
     telegramThreadId,
     telegramAllowTopicCommands,
   });
+
+  if (wizardMode === 'auto') {
+    const preferredProvider =
+      hasTextValue(workingSeed.provider)
+        ? (workingSeed.provider.trim().toLowerCase() as ProviderKey)
+        : 'gemini';
+    const prevalidation = wizardPrevalidationResolver(preferredProvider);
+
+    if (prevalidation.mode === 'conversational' && conversationAssistant) {
+      const initialTranscript = shouldResetDeterministicInterviewTranscript(
+        draftAnswers?.interviewTranscript ?? [],
+      )
+        ? []
+        : (draftAnswers?.interviewTranscript ?? []);
+      if (initialTranscript.length === 0 && (draftAnswers?.interviewTranscript?.length ?? 0) > 0) {
+        logger?.info(
+          'Resetting the saved conversational interview transcript because operator and Telegram routing are now collected deterministically by the wizard.',
+        );
+      }
+      workingSeed = await runConversationalBirthInterview(
+        {
+          ...workingSeed,
+          output: outputDir,
+          agentName,
+          agentSlug,
+          agentId,
+          scope,
+          operatorId,
+          telegramEnabled,
+          telegramBotToken,
+          telegramDefaultChatId,
+          telegramThreadId,
+          telegramAllowTopicCommands,
+        },
+        undefined,
+        prompt,
+        logger,
+        persistDraft,
+        conversationAssistant,
+        prevalidation,
+        ++step,
+        resolveBirthCollabDir(input, dependencies, outputDir),
+        initialTranscript,
+      );
+    } else {
+      logger?.info(prevalidation.reason);
+    }
+  }
 
   logger?.wizardStep(++step, 'Repositories', 'GitHub selection');
 

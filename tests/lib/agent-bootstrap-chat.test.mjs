@@ -333,6 +333,7 @@ test('createBirthDraftAssistant renders Anthropic thinking blocks in interactive
 test('birth interview skill treats Telegram as required infrastructure', () => {
   const prompt = buildBirthInterviewSystemPrompt();
   assert.match(prompt, /Treat Telegram as required operational infrastructure/);
+  assert.match(prompt, /Do not ask for operator ids, bot tokens, chat ids, thread ids/);
   assert.match(prompt, /Do not ask for raw secrets/);
 });
 
