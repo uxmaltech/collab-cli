@@ -34,6 +34,11 @@ import {
   validateGitHubRepositoryReferences,
 } from './github-repositories';
 import {
+  GitHubAppValidationError,
+  type ValidateGitHubAppIdentityResult,
+  validateGitHubAppIdentity,
+} from './github-app';
+import {
   discoverTelegramTargets,
   resolveTelegramRouting,
   tryAutoResolveTelegramRouting,
@@ -76,6 +81,9 @@ export interface BirthWizardDependencies {
   wizardMode: 'structured' | 'auto';
   wizardPrevalidationResolver: (preferredProvider: ProviderKey) => BirthWizardPrevalidation;
   conversationAssistant: BirthInterviewAssistant;
+  githubAppValidator: (
+    input: Parameters<typeof validateGitHubAppIdentity>[0],
+  ) => Promise<ValidateGitHubAppIdentityResult>;
 }
 
 interface BirthWizardPromptState {
@@ -1024,6 +1032,7 @@ export async function collectAgentBirthInteractiveInput(
   const prompt = terminalUi ? terminalUi.createPromptAdapter(basePrompt) : basePrompt;
   const logger = terminalUi ? terminalUi.createLogger(dependencies.logger) : dependencies.logger;
   const providerCliResolver = dependencies.providerCliResolver ?? detectProviderCli;
+  const githubAppValidator = dependencies.githubAppValidator ?? validateGitHubAppIdentity;
   try {
     const resumeOutputDir = path.resolve(input.cwd, input.output ?? '.');
     const dryRun = Boolean(dependencies.dryRun);
@@ -1274,41 +1283,104 @@ export async function collectAgentBirthInteractiveInput(
   });
 
   logger?.wizardStep(++step, 'GitHub App');
-  const githubAppOwner =
+  let githubAppOwner =
     hasTextValue(workingSeed.githubAppOwner)
       ? workingSeed.githubAppOwner.trim()
       : inferGitHubOwnerFromRepository(repositories.selfRepository)
         ?? agentSlug;
-  const githubAppOwnerType = workingSeed.githubAppOwnerType ?? 'auto';
-  const githubAppId = hasTextValue(workingSeed.githubAppId)
+  let githubAppOwnerType = workingSeed.githubAppOwnerType ?? 'auto';
+  let githubAppId = hasTextValue(workingSeed.githubAppId)
     ? workingSeed.githubAppId.trim()
-    : await prompt.text(
+    : '';
+  let githubAppInstallationId = hasTextValue(workingSeed.githubAppInstallationId)
+    ? workingSeed.githubAppInstallationId.trim()
+    : '';
+  let githubAppPrivateKeyPath = hasTextValue(workingSeed.githubAppPrivateKeyPath)
+    ? workingSeed.githubAppPrivateKeyPath.trim()
+    : '';
+
+  while (true) {
+    if (!hasTextValue(githubAppId)) {
+      githubAppId = await prompt.text(
         'GitHub App id',
         workingSeed.githubAppId ?? process.env.COLLAB_RUNTIME_GITHUB_APP_ID ?? '',
       );
-  const githubAppInstallationId = hasTextValue(workingSeed.githubAppInstallationId)
-    ? workingSeed.githubAppInstallationId.trim()
-    : await prompt.text(
+    }
+    if (!hasTextValue(githubAppInstallationId)) {
+      githubAppInstallationId = await prompt.text(
         'GitHub App installation id',
         workingSeed.githubAppInstallationId
           ?? process.env.COLLAB_RUNTIME_GITHUB_APP_INSTALLATION_ID
           ?? '',
       );
-  const githubAppPrivateKeyPath = hasTextValue(workingSeed.githubAppPrivateKeyPath)
-    ? workingSeed.githubAppPrivateKeyPath.trim()
-    : await prompt.text(
-        'GitHub App private key path (optional)',
+    }
+    if (!hasTextValue(githubAppPrivateKeyPath)) {
+      githubAppPrivateKeyPath = await prompt.text(
+        'GitHub App private key path',
         workingSeed.githubAppPrivateKeyPath
           ?? process.env.COLLAB_RUNTIME_GITHUB_APP_PRIVATE_KEY_PATH
           ?? '',
       );
-  persistDraft({
-    githubAppId,
-    githubAppInstallationId,
-    githubAppOwner,
-    githubAppOwnerType,
-    githubAppPrivateKeyPath,
-  });
+    }
+
+    persistDraft({
+      githubAppId,
+      githubAppInstallationId,
+      githubAppOwner,
+      githubAppOwnerType,
+      githubAppPrivateKeyPath,
+    });
+
+    try {
+      const validation = await githubAppValidator({
+        appId: githubAppId,
+        installationId: githubAppInstallationId,
+        owner: githubAppOwner,
+        ownerType: githubAppOwnerType,
+        privateKeyPath: githubAppPrivateKeyPath,
+        repositories: [repositories.selfRepository, ...repositories.assignedRepositories],
+        cwd: input.cwd,
+      });
+      githubAppId = validation.appId;
+      githubAppInstallationId = validation.installationId;
+      githubAppOwner = validation.owner;
+      githubAppOwnerType = validation.ownerType;
+      githubAppPrivateKeyPath = validation.privateKeyPath;
+      persistDraft({
+        githubAppId,
+        githubAppInstallationId,
+        githubAppOwner,
+        githubAppOwnerType,
+        githubAppPrivateKeyPath,
+      });
+      logger?.info(
+        `Validated GitHub App installation ${githubAppInstallationId} for ${githubAppOwner} across ${validation.validatedRepositories.length} repository${validation.validatedRepositories.length === 1 ? '' : 'ies'}.`,
+      );
+      break;
+    } catch (error) {
+      if (!(error instanceof GitHubAppValidationError)) {
+        throw error;
+      }
+
+      logger?.warn(error.message);
+      if (error.promptFields.includes('githubAppId')) {
+        githubAppId = '';
+      }
+      if (error.promptFields.includes('githubAppInstallationId')) {
+        githubAppInstallationId = '';
+      }
+      if (error.promptFields.includes('githubAppPrivateKeyPath')) {
+        githubAppPrivateKeyPath = '';
+      }
+      persistDraft({
+        githubAppId,
+        githubAppInstallationId,
+        githubAppOwner,
+        githubAppOwnerType,
+        githubAppPrivateKeyPath,
+      });
+    }
+  }
 
   if (wizardMode === 'auto') {
     const preferredProvider =

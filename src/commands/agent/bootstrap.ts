@@ -27,6 +27,7 @@ import {
   collectAgentBirthInteractiveInput,
   shouldRunBirthWizard,
 } from '../../lib/agent-bootstrap/wizard';
+import { validateGitHubAppIdentity } from '../../lib/agent-bootstrap/github-app';
 import { formatForceModeList } from '../../lib/force-mode';
 import { writeAgentBootstrapFiles } from '../../lib/agent-bootstrap/write';
 import type { AgentBootstrapInput } from '../../lib/agent-bootstrap/types';
@@ -287,14 +288,40 @@ Examples:
         : seededInput;
 
       const draftSeed = normalizeAgentBootstrapOptions(input);
-      let birthProfile = draftSeed.birthProfile;
+      const hasGitHubAppMaterial =
+        draftSeed.githubAppId.trim().length > 0
+        || draftSeed.githubAppInstallationId.trim().length > 0
+        || draftSeed.githubAppPrivateKeyPath.trim().length > 0;
+      const validatedGitHubApp = hasGitHubAppMaterial
+        ? await validateGitHubAppIdentity({
+            appId: draftSeed.githubAppId,
+            installationId: draftSeed.githubAppInstallationId,
+            owner: draftSeed.githubAppOwner,
+            ownerType: draftSeed.githubAppOwnerType,
+            privateKeyPath: draftSeed.githubAppPrivateKeyPath,
+            repositories: [draftSeed.selfRepository, ...draftSeed.assignedRepositories],
+            cwd: context.cwd,
+          })
+        : undefined;
+      const validatedInput: AgentBootstrapInput = validatedGitHubApp
+        ? {
+            ...input,
+            githubAppId: validatedGitHubApp.appId,
+            githubAppInstallationId: validatedGitHubApp.installationId,
+            githubAppOwner: validatedGitHubApp.owner,
+            githubAppOwnerType: validatedGitHubApp.ownerType,
+            githubAppPrivateKeyPath: validatedGitHubApp.privateKeyPath,
+          }
+        : input;
+      const validatedDraftSeed = normalizeAgentBootstrapOptions(validatedInput);
+      let birthProfile = validatedDraftSeed.birthProfile;
 
       try {
         const birthDraft = await createBirthDraftAssistant(context.logger, {
           interactiveSession: isInteractiveSession && input.interactive !== false && !input.json,
-        }).draftProfile(draftSeed);
+        }).draftProfile(validatedDraftSeed);
         if (birthDraft) {
-          birthProfile = mergeBirthProfileFields(draftSeed.birthProfile, birthDraft);
+          birthProfile = mergeBirthProfileFields(validatedDraftSeed.birthProfile, birthDraft);
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -302,7 +329,7 @@ Examples:
       }
 
       const result = generateAgentBootstrap({
-        ...input,
+        ...validatedInput,
         birthProfile,
       });
       const outputHadExistingAgentConfig = fs.existsSync(

@@ -26,6 +26,17 @@ function telegramResponse(result) {
   };
 }
 
+async function passThroughGitHubAppValidation(input) {
+  return {
+    appId: input.appId.trim(),
+    installationId: input.installationId.trim(),
+    owner: input.owner?.trim() || 'anystream',
+    ownerType: input.ownerType === 'user' ? 'user' : 'org',
+    privateKeyPath: path.resolve(input.cwd ?? process.cwd(), input.privateKeyPath.trim()),
+    validatedRepositories: [...new Set((input.repositories ?? []).map((value) => value.trim()).filter(Boolean))],
+  };
+}
+
 function defaultWizardTextAnswer(question) {
   if (question === 'GitHub App id') {
     return '123456';
@@ -35,8 +46,8 @@ function defaultWizardTextAnswer(question) {
     return '999999';
   }
 
-  if (question === 'GitHub App private key path (optional)') {
-    return '';
+  if (question === 'GitHub App private key path') {
+    return '/tmp/github-app.pem';
   }
 
   if (question === 'TELEGRAM_WEBHOOK_PUBLIC_BASE_URL') {
@@ -178,6 +189,7 @@ test('collectAgentBirthInteractiveInput maps wizard answers into canonical boots
           configuredModel: 'gemini-2.5-pro',
         };
       },
+      githubAppValidator: passThroughGitHubAppValidation,
       prompt: {
         async text(question) {
           promptedTexts.push(question);
@@ -230,7 +242,7 @@ test('collectAgentBirthInteractiveInput maps wizard answers into canonical boots
   assert.equal(input.githubAppId, '123456');
   assert.equal(input.githubAppInstallationId, '999999');
   assert.equal(input.githubAppOwner, 'anystream');
-  assert.equal(input.githubAppOwnerType, 'auto');
+  assert.equal(input.githubAppOwnerType, 'org');
   assert.equal(input.selfRepository, 'anystream/iot-development-agent');
   assert.equal(input.assignedRepositories, 'anystream/iot-platform,anystream/iot-firmware');
   assert.equal(input.provider, 'gemini');
@@ -260,6 +272,156 @@ test('collectAgentBirthInteractiveInput maps wizard answers into canonical boots
   assert.ok(logs.some((line) => line.includes('Telegram thread_id resolved automatically')));
   assert.ok(logs.some((line) => line.includes('Repositories')));
   assert.ok(logs.some((line) => line.includes('Mission')));
+});
+
+test('collectAgentBirthInteractiveInput re-prompts the GitHub App private key path when validation fails', async () => {
+  const logs = [];
+  const logger = createBufferedLogger(logs);
+  const promptedTexts = [];
+  let privateKeyPromptCount = 0;
+  let validatorCalls = 0;
+
+  const input = await collectAgentBirthInteractiveInput(
+    {
+      cwd: '/tmp',
+    },
+    {
+      logger,
+      collabDir: '/tmp/.collab',
+      isInteractiveSession: true,
+      repositoryPicker: {
+        async pickRepositories() {
+          return {
+            selfRepository: 'anystream/iot-development-agent',
+            assignedRepositories: ['anystream/balena-ws-player'],
+          };
+        },
+      },
+      providerCliResolver() {
+        return {
+          command: 'gemini',
+          available: true,
+          configuredModel: 'gemini-2.5-pro',
+        };
+      },
+      githubAppValidator: async (validationInput) => {
+        validatorCalls += 1;
+        if (validatorCalls === 1) {
+          const { GitHubAppValidationError } = await import('../../dist/lib/agent-bootstrap/github-app.js');
+          throw new GitHubAppValidationError(
+            'GitHub App private key path is unreadable: ENOENT',
+            'private_key_unreadable',
+            ['githubAppPrivateKeyPath'],
+          );
+        }
+
+        return {
+          appId: validationInput.appId.trim(),
+          installationId: validationInput.installationId.trim(),
+          owner: 'anystream',
+          ownerType: 'org',
+          privateKeyPath: '/tmp/valid-github-app.pem',
+          validatedRepositories: [...(validationInput.repositories ?? [])],
+        };
+      },
+      prompt: {
+        async text(question) {
+          promptedTexts.push(question);
+          if (question === 'Output directory') {
+            return '/tmp/iot-agent';
+          }
+          if (question === 'Agent name') {
+            return 'AnyStream IoT Development Agent';
+          }
+          if (question === 'Agent slug') {
+            return 'iot-development-agent';
+          }
+          if (question === 'Agent id') {
+            return 'agent.iot-development-agent';
+          }
+          if (question === 'Primary scope') {
+            return 'anystream.iot';
+          }
+          if (question === 'Primary operator id') {
+            return 'operator.telegram.130149339';
+          }
+          if (question === 'Additional operators (comma-separated, optional)') {
+            return '';
+          }
+          if (question === 'TELEGRAM_BOT_TOKEN') {
+            return 'telegram-token';
+          }
+          if (question === 'GitHub App id') {
+            return '123456';
+          }
+          if (question === 'GitHub App installation id') {
+            return '999999';
+          }
+          if (question === 'GitHub App private key path') {
+            privateKeyPromptCount += 1;
+            return privateKeyPromptCount === 1 ? '/tmp/missing.pem' : '/tmp/valid.pem';
+          }
+          if (question === 'Primary role') {
+            return 'Senior IoT Development Agent';
+          }
+          if (question === 'What will this agent do?') {
+            return 'Build and maintain IoT delivery flows.';
+          }
+          if (question === 'Soul mission') {
+            return 'Keep IoT delivery visible and durable.';
+          }
+          if (question === 'Default model') {
+            return 'gemini-2.5-pro';
+          }
+          if (question === 'Cognitive MCP URL') {
+            return 'http://localhost:8787/mcp';
+          }
+          if (question === 'Redis URL') {
+            return 'redis://localhost:6379';
+          }
+          if (question === 'Cognitive MCP API key (optional)') {
+            return '';
+          }
+          if (question === 'Redis password') {
+            return 'collab-dev-redis';
+          }
+          if (question === 'Approved namespaces (comma-separated)') {
+            return 'context.*,agent.*';
+          }
+          if (question === 'Egress URLs (comma-separated, or * for all)') {
+            return '*';
+          }
+          if (question === 'TELEGRAM_WEBHOOK_PUBLIC_BASE_URL') {
+            return '';
+          }
+          if (question === 'TELEGRAM_WEBHOOK_SECRET (optional)') {
+            return '';
+          }
+          throw new Error(`unexpected question: ${question}`);
+        },
+        async choice(question) {
+          if (question === 'Will this agent publish work summaries to a Telegram topic?') {
+            return 'no';
+          }
+          if (question === 'Default provider') {
+            return 'gemini';
+          }
+          if (question === 'Authentication for Gemini (Google)') {
+            return 'api-key';
+          }
+          throw new Error(`unexpected choice prompt: ${question}`);
+        },
+        async multiSelect() {
+          return [];
+        },
+      },
+    },
+  );
+
+  assert.equal(validatorCalls, 2);
+  assert.equal(privateKeyPromptCount, 2);
+  assert.equal(input.githubAppPrivateKeyPath, '/tmp/valid-github-app.pem');
+  assert.ok(logs.some((line) => line.includes('private key path is unreadable')));
 });
 
 test('collectAgentBirthInteractiveInput falls back to /collab-bind when Telegram thread_id cannot be resolved automatically', async (t) => {
@@ -351,6 +513,7 @@ test('collectAgentBirthInteractiveInput falls back to /collab-bind when Telegram
           configuredModel: 'gemini-2.5-pro',
         };
       },
+      githubAppValidator: passThroughGitHubAppValidation,
       prompt: {
         async text(question) {
           promptedTexts.push(question);
@@ -457,6 +620,7 @@ test('collectAgentBirthInteractiveInput skips model prompt for CLI-auth provider
           configuredModel: 'gpt-5.3-codex',
         };
       },
+      githubAppValidator: passThroughGitHubAppValidation,
       prompt: {
         async text(question) {
           promptedTexts.push(question);
@@ -612,6 +776,7 @@ test('collectAgentBirthInteractiveInput uses conversational birth mode when auto
           configuredModel: 'gpt-5.4',
         };
       },
+      githubAppValidator: passThroughGitHubAppValidation,
       // Telegram routing is exercised by dedicated tests; this case focuses on conversational capture.
       prompt: {
         async text(question) {
@@ -701,7 +866,7 @@ test('collectAgentBirthInteractiveInput uses conversational birth mode when auto
     'TELEGRAM_WEBHOOK_SECRET (optional)',
     'GitHub App id',
     'GitHub App installation id',
-    'GitHub App private key path (optional)',
+    'GitHub App private key path',
     'Cognitive MCP API key (optional)',
     'Redis password',
   ]);
@@ -774,6 +939,7 @@ test('collectAgentBirthInteractiveInput resumes saved answers and skips complete
           configuredModel: 'gemini-2.5-pro',
         };
       },
+      githubAppValidator: passThroughGitHubAppValidation,
       prompt: {
         async text(question) {
           promptedTexts.push(question);
@@ -801,7 +967,7 @@ test('collectAgentBirthInteractiveInput resumes saved answers and skips complete
     'TELEGRAM_WEBHOOK_SECRET (optional)',
     'GitHub App id',
     'GitHub App installation id',
-    'GitHub App private key path (optional)',
+    'GitHub App private key path',
     'Redis URL',
     'Cognitive MCP API key (optional)',
     'Redis password',
@@ -882,6 +1048,7 @@ test('collectAgentBirthInteractiveInput re-prompts operators when the saved draf
           configuredModel: 'gpt-5.4',
         };
       },
+      githubAppValidator: passThroughGitHubAppValidation,
       repositoryPicker: {
         async pickRepositories() {
           throw new Error('repository picker should not run when saved repositories already exist');
@@ -915,7 +1082,7 @@ test('collectAgentBirthInteractiveInput re-prompts operators when the saved draf
     'TELEGRAM_WEBHOOK_SECRET (optional)',
     'GitHub App id',
     'GitHub App installation id',
-    'GitHub App private key path (optional)',
+    'GitHub App private key path',
     'Cognitive MCP API key (optional)',
     'Redis password',
     'Approved namespaces (comma-separated)',
@@ -1036,6 +1203,7 @@ test('collectAgentBirthInteractiveInput resumes a saved conversational interview
           configuredModel: 'gpt-5.4',
         };
       },
+      githubAppValidator: passThroughGitHubAppValidation,
       prompt: {
         async text(question) {
           promptedTexts.push(question);
@@ -1071,7 +1239,7 @@ test('collectAgentBirthInteractiveInput resumes a saved conversational interview
     'TELEGRAM_WEBHOOK_SECRET (optional)',
     'GitHub App id',
     'GitHub App installation id',
-    'GitHub App private key path (optional)',
+    'GitHub App private key path',
     'Cognitive MCP API key (optional)',
     'Redis password',
   ]);
@@ -1208,6 +1376,7 @@ test('collectAgentBirthInteractiveInput resets stale conversational transcript e
           configuredModel: 'gpt-5.4',
         };
       },
+      githubAppValidator: passThroughGitHubAppValidation,
       prompt: {
         async text(question) {
           const defaultAnswer = defaultWizardTextAnswer(question);
@@ -1361,6 +1530,7 @@ test('collectAgentBirthInteractiveInput ignores saved answers when force mode is
           configuredModel: 'gemini-2.5-pro',
         };
       },
+      githubAppValidator: passThroughGitHubAppValidation,
       prompt: {
         async text(question) {
           const defaultAnswer = defaultWizardTextAnswer(question);
@@ -1530,6 +1700,7 @@ test('collectAgentBirthInteractiveInput uses the output directory .collab state 
           configuredModel: 'gemini-2.5-pro',
         };
       },
+      githubAppValidator: passThroughGitHubAppValidation,
       prompt: {
         async text(question) {
           const defaultAnswer = defaultWizardTextAnswer(question);
