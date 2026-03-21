@@ -109,6 +109,7 @@ export interface AgentBootstrapPaths {
   visiblePromptsFile: string;
   birthDocFile: string;
   skillFile: string;
+  skillManifestFile: string;
   composeFile: string;
   infraComposeFile: string;
   mcpComposeFile: string;

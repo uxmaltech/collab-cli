@@ -4,6 +4,7 @@ import { registerAgentCommand } from './agent';
 import { registerCanonCommand } from './canon';
 import { registerCiCommand } from './ci';
 import { registerComposeCommand } from './compose';
+import { registerDevEnvCommand } from './dev-env';
 import { registerDoctorCommand } from './doctor';
 import { registerInfraCommand } from './infra';
 import { registerInitCommand } from './init';
@@ -20,6 +21,7 @@ export function registerCommands(program: Command): void {
   registerCanonCommand(program);
   registerCiCommand(program);
   registerComposeCommand(program);
+  registerDevEnvCommand(program);
   registerInfraCommand(program);
   registerMcpCommand(program);
   registerUpCommand(program);

@@ -136,7 +136,7 @@ test('bootstrap writes the canonical birth package files', () => {
   assert.equal(summary.agent.cognitiveMcpUrl, 'http://127.0.0.1:8787/mcp');
   assert.equal(summary.agent.selfRepository, 'local/collab-architect');
   assert.deepEqual(summary.agent.assignedRepositories, []);
-  assert.equal(summary.files.length, 14);
+  assert.equal(summary.files.length, 15);
 
   const configPath = path.join(workspace, '.collab', 'config.json');
   const envExamplePath = path.join(workspace, '.env.example');
@@ -149,6 +149,7 @@ test('bootstrap writes the canonical birth package files', () => {
   const promptsPath = path.join(workspace, 'fixtures', 'collab-architect', 'visible-prompts.json');
   const docPath = path.join(workspace, 'docs', 'collab-architect-birth.md');
   const skillPath = path.join(workspace, 'skills', 'collab-architect-bootstrap', 'SKILL.md');
+  const skillManifestPath = path.join(workspace, 'skills', 'collab-architect-bootstrap', 'skill.json');
   const composePath = path.join(workspace, 'infra', 'docker-compose.yml');
   const infraComposePath = path.join(workspace, 'infra', 'docker-compose.infra.yml');
   const mcpComposePath = path.join(workspace, 'infra', 'docker-compose.mcp.yml');
@@ -165,6 +166,7 @@ test('bootstrap writes the canonical birth package files', () => {
     promptsPath,
     docPath,
     skillPath,
+    skillManifestPath,
     composePath,
     infraComposePath,
     mcpComposePath,
@@ -175,6 +177,7 @@ test('bootstrap writes the canonical birth package files', () => {
   assert.doesNotThrow(() => JSON.parse(fs.readFileSync(configPath, 'utf8')));
   const configPayload = JSON.parse(fs.readFileSync(configPath, 'utf8'));
   const birthPayload = JSON.parse(fs.readFileSync(birthPath, 'utf8'));
+  const skillManifestPayload = JSON.parse(fs.readFileSync(skillManifestPath, 'utf8'));
   const packagePayload = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
   const envExample = fs.readFileSync(envExamplePath, 'utf8');
   const envFile = fs.readFileSync(envPath, 'utf8');
@@ -201,6 +204,8 @@ test('bootstrap writes the canonical birth package files', () => {
   assert.equal(configPayload.assistants.providers.gemini.auth.envVar, 'GEMINI_API_KEY');
   assert.equal(birthPayload.operating_boundaries.self_repository, 'local/collab-architect');
   assert.deepEqual(birthPayload.operating_boundaries.assigned_repositories, []);
+  assert.equal(skillManifestPayload.skill_id, 'collab-architect.bootstrap');
+  assert.equal(skillManifestPayload.instructions_path, 'SKILL.md');
   assert.equal(
     birthPayload.operating_boundaries.cognitive_mcp_endpoint,
     'http://127.0.0.1:8787/mcp',

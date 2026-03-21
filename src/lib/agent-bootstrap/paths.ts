@@ -25,6 +25,12 @@ export function buildAgentBootstrapPaths(options: AgentBootstrapOptions): AgentB
       `${options.agentSlug}-bootstrap`,
       'SKILL.md',
     ),
+    skillManifestFile: path.join(
+      options.outputDir,
+      'skills',
+      `${options.agentSlug}-bootstrap`,
+      'skill.json',
+    ),
     composeFile: path.join(options.outputDir, 'infra', 'docker-compose.yml'),
     infraComposeFile: path.join(options.outputDir, 'infra', 'docker-compose.infra.yml'),
     mcpComposeFile: path.join(options.outputDir, 'infra', 'docker-compose.mcp.yml'),

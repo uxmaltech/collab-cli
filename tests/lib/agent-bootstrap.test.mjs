@@ -28,7 +28,7 @@ test('generateAgentBootstrap returns deterministic file paths and valid JSON out
   assert.equal(result.options.cognitiveMcpUrl, 'http://127.0.0.1:8787/mcp');
   assert.equal(result.options.selfRepository, 'local/collab-runtime-architect');
   assert.deepEqual(result.options.assignedRepositories, []);
-  assert.equal(result.files.length, 14);
+  assert.equal(result.files.length, 15);
   assert.deepEqual(
     result.files.map((file) => file.relativePath),
     [
@@ -43,6 +43,7 @@ test('generateAgentBootstrap returns deterministic file paths and valid JSON out
       path.join('fixtures', 'collab-runtime-architect', 'visible-prompts.json'),
       path.join('docs', 'collab-runtime-architect-birth.md'),
       path.join('skills', 'collab-runtime-architect-bootstrap', 'SKILL.md'),
+      path.join('skills', 'collab-runtime-architect-bootstrap', 'skill.json'),
       path.join('infra', 'docker-compose.yml'),
       path.join('infra', 'docker-compose.infra.yml'),
       path.join('infra', 'docker-compose.mcp.yml'),
@@ -90,7 +91,7 @@ test('summarizeAgentBootstrap returns a stable machine-readable manifest', () =>
   assert.equal(summary.agent.cognitiveMcpUrl, 'http://127.0.0.1:8787/mcp');
   assert.equal(summary.agent.selfRepository, 'local/collab-runtime-architect');
   assert.deepEqual(summary.agent.assignedRepositories, []);
-  assert.equal(summary.files.length, 14);
+  assert.equal(summary.files.length, 15);
   assert.deepEqual(summary.files[0], { path: '.collab/config.json' });
 });
 

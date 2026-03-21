@@ -14,3 +14,4 @@ export { agentBirthTemplate } from './birth';
 export { agentVisiblePromptsTemplate } from './visible-prompts';
 export { birthDocTemplate } from './birth-doc';
 export { bootstrapSkillTemplate } from './bootstrap-skill';
+export { bootstrapSkillManifestTemplate } from './bootstrap-skill-manifest';

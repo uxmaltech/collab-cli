@@ -99,7 +99,8 @@ export function mcpComposeTemplate(_options: AgentBootstrapOptions): string {
     env_file:
       - ../.env
     environment:
-      PORT: \${COGNITIVE_MCP_PORT:-8787}
+      MCP_HOST: 0.0.0.0
+      MCP_PORT: 7337
       REDIS_URL: \${REDIS_URL:-redis://:\${REDIS_PASSWORD:-collab-dev-redis}@redis:6379}
       QDRANT_URL: http://qdrant:6333
       QDRANT_API_KEY: ""
@@ -111,8 +112,9 @@ export function mcpComposeTemplate(_options: AgentBootstrapOptions): string {
       MINIO_SECRET_KEY: collabminiosecret
       MINIO_BUCKET: collab
       COGNITIVE_MCP_API_KEY: \${COGNITIVE_MCP_API_KEY:-}
+      MCP_ENV: \${COGNITIVE_MCP_ENV:-local}
     ports:
-      - "\${COGNITIVE_MCP_PORT:-8787}:8787"
+      - "\${COGNITIVE_MCP_PORT:-8787}:7337"
     depends_on:
       - redis
       - qdrant

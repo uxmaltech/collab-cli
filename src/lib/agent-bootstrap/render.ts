@@ -12,6 +12,7 @@ import {
   agentPackageJsonTemplate,
   agentVisiblePromptsTemplate,
   bootstrapSkillTemplate,
+  bootstrapSkillManifestTemplate,
   birthDocTemplate,
   infraComposeTemplate,
   mcpComposeTemplate,
@@ -97,6 +98,12 @@ export function renderAgentBootstrapFiles(options: AgentBootstrapOptions): Gener
       paths.skillFile,
       bootstrapSkillTemplate(options),
       'write bootstrap skill',
+    ),
+    fileEntry(
+      options.outputDir,
+      paths.skillManifestFile,
+      bootstrapSkillManifestTemplate(options),
+      'write bootstrap skill manifest',
     ),
     fileEntry(
       options.outputDir,

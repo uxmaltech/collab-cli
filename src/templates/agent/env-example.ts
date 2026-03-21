@@ -15,6 +15,8 @@ export function agentEnvExampleTemplate(options: AgentBootstrapOptions): string 
     `COLLAB_AGENT_MODEL=${options.providerAuthMethod === 'api-key' ? (options.model ?? '') : ''}`,
     `COGNITIVE_MCP_URL=${options.cognitiveMcpUrl}`,
     'COGNITIVE_MCP_API_KEY=',
+    'COGNITIVE_MCP_PORT=8787',
+    'COGNITIVE_MCP_ENV=local',
     `REDIS_URL=${options.redisUrl}`,
     'REDIS_PASSWORD=collab-dev-redis',
     'TELEGRAM_BOT_TOKEN=',
