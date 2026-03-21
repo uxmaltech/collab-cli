@@ -1,4 +1,4 @@
-import { mergeEnvWithDefaults, readEnvFile, renderEnvFile } from '../../lib/env-file';
+import { readEnvFile, renderEnvFile } from '../../lib/env-file';
 import type { AgentBootstrapOptions } from '../../lib/agent-bootstrap/types';
 
 const ENV_KEY_ORDER = [
@@ -21,6 +21,23 @@ const ENV_KEY_ORDER = [
   'ANTHROPIC_API_KEY',
   'ANTHROPIC_MODEL',
 ] as const;
+
+function mergeManagedEnv(existing: Record<string, string>, defaults: Record<string, string>): Record<string, string> {
+  const merged: Record<string, string> = { ...defaults };
+
+  for (const [key, value] of Object.entries(existing)) {
+    if (!(key in defaults)) {
+      merged[key] = value;
+      continue;
+    }
+
+    if (value.trim().length > 0) {
+      merged[key] = value;
+    }
+  }
+
+  return merged;
+}
 
 export function agentEnvTemplate(options: AgentBootstrapOptions): string {
   const existing = readEnvFile(options.outputDir + '/.env');
@@ -45,5 +62,5 @@ export function agentEnvTemplate(options: AgentBootstrapOptions): string {
     ANTHROPIC_MODEL: existing.ANTHROPIC_MODEL ?? '',
   };
 
-  return renderEnvFile(mergeEnvWithDefaults(existing, defaults), ENV_KEY_ORDER);
+  return renderEnvFile(mergeManagedEnv(existing, defaults), ENV_KEY_ORDER);
 }

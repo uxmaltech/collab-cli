@@ -25,6 +25,16 @@ import {
   type AgentBootstrapOptions,
 } from './types';
 
+function normalizeOperatorId(value: string): string {
+  const trimmed = value.trim();
+
+  if (/^\d+$/.test(trimmed)) {
+    return `operator.telegram.${trimmed}`;
+  }
+
+  return trimmed;
+}
+
 export function normalizeAgentBootstrapOptions(input: AgentBootstrapInput): AgentBootstrapOptions {
   const outputDir = path.resolve(input.cwd, input.output ?? '.');
   const inferredSlug = slugifyAgentName(
@@ -88,7 +98,9 @@ export function normalizeAgentBootstrapOptions(input: AgentBootstrapInput): Agen
     input.redisPassword?.trim()
     || process.env.REDIS_PASSWORD?.trim()
     || 'collab-dev-redis';
-  const operatorIds = parseCsvList(input.operatorId, [`operator.${inferredSlug}`]);
+  const operatorIds = parseCsvList(input.operatorId, [`operator.${inferredSlug}`]).map(
+    normalizeOperatorId,
+  );
   const primaryOperatorId = operatorIds[0];
 
   const baseOptions = {

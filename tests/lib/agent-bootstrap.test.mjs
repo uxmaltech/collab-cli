@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { createRequire } from 'node:module';
@@ -180,4 +182,56 @@ test('generateAgentBootstrap allows Telegram operator DM fallback when operator 
   ]);
   assert.match(envExampleFile.content, /Operational output goes to the originating operator by DM/);
   assert.match(entrypointFile.content, /telegram operational/);
+});
+
+test('generateAgentBootstrap normalizes a raw Telegram user id into an operator.telegram profile id', () => {
+  const result = generateAgentBootstrap({
+    cwd: '/tmp/collab-bootstrap-raw-telegram-operator',
+    agentName: 'Raw Telegram Operator Agent',
+    operatorId: '130149339',
+    telegramEnabled: true,
+    telegramBotToken: 'telegram-token',
+  });
+
+  assert.equal(result.options.operatorId, 'operator.telegram.130149339');
+  assert.deepEqual(result.options.operatorIds, ['operator.telegram.130149339']);
+
+  const configFile = result.files.find((file) => file.relativePath === '.collab/config.json');
+  assert.ok(configFile);
+  const configPayload = JSON.parse(configFile.content);
+  assert.equal(configPayload.agent.profiles.operator.id, 'operator.telegram.130149339');
+});
+
+test('generateAgentBootstrap repopulates managed env values when an existing .env only contains blanks', () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'collab-bootstrap-env-blank-'));
+  fs.writeFileSync(
+    path.join(workspace, '.env'),
+    [
+      'TELEGRAM_BOT_TOKEN=',
+      'TELEGRAM_DEFAULT_CHAT_ID=',
+      'TELEGRAM_THREAD_ID=',
+      'COGNITIVE_MCP_API_KEY=',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+
+  const result = generateAgentBootstrap({
+    cwd: workspace,
+    output: workspace,
+    agentName: 'Env Hydrated Agent',
+    operatorId: 'operator.telegram.130149339',
+    telegramEnabled: true,
+    telegramBotToken: 'telegram-token',
+    telegramDefaultChatId: '-1003895414389',
+    telegramThreadId: '2',
+    cognitiveMcpApiKey: 'mcp-key',
+  });
+
+  const envFile = result.files.find((file) => file.relativePath === '.env');
+  assert.ok(envFile);
+  assert.match(envFile.content, /^TELEGRAM_BOT_TOKEN=telegram-token$/m);
+  assert.match(envFile.content, /^TELEGRAM_DEFAULT_CHAT_ID=-1003895414389$/m);
+  assert.match(envFile.content, /^TELEGRAM_THREAD_ID=2$/m);
+  assert.match(envFile.content, /^COGNITIVE_MCP_API_KEY=mcp-key$/m);
 });
