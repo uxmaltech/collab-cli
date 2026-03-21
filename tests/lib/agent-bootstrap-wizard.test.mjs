@@ -84,6 +84,7 @@ test('collectAgentBirthInteractiveInput maps wizard answers into canonical boots
     ['Primary operator id', 'operator.telegram.130149339'],
     ['Additional operators (comma-separated, optional)', 'operator.github.enrique'],
     ['TELEGRAM_BOT_TOKEN', 'telegram-token'],
+    ['Will this agent publish work summaries to a Telegram topic?', 'yes'],
     ['Accept commands from the team thread?', 'yes'],
     ['Primary role', 'Senior IoT Development Agent'],
     ['What will this agent do?', 'Build and maintain IoT software delivery flows across the assigned repositories.'],
@@ -161,6 +162,11 @@ test('collectAgentBirthInteractiveInput maps wizard answers into canonical boots
           return answer;
         },
         async choice(question, choices, defaultValue) {
+          if (question === 'Will this agent publish work summaries to a Telegram topic?') {
+            assert.ok(choices.some((choice) => choice.value === 'yes'));
+            assert.ok(choices.some((choice) => choice.value === 'no'));
+            return 'yes';
+          }
           if (question === 'Default provider') {
             assert.equal(defaultValue, 'gemini');
             assert.ok(choices.some((choice) => choice.value === 'gemini'));
@@ -204,7 +210,6 @@ test('collectAgentBirthInteractiveInput maps wizard answers into canonical boots
   assert.equal(input.telegramBotToken, 'telegram-token');
   assert.equal(input.telegramDefaultChatId, '-1001234567890');
   assert.equal(input.telegramThreadId, '12');
-  assert.equal(promptedTexts.includes('Will this agent carry a thread_id?'), false);
   assert.equal(promptedTexts.includes('Telegram default chat id'), false);
   assert.equal(promptedTexts.includes('Telegram thread id (optional)'), false);
   assert.equal(input.redisPassword, 'collab-dev-redis');
@@ -229,7 +234,7 @@ test('collectAgentBirthInteractiveInput falls back to /collab-bind when Telegram
   const logs = [];
   const logger = createBufferedLogger(logs);
   const promptedTexts = [];
-  let askedAboutThreadId = false;
+  let askedAboutSummaryThread = false;
   let telegramUpdatesCalls = 0;
   const answers = new Map([
     ['Agent name', 'Bindable Agent'],
@@ -239,7 +244,7 @@ test('collectAgentBirthInteractiveInput falls back to /collab-bind when Telegram
     ['Primary operator id', 'operator.telegram.130149339'],
     ['Additional operators (comma-separated, optional)', 'operator.github.enrique'],
     ['TELEGRAM_BOT_TOKEN', 'telegram-token'],
-    ['Will this agent carry a thread_id?', 'yes'],
+    ['Will this agent publish work summaries to a Telegram topic?', 'yes'],
     ['Accept commands from the team thread?', 'yes'],
     ['Primary role', 'Bindable Agent'],
     ['What will this agent do?', 'Resolve Telegram chat routing from birth.'],
@@ -334,8 +339,8 @@ test('collectAgentBirthInteractiveInput falls back to /collab-bind when Telegram
             return 'api-key';
           }
 
-          if (question === 'Will this agent carry a thread_id?') {
-            askedAboutThreadId = true;
+          if (question === 'Will this agent publish work summaries to a Telegram topic?') {
+            askedAboutSummaryThread = true;
             assert.ok(choices.some((choice) => choice.value === 'yes'));
             assert.ok(choices.some((choice) => choice.value === 'no'));
             return 'yes';
@@ -360,7 +365,7 @@ test('collectAgentBirthInteractiveInput falls back to /collab-bind when Telegram
   assert.equal(input.telegramThreadId, '12');
   assert.equal(promptedTexts.includes('Telegram default chat id'), false);
   assert.equal(promptedTexts.includes('Telegram thread id (optional)'), false);
-  assert.equal(askedAboutThreadId, true);
+  assert.equal(askedAboutSummaryThread, true);
   assert.ok(logs.some((line) => line.includes('/collab-bind')));
 });
 
@@ -598,6 +603,9 @@ test('collectAgentBirthInteractiveInput uses conversational birth mode when auto
           throw new Error(`unexpected text prompt: ${question}`);
         },
         async choice(question) {
+          if (question === 'Will this agent publish work summaries to a Telegram topic?') {
+            return 'yes';
+          }
           if (question === 'Accept commands from the team thread?') {
             teamThreadChoiceAsked = true;
             return 'yes';
@@ -1042,6 +1050,9 @@ test('collectAgentBirthInteractiveInput resets stale conversational transcript e
           throw new Error(`unexpected text prompt: ${question}`);
         },
         async choice(question) {
+          if (question === 'Will this agent publish work summaries to a Telegram topic?') {
+            return 'yes';
+          }
           if (question === 'Accept commands from the team thread?') {
             return 'yes';
           }
@@ -1086,6 +1097,7 @@ test('collectAgentBirthInteractiveInput ignores saved answers when force mode is
     ['Primary scope', 'anystream.fresh'],
     ['Primary operator id', 'operator.telegram.130149339'],
     ['Additional operators (comma-separated, optional)', 'operator.github.release-manager'],
+    ['Will this agent publish work summaries to a Telegram topic?', 'yes'],
     ['Primary role', 'Fresh Delivery Agent'],
     ['What will this agent do?', 'Own GitHub-driven delivery for the assigned product repositories.'],
     ['Soul mission', 'Keep delivery visible and contract-backed from birth.'],
@@ -1165,6 +1177,9 @@ test('collectAgentBirthInteractiveInput ignores saved answers when force mode is
           return answer;
         },
         async choice(question) {
+          if (question === 'Will this agent publish work summaries to a Telegram topic?') {
+            return 'yes';
+          }
           if (question === 'Default provider') {
             return 'gemini';
           }

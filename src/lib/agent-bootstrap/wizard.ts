@@ -169,38 +169,22 @@ async function collectTelegramRouting(
   options: {
     logger?: Logger;
     prompt: BirthPromptAdapter;
+    requireThread: boolean;
   },
 ): Promise<TelegramRouting> {
+  if (!options.requireThread) {
+    options.logger?.info('Telegram will use DM-only operational output with no team summary topic.');
+    return {
+      chatId: '',
+      threadId: '',
+    };
+  }
+
   const discovery = await discoverTelegramTargets(telegramBotToken);
   const automaticRouting = selectAutomaticTelegramRouting(discovery);
   if (automaticRouting) {
     options.logger?.info('Telegram thread_id resolved automatically from recent bot activity.');
     return automaticRouting;
-  }
-
-  const hasThreadId = await options.prompt.choice(
-    'Will this agent carry a thread_id?',
-    [
-      {
-        value: 'yes',
-        label: 'Yes',
-        description: 'Resolve chat_id and thread_id with /collab-bind',
-      },
-      {
-        value: 'no',
-        label: 'No',
-        description: 'Use Telegram DM-only routing for the primary operator',
-      },
-    ],
-    'yes',
-  );
-
-  if (hasThreadId === 'no') {
-    options.logger?.info('Telegram will use DM-only routing for the primary operator.');
-    return {
-      chatId: '',
-      threadId: '',
-    };
   }
 
   options.logger?.info('Starting /collab-bind flow to resolve Telegram chat_id/thread_id.');
@@ -741,34 +725,60 @@ export async function collectAgentBirthInteractiveInput(
   let telegramThreadId = hasTextValue(workingSeed.telegramThreadId)
     ? workingSeed.telegramThreadId.trim()
     : '';
-  if (!hasTextValue(telegramDefaultChatId) && !hasTextValue(telegramThreadId)) {
-    const routing = await collectTelegramRouting(telegramBotToken, {
-      logger,
-      prompt,
-    });
-    telegramDefaultChatId = routing.chatId;
-    telegramThreadId = routing.threadId;
-  }
-  const telegramAllowTopicCommands =
+  const wantsTeamSummaryThread =
     hasTextValue(telegramThreadId)
-      ? (workingSeed.telegramAllowTopicCommands
-          ?? (await prompt.choice(
-            'Accept commands from the team thread?',
-            [
-              {
-                value: 'yes',
-                label: 'Yes',
-                description: 'Authorized operators can use the configured team thread as a command ingress',
-              },
-              {
-                value: 'no',
-                label: 'No',
-                description: 'Only DMs from operators are treated as commands',
-              },
-            ],
-            'yes',
-          ) === 'yes'))
-      : false;
+      ? true
+      : await prompt.choice(
+          'Will this agent publish work summaries to a Telegram topic?',
+          [
+            {
+              value: 'yes',
+              label: 'Yes',
+              description: 'Keep a group-visible summary thread for work progress',
+            },
+            {
+              value: 'no',
+              label: 'No',
+              description: 'Use DM-only operational output with no team summary topic',
+            },
+          ],
+          'yes',
+        ) === 'yes';
+  let telegramAllowTopicCommands = false;
+  if (wantsTeamSummaryThread) {
+    telegramAllowTopicCommands =
+      workingSeed.telegramAllowTopicCommands
+      ?? (await prompt.choice(
+        'Accept commands from the team thread?',
+        [
+          {
+            value: 'yes',
+            label: 'Yes',
+            description: 'Authorized operators can use the configured team thread as a command ingress',
+          },
+          {
+            value: 'no',
+            label: 'No',
+            description: 'Only DMs from operators are treated as commands',
+          },
+        ],
+        'no',
+      ) === 'yes');
+
+    if (!hasTextValue(telegramDefaultChatId) && !hasTextValue(telegramThreadId)) {
+      const routing = await collectTelegramRouting(telegramBotToken, {
+        logger,
+        prompt,
+        requireThread: true,
+      });
+      telegramDefaultChatId = routing.chatId;
+      telegramThreadId = routing.threadId;
+    }
+  } else {
+    telegramDefaultChatId = '';
+    telegramThreadId = '';
+    telegramAllowTopicCommands = false;
+  }
   persistDraft({
     telegramEnabled,
     telegramBotToken,
