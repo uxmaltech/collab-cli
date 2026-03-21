@@ -68,6 +68,13 @@ export function agentConfigTemplate(options: AgentBootstrapOptions): string {
         telegram: {
           enabled: options.telegramEnabled,
           botTokenEnvVar: 'TELEGRAM_BOT_TOKEN',
+          transport: {
+            mode: 'webhook',
+            publicBaseUrlEnvVar: 'TELEGRAM_WEBHOOK_PUBLIC_BASE_URL',
+            secretEnvVar: 'TELEGRAM_WEBHOOK_SECRET',
+            bindHostEnvVar: 'TELEGRAM_WEBHOOK_BIND_HOST',
+            portEnvVar: 'TELEGRAM_WEBHOOK_PORT',
+          },
           defaultChatIdEnvVar: 'TELEGRAM_DEFAULT_CHAT_ID',
           threadIdEnvVar: 'TELEGRAM_THREAD_ID',
           operationalOutput: {

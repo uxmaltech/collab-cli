@@ -627,6 +627,10 @@ function toDraftAnswers(seed: AgentBootstrapInput): AgentBirthWizardDraftAnswers
     telegramDefaultChatId: seed.telegramDefaultChatId,
     telegramThreadId: seed.telegramThreadId,
     telegramAllowTopicCommands: seed.telegramAllowTopicCommands,
+    telegramWebhookPublicBaseUrl: seed.telegramWebhookPublicBaseUrl,
+    telegramWebhookSecret: seed.telegramWebhookSecret,
+    telegramWebhookBindHost: seed.telegramWebhookBindHost,
+    telegramWebhookPort: seed.telegramWebhookPort,
     selfRepository: seed.selfRepository,
     assignedRepositories: seed.assignedRepositories,
     output: seed.output,
@@ -1172,6 +1176,32 @@ export async function collectAgentBirthInteractiveInput(
     telegramThreadId,
     telegramAllowTopicCommands,
   });
+  const telegramWebhookPublicBaseUrl = hasTextValue(
+    workingSeed.telegramWebhookPublicBaseUrl,
+  )
+    ? workingSeed.telegramWebhookPublicBaseUrl.trim()
+    : await prompt.text(
+        'TELEGRAM_WEBHOOK_PUBLIC_BASE_URL',
+        workingSeed.telegramWebhookPublicBaseUrl ?? '',
+      );
+  const telegramWebhookSecret = hasTextValue(workingSeed.telegramWebhookSecret)
+    ? workingSeed.telegramWebhookSecret.trim()
+    : await prompt.text(
+        'TELEGRAM_WEBHOOK_SECRET (optional)',
+        workingSeed.telegramWebhookSecret ?? '',
+      );
+  const telegramWebhookBindHost = hasTextValue(workingSeed.telegramWebhookBindHost)
+    ? workingSeed.telegramWebhookBindHost.trim()
+    : '127.0.0.1';
+  const telegramWebhookPort = hasTextValue(workingSeed.telegramWebhookPort)
+    ? workingSeed.telegramWebhookPort.trim()
+    : '8788';
+  persistDraft({
+    telegramWebhookPublicBaseUrl,
+    telegramWebhookSecret,
+    telegramWebhookBindHost,
+    telegramWebhookPort,
+  });
 
   if (wizardMode === 'auto') {
     const preferredProvider =
@@ -1205,6 +1235,10 @@ export async function collectAgentBirthInteractiveInput(
           telegramDefaultChatId,
           telegramThreadId,
           telegramAllowTopicCommands,
+          telegramWebhookPublicBaseUrl,
+          telegramWebhookSecret,
+          telegramWebhookBindHost,
+          telegramWebhookPort,
         },
         undefined,
         prompt,
@@ -1424,6 +1458,10 @@ export async function collectAgentBirthInteractiveInput(
       telegramDefaultChatId,
       telegramThreadId,
       telegramAllowTopicCommands,
+      telegramWebhookPublicBaseUrl,
+      telegramWebhookSecret,
+      telegramWebhookBindHost,
+      telegramWebhookPort,
       approvedNamespaces,
       egressUrl: parsedEgressUrls,
       birthProfile,

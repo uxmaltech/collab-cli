@@ -93,6 +93,22 @@ export function normalizeAgentBootstrapOptions(input: AgentBootstrapInput): Agen
   const telegramAllowTopicCommands =
     input.telegramAllowTopicCommands
       ?? Boolean(telegramThreadId);
+  const telegramWebhookPublicBaseUrl =
+    input.telegramWebhookPublicBaseUrl?.trim()
+    || process.env.TELEGRAM_WEBHOOK_PUBLIC_BASE_URL?.trim()
+    || '';
+  const telegramWebhookSecret =
+    input.telegramWebhookSecret?.trim()
+    || process.env.TELEGRAM_WEBHOOK_SECRET?.trim()
+    || '';
+  const telegramWebhookBindHost =
+    input.telegramWebhookBindHost?.trim()
+    || process.env.TELEGRAM_WEBHOOK_BIND_HOST?.trim()
+    || '127.0.0.1';
+  const telegramWebhookPort =
+    input.telegramWebhookPort?.trim()
+    || process.env.TELEGRAM_WEBHOOK_PORT?.trim()
+    || '8788';
   const telegramEnabled = input.telegramEnabled ?? true;
   const redisPassword =
     input.redisPassword?.trim()
@@ -132,6 +148,10 @@ export function normalizeAgentBootstrapOptions(input: AgentBootstrapInput): Agen
     telegramDefaultChatId,
     telegramThreadId,
     telegramAllowTopicCommands,
+    telegramWebhookPublicBaseUrl,
+    telegramWebhookSecret,
+    telegramWebhookBindHost,
+    telegramWebhookPort,
     selfRepository,
     assignedRepositories,
     forceMode,

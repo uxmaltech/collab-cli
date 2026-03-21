@@ -25,6 +25,10 @@ export interface AgentBirthWizardDraftAnswers {
   telegramDefaultChatId?: string;
   telegramThreadId?: string;
   telegramAllowTopicCommands?: boolean;
+  telegramWebhookPublicBaseUrl?: string;
+  telegramWebhookSecret?: string;
+  telegramWebhookBindHost?: string;
+  telegramWebhookPort?: string;
   selfRepository?: string;
   assignedRepositories?: string;
   output?: string;

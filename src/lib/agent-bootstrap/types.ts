@@ -41,6 +41,10 @@ export interface AgentBootstrapInput {
   telegramDefaultChatId?: string;
   telegramThreadId?: string;
   telegramAllowTopicCommands?: boolean;
+  telegramWebhookPublicBaseUrl?: string;
+  telegramWebhookSecret?: string;
+  telegramWebhookBindHost?: string;
+  telegramWebhookPort?: string;
   selfRepository?: string;
   assignedRepositories?: string;
   birthProfile?: Partial<AgentBirthProfile>;
@@ -78,6 +82,10 @@ export interface AgentBootstrapOptions {
   telegramDefaultChatId: string;
   telegramThreadId: string;
   telegramAllowTopicCommands: boolean;
+  telegramWebhookPublicBaseUrl: string;
+  telegramWebhookSecret: string;
+  telegramWebhookBindHost: string;
+  telegramWebhookPort: string;
   selfRepository: string;
   assignedRepositories: string[];
   birthProfile: AgentBirthProfile;

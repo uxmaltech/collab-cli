@@ -6,6 +6,7 @@ export function agentDockerfileTemplate(_options: AgentBootstrapOptions): string
 WORKDIR /workspace
 
 COPY package.json ./
+RUN npm install --omit=dev
 COPY index.js ./
 COPY .collab ./.collab
 COPY fixtures ./fixtures

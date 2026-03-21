@@ -150,6 +150,10 @@ export function loadExistingAgentBootstrapInput(outputDir: string): Partial<Agen
     config.agent.notifications?.telegram?.threadIdEnvVar
       ? env[config.agent.notifications.telegram.threadIdEnvVar]
       : undefined;
+  const telegramWebhookPublicBaseUrl = env.TELEGRAM_WEBHOOK_PUBLIC_BASE_URL;
+  const telegramWebhookSecret = env.TELEGRAM_WEBHOOK_SECRET;
+  const telegramWebhookBindHost = env.TELEGRAM_WEBHOOK_BIND_HOST;
+  const telegramWebhookPort = env.TELEGRAM_WEBHOOK_PORT;
   return {
     output: outputDir,
     agentName: config.agent.name,
@@ -179,6 +183,10 @@ export function loadExistingAgentBootstrapInput(outputDir: string): Partial<Agen
     telegramDefaultChatId,
     telegramThreadId,
     telegramAllowTopicCommands: config.agent.notifications?.telegram?.commandIngress?.allowTopicCommands,
+    telegramWebhookPublicBaseUrl,
+    telegramWebhookSecret,
+    telegramWebhookBindHost,
+    telegramWebhookPort,
     selfRepository: config.agent.selfRepository,
     assignedRepositories: config.agent.assignedRepositories?.join(','),
     telemetryEnabled: config.agent.telemetry?.enabled,

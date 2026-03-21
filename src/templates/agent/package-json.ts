@@ -12,6 +12,10 @@ export function agentPackageJsonTemplate(options: AgentBootstrapOptions): string
       development: 'node index.js development',
       inspect: 'node index.js inspect',
     },
+    dependencies: {
+      'collab-agent-runtime':
+        'git+https://github.com/uxmaltech/collab-agent-runtime.git#codex/fase-0-start-agent-runtime',
+    },
   };
 
   return JSON.stringify(payload, null, 2) + '\n';

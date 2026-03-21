@@ -26,6 +26,18 @@ function telegramResponse(result) {
   };
 }
 
+function defaultWizardTextAnswer(question) {
+  if (question === 'TELEGRAM_WEBHOOK_PUBLIC_BASE_URL') {
+    return '';
+  }
+
+  if (question === 'TELEGRAM_WEBHOOK_SECRET (optional)') {
+    return '';
+  }
+
+  return undefined;
+}
+
 test('shouldRunBirthWizard defaults to wizard mode for tty sessions without explicit inputs', () => {
   assert.equal(
     shouldRunBirthWizard(
@@ -157,6 +169,10 @@ test('collectAgentBirthInteractiveInput maps wizard answers into canonical boots
       prompt: {
         async text(question) {
           promptedTexts.push(question);
+          const defaultAnswer = defaultWizardTextAnswer(question);
+          if (defaultAnswer !== undefined) {
+            return defaultAnswer;
+          }
           const answer = answers.get(question);
           assert.ok(answer !== undefined, `unexpected question: ${question}`);
           return answer;
@@ -322,6 +338,10 @@ test('collectAgentBirthInteractiveInput falls back to /collab-bind when Telegram
       prompt: {
         async text(question) {
           promptedTexts.push(question);
+          const defaultAnswer = defaultWizardTextAnswer(question);
+          if (defaultAnswer !== undefined) {
+            return defaultAnswer;
+          }
           const answer = answers.get(question);
           assert.ok(answer !== undefined, `unexpected question: ${question}`);
           return answer;
@@ -424,6 +444,10 @@ test('collectAgentBirthInteractiveInput skips model prompt for CLI-auth provider
       prompt: {
         async text(question) {
           promptedTexts.push(question);
+          const defaultAnswer = defaultWizardTextAnswer(question);
+          if (defaultAnswer !== undefined) {
+            return defaultAnswer;
+          }
           const answer = answers.get(question);
           assert.ok(answer !== undefined, `unexpected question: ${question}`);
           return answer;
@@ -570,6 +594,10 @@ test('collectAgentBirthInteractiveInput uses conversational birth mode when auto
       prompt: {
         async text(question) {
           promptedTexts.push(question);
+          const defaultAnswer = defaultWizardTextAnswer(question);
+          if (defaultAnswer !== undefined) {
+            return defaultAnswer;
+          }
           if (question === 'Output directory') {
             return '/tmp/iot-agent-chat';
           }
@@ -644,6 +672,8 @@ test('collectAgentBirthInteractiveInput uses conversational birth mode when auto
     'Primary operator id',
     'Additional operators (comma-separated, optional)',
     'TELEGRAM_BOT_TOKEN',
+    'TELEGRAM_WEBHOOK_PUBLIC_BASE_URL',
+    'TELEGRAM_WEBHOOK_SECRET (optional)',
     'Cognitive MCP API key (optional)',
     'Redis password',
   ]);
@@ -719,6 +749,10 @@ test('collectAgentBirthInteractiveInput resumes saved answers and skips complete
       prompt: {
         async text(question) {
           promptedTexts.push(question);
+          const defaultAnswer = defaultWizardTextAnswer(question);
+          if (defaultAnswer !== undefined) {
+            return defaultAnswer;
+          }
           const answer = answers.get(question);
           assert.ok(answer !== undefined, `unexpected question: ${question}`);
           return answer;
@@ -735,6 +769,8 @@ test('collectAgentBirthInteractiveInput resumes saved answers and skips complete
 
   assert.equal(repositoryPickerCalls, 0);
   assert.deepEqual(promptedTexts, [
+    'TELEGRAM_WEBHOOK_PUBLIC_BASE_URL',
+    'TELEGRAM_WEBHOOK_SECRET (optional)',
     'Redis URL',
     'Cognitive MCP API key (optional)',
     'Redis password',
@@ -823,6 +859,10 @@ test('collectAgentBirthInteractiveInput re-prompts operators when the saved draf
       prompt: {
         async text(question) {
           promptedTexts.push(question);
+          const defaultAnswer = defaultWizardTextAnswer(question);
+          if (defaultAnswer !== undefined) {
+            return defaultAnswer;
+          }
           const answer = answers.get(question);
           assert.ok(answer !== undefined, `unexpected question: ${question}`);
           return answer;
@@ -840,6 +880,8 @@ test('collectAgentBirthInteractiveInput re-prompts operators when the saved draf
   assert.deepEqual(promptedTexts, [
     'Primary operator id',
     'Additional operators (comma-separated, optional)',
+    'TELEGRAM_WEBHOOK_PUBLIC_BASE_URL',
+    'TELEGRAM_WEBHOOK_SECRET (optional)',
     'Cognitive MCP API key (optional)',
     'Redis password',
     'Approved namespaces (comma-separated)',
@@ -955,6 +997,10 @@ test('collectAgentBirthInteractiveInput resumes a saved conversational interview
       prompt: {
         async text(question) {
           promptedTexts.push(question);
+          const defaultAnswer = defaultWizardTextAnswer(question);
+          if (defaultAnswer !== undefined) {
+            return defaultAnswer;
+          }
           if (question === 'Your answer') {
             return 'https://github.com/anystream/iot-development-agent';
           }
@@ -978,7 +1024,13 @@ test('collectAgentBirthInteractiveInput resumes a saved conversational interview
 
   assert.equal(conversationTurns, 1);
   assert.equal(repositoryPickerCalls, 0);
-  assert.deepEqual(promptedTexts, ['Your answer', 'Cognitive MCP API key (optional)', 'Redis password']);
+  assert.deepEqual(promptedTexts, [
+    'TELEGRAM_WEBHOOK_PUBLIC_BASE_URL',
+    'TELEGRAM_WEBHOOK_SECRET (optional)',
+    'Your answer',
+    'Cognitive MCP API key (optional)',
+    'Redis password',
+  ]);
   assert.equal(input.selfRepository, 'anystream/iot-development-agent');
   assert.equal(input.assignedRepositories, 'anystream/iot-websocket-relay,anystream/balena-ws-player');
   assert.equal(input.provider, 'codex');
@@ -1114,6 +1166,10 @@ test('collectAgentBirthInteractiveInput resets stale conversational transcript e
       },
       prompt: {
         async text(question) {
+          const defaultAnswer = defaultWizardTextAnswer(question);
+          if (defaultAnswer !== undefined) {
+            return defaultAnswer;
+          }
           if (question === 'Cognitive MCP API key (optional)') {
             return '';
           }
@@ -1263,6 +1319,10 @@ test('collectAgentBirthInteractiveInput ignores saved answers when force mode is
       },
       prompt: {
         async text(question) {
+          const defaultAnswer = defaultWizardTextAnswer(question);
+          if (defaultAnswer !== undefined) {
+            return defaultAnswer;
+          }
           const answer = answers.get(question);
           assert.ok(answer !== undefined, `unexpected question: ${question}`);
           return answer;
@@ -1428,6 +1488,10 @@ test('collectAgentBirthInteractiveInput uses the output directory .collab state 
       },
       prompt: {
         async text(question) {
+          const defaultAnswer = defaultWizardTextAnswer(question);
+          if (defaultAnswer !== undefined) {
+            return defaultAnswer;
+          }
           const answer = answers.get(question);
           assert.ok(answer !== undefined, `unexpected question: ${question}`);
           return answer;

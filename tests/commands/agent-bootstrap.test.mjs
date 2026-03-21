@@ -225,8 +225,14 @@ test('bootstrap writes the canonical birth package files', () => {
   assert.doesNotMatch(envExample, /^MINIO_SECRET_KEY=/m);
   assert.equal(packagePayload.name, 'collab-architect');
   assert.equal(packagePayload.scripts.start, 'node index.js development');
+  assert.equal(
+    packagePayload.dependencies['collab-agent-runtime'],
+    'git+https://github.com/uxmaltech/collab-agent-runtime.git#codex/fase-0-start-agent-runtime',
+  );
   assert.match(fs.readFileSync(dockerfilePath, 'utf8'), /FROM node:22-alpine/);
-  assert.match(fs.readFileSync(entrypointPath, 'utf8'), /Collab agent runtime session/);
+  assert.match(fs.readFileSync(entrypointPath, 'utf8'), /runDevelopmentHost/);
+  assert.match(fs.readFileSync(entrypointPath, 'utf8'), /collab-agent-runtime/);
+  assert.match(fs.readFileSync(entrypointPath, 'utf8'), /TELEGRAM_WEBHOOK_PUBLIC_BASE_URL/);
   assert.match(fs.readFileSync(composePath, 'utf8'), /services:\n  agent:/);
   assert.match(fs.readFileSync(infraComposePath, 'utf8'), /qdrant:/);
   assert.match(fs.readFileSync(mcpComposePath, 'utf8'), /cognitive-mcp:/);

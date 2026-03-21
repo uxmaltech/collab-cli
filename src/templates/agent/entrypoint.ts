@@ -2,10 +2,7 @@ import type { AgentBootstrapOptions } from '../../lib/agent-bootstrap/types';
 
 export function agentEntrypointTemplate(options: AgentBootstrapOptions): string {
   const assignedRepositories = JSON.stringify(options.assignedRepositories);
-  const systemPrompt = JSON.stringify(options.birthProfile.systemPrompt);
-  const turnPrompt = JSON.stringify(
-    `Run one visible turn for ${options.agentName}: load identity, create or retrieve the project for ${options.selfRepository}, create the bootstrap task${options.assignedRepositories.length > 0 ? ` scoped to ${options.assignedRepositories.join(', ')}` : ''}, append the memory fact, checkpoint the session, persist all durable state in the cognitive infrastructure, and summarize the visible artifacts produced.`,
-  );
+  const operatorIds = JSON.stringify(options.operatorIds);
 
   return `#!/usr/bin/env node
 'use strict';
@@ -18,10 +15,7 @@ const AGENT_ID = ${JSON.stringify(options.agentId)};
 const AGENT_SCOPE = ${JSON.stringify(options.scope)};
 const SELF_REPOSITORY = ${JSON.stringify(options.selfRepository)};
 const ASSIGNED_REPOSITORIES = ${assignedRepositories};
-const SYSTEM_PROMPT = ${systemPrompt};
-const TURN_PROMPT = ${turnPrompt};
-const OPERATOR_ID = ${JSON.stringify(options.operatorId)};
-const OPERATOR_IDS = ${JSON.stringify(options.operatorIds)};
+const OPERATOR_IDS = ${operatorIds};
 
 function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, 'utf8'));
@@ -52,43 +46,13 @@ function readEnvFile(filePath) {
   }
 }
 
-function ensureDirectory(directoryPath) {
-  fs.mkdirSync(directoryPath, { recursive: true });
-}
-
-function writeRuntimeSession(runtimeDir, payload) {
-  ensureDirectory(runtimeDir);
-  const sessionPath = path.join(runtimeDir, 'last-session.json');
-  fs.writeFileSync(sessionPath, JSON.stringify(payload, null, 2) + '\\n', 'utf8');
-  return sessionPath;
-}
-
-function printSummary(label, entries) {
-  process.stdout.write(label + '\\n');
-  for (const [key, value] of entries) {
-    process.stdout.write('  - ' + key + ': ' + value + '\\n');
-  }
-}
-
-function main() {
-  const workspaceDir = process.cwd();
-  const envPath = path.join(workspaceDir, '.env');
-  readEnvFile(envPath);
-
+function buildInspectPayload(workspaceDir) {
   const configPath = path.join(workspaceDir, '.collab', 'config.json');
   const config = readJson(configPath);
-  const birthPath = path.join(workspaceDir, config.agent.birth.birthFile);
-  const promptsPath = path.join(workspaceDir, config.agent.birth.visiblePromptsFile);
-  const birth = readJson(birthPath);
-  const visiblePrompts = readJson(promptsPath);
-
-  const [mode = 'development', ...restArgs] = process.argv.slice(2);
-  const runtimeDir = path.join(workspaceDir, '.collab', 'runtime');
-  const payload = {
-    startedAt: new Date().toISOString(),
+  const mode = process.argv[2] || 'development';
+  return {
     pid: process.pid,
     mode,
-    args: restArgs,
     workspaceDir,
     agent: {
       id: AGENT_ID,
@@ -98,69 +62,61 @@ function main() {
       assignedRepositories: ASSIGNED_REPOSITORIES,
       provider: config.agent.defaultProvider,
       providerAuthMethod: config.agent.defaultProviderAuthMethod,
+      model: config.agent.defaultModel || null,
+      operators: OPERATOR_IDS,
     },
     runtime: {
-      cognitiveMcpUrl: config.agent.mcp.cognitive.serverUrl,
-      redisUrl: config.agent.redisUrl,
-      durableStateBackend: config.agent.persistence?.durableStateBackend,
+      cognitiveMcpUrl: process.env.COGNITIVE_MCP_URL || config.agent.mcp.cognitive.serverUrl,
+      redisUrl: process.env.REDIS_URL || config.agent.redisUrl,
       telegram: {
         botConfigured: Boolean(process.env.TELEGRAM_BOT_TOKEN),
-        defaultChatId: process.env.TELEGRAM_DEFAULT_CHAT_ID || '',
-        threadId: process.env.TELEGRAM_THREAD_ID || '',
+        webhookPublicBaseUrl: process.env.TELEGRAM_WEBHOOK_PUBLIC_BASE_URL || '',
+        webhookBindHost: process.env.TELEGRAM_WEBHOOK_BIND_HOST || '127.0.0.1',
+        webhookPort: process.env.TELEGRAM_WEBHOOK_PORT || '8788',
+        summaryChatId: process.env.TELEGRAM_DEFAULT_CHAT_ID || '',
+        summaryThreadId: process.env.TELEGRAM_THREAD_ID || '',
+        allowTopicCommands: Boolean(config.agent.notifications?.telegram?.commandIngress?.allowTopicCommands),
         operationalOutputMode: config.agent.notifications?.telegram?.operationalOutput?.mode || 'disabled',
         teamSummaryMode: config.agent.notifications?.telegram?.teamSummary?.mode || 'disabled',
-        allowTopicCommands: Boolean(config.agent.notifications?.telegram?.commandIngress?.allowTopicCommands),
-        operatorProfileId:
-          config.agent.notifications?.telegram?.operationalOutput?.primaryOperatorProfileId
-          || OPERATOR_ID,
-        operatorProfileIds:
-          config.agent.notifications?.telegram?.operationalOutput?.operatorProfileIds
-          || OPERATOR_IDS,
       },
     },
-    prompt: {
-      system: birth.prompt_profile?.system_prompt || SYSTEM_PROMPT,
-      development: visiblePrompts.visible_prompts?.turn_execute?.prompt || TURN_PROMPT,
-    },
   };
-  const sessionPath = writeRuntimeSession(runtimeDir, payload);
+}
 
+async function main() {
+  const workspaceDir = process.cwd();
+  readEnvFile(path.join(workspaceDir, '.env'));
+
+  const [mode = 'development'] = process.argv.slice(2);
   if (mode === 'inspect') {
-    process.stdout.write(JSON.stringify({ ...payload, sessionPath }, null, 2) + '\\n');
+    process.stdout.write(JSON.stringify(buildInspectPayload(workspaceDir), null, 2) + '\\n');
     return;
   }
 
-  const telegramOperationalRouting =
-    payload.runtime.telegram.operationalOutputMode === 'originating-operator'
-      ? ('operator dm via ' + payload.runtime.telegram.operatorProfileId)
-      : '(not configured)';
-  const telegramSummaryRouting =
-    payload.runtime.telegram.teamSummaryMode === 'thread'
-      ? ((process.env.TELEGRAM_DEFAULT_CHAT_ID || '(missing chat)') + '/' + (process.env.TELEGRAM_THREAD_ID || '(missing thread)'))
-      : '(disabled)';
+  let runtimePackage;
+  try {
+    runtimePackage = await import('collab-agent-runtime');
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      'The born agent runtime dependency is not installed. Run "npm install" in this agent workspace before starting it. Root cause: ' + reason,
+    );
+  }
 
-  printSummary('Collab agent runtime session', [
-    ['agent', AGENT_NAME + ' (' + AGENT_ID + ')'],
-    ['mode', mode],
-    ['workspace', workspaceDir],
-    ['self repo', SELF_REPOSITORY],
-    ['assigned repos', ASSIGNED_REPOSITORIES.join(', ') || '(none)'],
-    ['provider', config.agent.defaultProvider + (config.agent.defaultModel ? ' (' + config.agent.defaultModel + ')' : '')],
-    ['cognitive mcp', config.agent.mcp.cognitive.serverUrl],
-    ['redis', config.agent.redisUrl],
-    ['operators', payload.runtime.telegram.operatorProfileIds.join(', ') || payload.runtime.telegram.operatorProfileId],
-    ['telegram command ingress', payload.runtime.telegram.allowTopicCommands ? 'dm-or-thread' : 'dm-only'],
-    ['telegram operational', telegramOperationalRouting],
-    ['telegram summary', telegramSummaryRouting],
-    ['session file', sessionPath],
-  ]);
+  if (typeof runtimePackage.runDevelopmentHost !== 'function') {
+    throw new Error('collab-agent-runtime does not export runDevelopmentHost().');
+  }
 
-  process.stdout.write('\\nSystem prompt\\n');
-  process.stdout.write(payload.prompt.system + '\\n\\n');
-  process.stdout.write('Development prompt\\n');
-  process.stdout.write(payload.prompt.development + '\\n');
+  await runtimePackage.runDevelopmentHost({
+    workspaceDir,
+    mode,
+  });
 }
 
-main();
+main().catch((error) => {
+  const reason = error instanceof Error ? error.message : String(error);
+  process.stderr.write(reason + '\\n');
+  process.exitCode = 1;
+});
 `;
 }

@@ -13,6 +13,10 @@ export interface AgentBootstrapCommandOptions {
   telegramDefaultChatId?: string;
   telegramThreadId?: string;
   telegramAllowTopicCommands?: boolean;
+  telegramWebhookPublicBaseUrl?: string;
+  telegramWebhookSecret?: string;
+  telegramWebhookBindHost?: string;
+  telegramWebhookPort?: string;
   cognitiveMcpUrl?: string;
   redisUrl?: string;
   approvedNamespaces?: string;

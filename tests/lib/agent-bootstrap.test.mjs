@@ -64,7 +64,14 @@ test('generateAgentBootstrap returns deterministic file paths and valid JSON out
   assert.doesNotThrow(() => JSON.parse(packageJsonFile.content));
   assert.doesNotThrow(() => JSON.parse(birthFile.content));
   assert.doesNotThrow(() => JSON.parse(promptsFile.content));
-  assert.match(entrypointFile.content, /Collab agent runtime session/);
+  assert.match(entrypointFile.content, /runDevelopmentHost/);
+  assert.match(entrypointFile.content, /collab-agent-runtime/);
+  assert.match(entrypointFile.content, /TELEGRAM_WEBHOOK_PUBLIC_BASE_URL/);
+  const packageJsonPayload = JSON.parse(packageJsonFile.content);
+  assert.equal(
+    packageJsonPayload.dependencies['collab-agent-runtime'],
+    'git+https://github.com/uxmaltech/collab-agent-runtime.git#codex/fase-0-start-agent-runtime',
+  );
 });
 
 test('summarizeAgentBootstrap returns a stable machine-readable manifest', () => {
@@ -184,7 +191,8 @@ test('generateAgentBootstrap allows Telegram operator DM fallback when operator 
     'operator.github.enrique',
   ]);
   assert.match(envExampleFile.content, /Operational output goes to the originating operator by DM/);
-  assert.match(entrypointFile.content, /telegram operational/);
+  assert.match(entrypointFile.content, /runDevelopmentHost/);
+  assert.match(entrypointFile.content, /TELEGRAM_WEBHOOK_PUBLIC_BASE_URL/);
 });
 
 test('generateAgentBootstrap normalizes a raw Telegram user id into an operator.telegram profile id', () => {

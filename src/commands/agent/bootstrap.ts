@@ -120,6 +120,10 @@ export function registerAgentBootstrapCommand(program: Command): void {
     .option('--telegram-default-chat-id <id>', 'Telegram chat id for team summaries; requires --telegram-thread-id')
     .option('--telegram-thread-id <id>', 'Telegram thread id used for team summaries')
     .option('--telegram-allow-topic-commands', 'Allow the configured Telegram thread to accept commands from operators')
+    .option('--telegram-webhook-public-base-url <url>', 'Public base URL that Telegram will call for webhook delivery')
+    .option('--telegram-webhook-secret <token>', 'Optional Telegram webhook secret token')
+    .option('--telegram-webhook-bind-host <host>', 'Local bind host for the Telegram webhook server')
+    .option('--telegram-webhook-port <port>', 'Local port for the Telegram webhook server')
     .option('--cognitive-mcp-url <url>', 'Cognitive MCP endpoint used by the generated scaffold')
     .option('--redis-url <url>', 'Redis URL used by the generated scaffold')
     .option(
@@ -195,6 +199,26 @@ Examples:
           command,
           'telegramAllowTopicCommands',
           options.telegramAllowTopicCommands,
+        ),
+        telegramWebhookPublicBaseUrl: getCliOptionValue(
+          command,
+          'telegramWebhookPublicBaseUrl',
+          options.telegramWebhookPublicBaseUrl,
+        ),
+        telegramWebhookSecret: getCliOptionValue(
+          command,
+          'telegramWebhookSecret',
+          options.telegramWebhookSecret,
+        ),
+        telegramWebhookBindHost: getCliOptionValue(
+          command,
+          'telegramWebhookBindHost',
+          options.telegramWebhookBindHost,
+        ),
+        telegramWebhookPort: getCliOptionValue(
+          command,
+          'telegramWebhookPort',
+          options.telegramWebhookPort,
         ),
         cognitiveMcpUrl: getCliOptionValue(command, 'cognitiveMcpUrl', options.cognitiveMcpUrl),
         redisUrl: getCliOptionValue(command, 'redisUrl', options.redisUrl),

@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 
 import type { Command } from 'commander';
 
@@ -108,6 +109,13 @@ Examples:
           ? runtimeArgs
           : selectedAgent.defaultArgs;
       const runtimeCommand = ['node', entryFile, ...resolvedRuntimeArgs];
+      const packageJsonPath = path.join(agentRootDir, 'package.json');
+      const runtimeDependencyPath = path.join(
+        agentRootDir,
+        'node_modules',
+        'collab-agent-runtime',
+        'package.json',
+      );
 
       if (!context.dryRun) {
         saveActiveAgent(workspaceDir, selectedAgent);
@@ -150,6 +158,27 @@ Examples:
           { label: 'active file', value: activeAgentPath },
         ]);
         return;
+      }
+
+      if (existsSync(packageJsonPath) && !existsSync(runtimeDependencyPath)) {
+        const install = spawnSync('npm', ['install', '--no-fund', '--no-audit'], {
+          cwd: agentRootDir,
+          stdio: 'inherit',
+          env: process.env,
+        });
+
+        if (install.error) {
+          throw new CliError(
+            `Unable to install born agent dependencies for ${selectedAgent.id}: ${install.error.message}`,
+          );
+        }
+
+        if ((install.status ?? 0) !== 0) {
+          throw new CliError(
+            `Dependency installation failed for ${selectedAgent.id} with status ${install.status ?? 1}.`,
+            install.status ?? 1,
+          );
+        }
       }
 
       const child = spawnSync('node', [entryFile, ...resolvedRuntimeArgs], {
