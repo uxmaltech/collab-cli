@@ -27,6 +27,7 @@ import {
   collectAgentBirthInteractiveInput,
   shouldRunBirthWizard,
 } from '../../lib/agent-bootstrap/wizard';
+import { CliError } from '../../lib/errors';
 import { validateGitHubAppIdentity } from '../../lib/agent-bootstrap/github-app';
 import { formatForceModeList } from '../../lib/force-mode';
 import { writeAgentBootstrapFiles } from '../../lib/agent-bootstrap/write';
@@ -102,6 +103,32 @@ function mergeBootstrapInput(
   }
 
   return merged;
+}
+
+function assertExplicitNonInteractiveGitHubAppIdentity(input: AgentBootstrapInput): void {
+  if (input.interactive !== false) {
+    return;
+  }
+
+  const missingFlags: string[] = [];
+  if (!(input.githubAppId?.trim().length)) {
+    missingFlags.push('--github-app-id');
+  }
+  if (!(input.githubAppInstallationId?.trim().length)) {
+    missingFlags.push('--github-app-installation-id');
+  }
+  if (!(input.githubAppPrivateKeyPath?.trim().length)) {
+    missingFlags.push('--github-app-private-key-path');
+  }
+
+  if (missingFlags.length === 0) {
+    return;
+  }
+
+  throw new CliError(
+    `collab agent birth --no-interactive requires a complete GitHub App identity. Missing ${missingFlags.join(', ')}. ` +
+      'Provide those flags explicitly or omit --no-interactive to let the wizard collect and validate them.',
+  );
 }
 
 export function registerAgentBootstrapCommand(program: Command): void {
@@ -286,6 +313,8 @@ Examples:
             wizardMode: 'auto',
           })
         : seededInput;
+
+      assertExplicitNonInteractiveGitHubAppIdentity(input);
 
       const draftSeed = normalizeAgentBootstrapOptions(input);
       const hasGitHubAppMaterial =

@@ -603,3 +603,29 @@ test('bootstrap uses existing output definitions as seed for --force overwrite',
   assert.deepEqual(summary.agent.assignedRepositories, ['anystream/balena-ws-player']);
   assert.equal(fs.existsSync(draftPath), false, 'stale wizard draft should be cleared after overwrite');
 });
+
+test('bootstrap --no-interactive fails clearly when GitHub App identity is incomplete', () => {
+  const workspace = makeTempWorkspace();
+  const result = runCli(
+    [
+      '--cwd',
+      workspace,
+      'agent',
+      'birth',
+      '--agent-name',
+      'No Wizard Agent',
+      '--operator-id',
+      'operator.telegram.130149339',
+      '--telegram-bot-token',
+      'telegram-token',
+      '--no-interactive',
+    ],
+    { cwd: workspace, env: createBirthTestEnv() },
+  );
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /--no-interactive requires a complete GitHub App identity/i);
+  assert.match(result.stderr, /--github-app-id/);
+  assert.match(result.stderr, /--github-app-installation-id/);
+  assert.match(result.stderr, /--github-app-private-key-path/);
+});
