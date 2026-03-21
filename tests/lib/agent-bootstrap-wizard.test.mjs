@@ -758,6 +758,97 @@ test('collectAgentBirthInteractiveInput resumes saved answers and skips complete
   assert.ok(logs.some((line) => line.includes('Resuming saved birth answers')));
 });
 
+test('collectAgentBirthInteractiveInput re-prompts operators when the saved draft only has the placeholder operator id', async () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'collab-agent-birth-operator-placeholder-'));
+  const outputDir = path.join(workspace, 'iot-agent');
+  const logs = [];
+  const logger = createBufferedLogger(logs);
+  const promptedTexts = [];
+
+  saveBirthWizardDraft(outputDir, {
+    agentName: 'IoT Development Agent',
+    agentSlug: 'iot-development-agent',
+    agentId: 'agent.iot-development-agent',
+    scope: 'anystream.iot',
+    operatorId: 'operator.iot-development-agent',
+    telegramEnabled: true,
+    telegramBotToken: 'telegram-token',
+    telegramDefaultChatId: '-1001234567890',
+    telegramThreadId: '12',
+    telegramAllowTopicCommands: false,
+    selfRepository: 'anystream/iot-development-agent',
+    assignedRepositories: 'anystream/iot-platform',
+    provider: 'codex',
+    providerAuthMethod: 'cli',
+    cognitiveMcpUrl: 'http://localhost:8787/mcp',
+    redisUrl: 'redis://localhost:6379',
+    output: outputDir,
+    birthProfile: {
+      personaRole: 'Senior IoT Development Agent',
+      purpose: 'Build and maintain IoT software delivery flows across the assigned repositories.',
+      soulMission: 'Keep IoT delivery visible, durable, and recoverable through Collab contracts.',
+    },
+  });
+
+  const answers = new Map([
+    ['Primary operator id', 'operator.telegram.130149339'],
+    ['Additional operators (comma-separated, optional)', 'operator.github.enrique'],
+    ['Cognitive MCP API key (optional)', ''],
+    ['Redis password', 'collab-dev-redis'],
+    ['Approved namespaces (comma-separated)', 'context.*,agent.*'],
+    ['Egress URLs (comma-separated, or * for all)', '*'],
+  ]);
+
+  const input = await collectAgentBirthInteractiveInput(
+    {
+      cwd: workspace,
+      output: outputDir,
+    },
+    {
+      logger,
+      collabDir: path.join(workspace, '.collab'),
+      isInteractiveSession: true,
+      providerCliResolver() {
+        return {
+          command: 'codex',
+          available: true,
+          configuredModel: 'gpt-5.4',
+        };
+      },
+      repositoryPicker: {
+        async pickRepositories() {
+          throw new Error('repository picker should not run when saved repositories already exist');
+        },
+      },
+      prompt: {
+        async text(question) {
+          promptedTexts.push(question);
+          const answer = answers.get(question);
+          assert.ok(answer !== undefined, `unexpected question: ${question}`);
+          return answer;
+        },
+        async choice() {
+          throw new Error('choice prompts should not be used in placeholder operator resume test');
+        },
+        async multiSelect() {
+          return [];
+        },
+      },
+    },
+  );
+
+  assert.deepEqual(promptedTexts, [
+    'Primary operator id',
+    'Additional operators (comma-separated, optional)',
+    'Cognitive MCP API key (optional)',
+    'Redis password',
+    'Approved namespaces (comma-separated)',
+    'Egress URLs (comma-separated, or * for all)',
+  ]);
+  assert.equal(input.operatorId, 'operator.telegram.130149339,operator.github.enrique');
+  assert.ok(logs.some((line) => line.includes('Resuming saved birth answers')));
+});
+
 test('collectAgentBirthInteractiveInput resumes a saved conversational interview transcript', async () => {
   const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'collab-agent-birth-transcript-'));
   const outputDir = path.join(workspace, 'iot-agent');

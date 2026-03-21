@@ -135,6 +135,31 @@ function hasTextValue(value: string | undefined): value is string {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
+function resolveOperatorSeed(
+  operatorId: string | undefined,
+  agentSlug: string,
+): {
+  primaryOperatorId?: string;
+  additionalOperatorIds: string;
+  requiresPrompt: boolean;
+} {
+  const placeholderOperatorId = `operator.${agentSlug}`;
+  const configuredOperatorIds = parseCsvList(operatorId);
+  const nonPlaceholderOperatorIds = configuredOperatorIds.filter(
+    (value) => value !== placeholderOperatorId,
+  );
+  const hasExplicitPrimaryOperator =
+    configuredOperatorIds.length > 0 && configuredOperatorIds[0] !== placeholderOperatorId;
+
+  return {
+    primaryOperatorId: hasExplicitPrimaryOperator ? configuredOperatorIds[0] : undefined,
+    additionalOperatorIds: hasExplicitPrimaryOperator
+      ? configuredOperatorIds.slice(1).filter((value) => value !== placeholderOperatorId).join(',')
+      : nonPlaceholderOperatorIds.join(','),
+    requiresPrompt: !hasExplicitPrimaryOperator,
+  };
+}
+
 function selectAutomaticTelegramRouting(
   discovery: TelegramDiscoveryResult,
 ): TelegramRouting | undefined {
@@ -684,22 +709,19 @@ export async function collectAgentBirthInteractiveInput(
     : await prompt.text('Primary scope', workingSeed.scope ?? `agent.${agentSlug}`);
   persistDraft({ scope });
   logger?.wizardStep(++step, 'Operators');
-  const existingOperatorIds = parseCsvList(
-    workingSeed.operatorId,
-    [`operator.${agentSlug}`],
-  );
-  const primaryOperatorId = hasTextValue(workingSeed.operatorId)
-    ? existingOperatorIds[0]
-    : await prompt.text(
+  const operatorSeed = resolveOperatorSeed(workingSeed.operatorId, agentSlug);
+  const primaryOperatorId = operatorSeed.requiresPrompt
+    ? await prompt.text(
         'Primary operator id',
-        existingOperatorIds[0] ?? `operator.${agentSlug}`,
-      );
-  const additionalOperatorIds = hasTextValue(workingSeed.operatorId)
-    ? existingOperatorIds.slice(1).join(',')
-    : await prompt.text(
+        'operator.telegram.<user-id>',
+      )
+    : operatorSeed.primaryOperatorId!;
+  const additionalOperatorIds = operatorSeed.requiresPrompt
+    ? await prompt.text(
         'Additional operators (comma-separated, optional)',
-        existingOperatorIds.slice(1).join(','),
-      );
+        operatorSeed.additionalOperatorIds,
+      )
+    : operatorSeed.additionalOperatorIds;
   const operatorId = [
     primaryOperatorId.trim(),
     ...parseCsvList(additionalOperatorIds),
