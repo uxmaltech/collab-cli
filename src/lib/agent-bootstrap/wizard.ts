@@ -1,3 +1,4 @@
+import readline from 'node:readline/promises';
 import path from 'node:path';
 
 import {
@@ -44,6 +45,7 @@ import {
   type BirthWizardPrevalidation,
 } from './env-taxonomy';
 import type { AgentBootstrapInput } from './types';
+import { bold, cyan, dim, green, red, yellow } from '../ansi';
 
 export interface BirthPromptAdapter {
   text(question: string, defaultValue?: string): Promise<string>;
@@ -74,6 +76,360 @@ export interface BirthWizardDependencies {
   wizardMode: 'structured' | 'auto';
   wizardPrevalidationResolver: (preferredProvider: ProviderKey) => BirthWizardPrevalidation;
   conversationAssistant: BirthInterviewAssistant;
+}
+
+interface BirthWizardPromptState {
+  question: string;
+  details: string[];
+  defaultValue?: string;
+}
+
+function stripAnsi(value: string): string {
+  return value.replace(/\x1b\[[0-9;]*m/g, '');
+}
+
+function wrapTerminalLine(text: string, width: number): string[] {
+  const cleanWidth = Math.max(width, 20);
+  const words = text.trim().split(/\s+/).filter((word) => word.length > 0);
+  if (words.length === 0) {
+    return [''];
+  }
+
+  const lines: string[] = [];
+  let current = '';
+
+  for (const word of words) {
+    const candidate = current.length > 0 ? `${current} ${word}` : word;
+    if (stripAnsi(candidate).length <= cleanWidth) {
+      current = candidate;
+      continue;
+    }
+
+    if (current.length > 0) {
+      lines.push(current);
+    }
+    current = word;
+  }
+
+  if (current.length > 0) {
+    lines.push(current);
+  }
+
+  return lines;
+}
+
+class BirthWizardTerminalUi {
+  private title = 'collab agent birth';
+  private stepTitle?: string;
+  private stepSubtitle?: string;
+  private stepNumber?: number;
+  private latestThought?: { provider: string; title: string; body?: string };
+  private latestInterview?: { provider: string; message: string };
+  private promptState?: BirthWizardPromptState;
+  private statusLines: Array<{ level: 'info' | 'warn' | 'error' | 'debug'; text: string }> = [];
+  private active = false;
+  private readonly input = process.stdin;
+  private readonly output = process.stdout;
+
+  start(): void {
+    if (this.active || !this.output.isTTY) {
+      return;
+    }
+
+    this.active = true;
+    this.output.write('\x1b[?1049h\x1b[2J\x1b[H');
+    this.render();
+  }
+
+  stop(): void {
+    if (!this.active || !this.output.isTTY) {
+      return;
+    }
+
+    this.output.write('\x1b[?1049l');
+    this.active = false;
+  }
+
+  setTitle(title: string): void {
+    this.title = title;
+    this.render();
+  }
+
+  setStep(current: number, title: string, subtitle?: string): void {
+    this.stepNumber = current;
+    this.stepTitle = title;
+    this.stepSubtitle = subtitle;
+    this.render();
+  }
+
+  setThought(provider: string, title: string, body?: string): void {
+    this.latestThought = { provider, title, body };
+    this.render();
+  }
+
+  setInterview(provider: string, message: string): void {
+    this.latestInterview = { provider, message };
+    this.render();
+  }
+
+  setPrompt(promptState: BirthWizardPromptState | undefined): void {
+    this.promptState = promptState;
+    this.render();
+  }
+
+  pushStatus(level: 'info' | 'warn' | 'error' | 'debug', text: string): void {
+    this.statusLines.push({ level, text });
+    if (this.statusLines.length > 4) {
+      this.statusLines = this.statusLines.slice(-4);
+    }
+    this.render();
+  }
+
+  createLogger(baseLogger?: Logger): Logger {
+    const ui = this;
+
+    return {
+      verbosity: baseLogger?.verbosity ?? 'normal',
+      info(message) {
+        ui.pushStatus('info', message);
+      },
+      debug(message) {
+        if ((baseLogger?.verbosity ?? 'normal') === 'verbose') {
+          ui.pushStatus('debug', message);
+        }
+      },
+      warn(message) {
+        ui.pushStatus('warn', message);
+      },
+      error(message) {
+        ui.pushStatus('error', message);
+      },
+      result(message) {
+        ui.pushStatus('info', message);
+      },
+      assistantThought(provider, title, body) {
+        if ((baseLogger?.verbosity ?? 'normal') !== 'quiet') {
+          ui.setThought(provider, title, body);
+        }
+      },
+      assistantMessage(provider, message) {
+        if ((baseLogger?.verbosity ?? 'normal') !== 'quiet') {
+          ui.setInterview(provider, message);
+        }
+      },
+      command(parts, options) {
+        baseLogger?.command(parts, options);
+      },
+      stageHeader(index, total, title) {
+        baseLogger?.stageHeader(index, total, title);
+      },
+      step(ok, message) {
+        baseLogger?.step(ok, message);
+      },
+      workflowHeader(workflow, mode) {
+        baseLogger?.workflowHeader(workflow, mode);
+      },
+      repoHeader(repoName, index, total) {
+        baseLogger?.repoHeader(repoName, index, total);
+      },
+      phaseHeader(title, subtitle) {
+        baseLogger?.phaseHeader(title, subtitle);
+      },
+      wizardStep(current, title, subtitle) {
+        if ((baseLogger?.verbosity ?? 'normal') !== 'quiet') {
+          ui.setStep(current, title, subtitle);
+        }
+      },
+      wizardIntro(title) {
+        if ((baseLogger?.verbosity ?? 'normal') !== 'quiet') {
+          ui.setTitle(title);
+        }
+      },
+      wizardOutro(message) {
+        ui.pushStatus('info', message);
+      },
+      summaryFooter(entries) {
+        baseLogger?.summaryFooter(entries);
+      },
+    };
+  }
+
+  createPromptAdapter(basePrompt: BirthPromptAdapter): BirthPromptAdapter {
+    const ui = this;
+
+    return {
+      async text(question, defaultValue) {
+        return ui.askText(question, defaultValue);
+      },
+      async choice(question, choices, defaultValue) {
+        return ui.askChoice(question, choices, defaultValue);
+      },
+      async multiSelect(question, choices, defaults) {
+        return basePrompt.multiSelect(question, choices, defaults);
+      },
+    };
+  }
+
+  private render(): void {
+    if (!this.active || !this.output.isTTY) {
+      return;
+    }
+
+    const width = Math.max((this.output.columns ?? 100) - 6, 40);
+    const rows = this.output.rows ?? 30;
+    const lines: string[] = [];
+
+    lines.push(`  ${bold(cyan('\u250c'))}  ${bold(this.title)}`);
+    lines.push('');
+    if (this.stepTitle) {
+      const subtitle = this.stepSubtitle ? ` ${dim('\u00b7')} ${dim(this.stepSubtitle)}` : '';
+      lines.push(`  ${dim('\u2502')}`);
+      lines.push(`  ${bold(cyan('\u25c6'))}  ${dim(`Step ${this.stepNumber ?? ''}`)} ${dim('\u00b7')} ${bold(this.stepTitle)}${subtitle}`.trimEnd());
+      lines.push(`  ${dim('\u2502')}`);
+      lines.push('');
+    }
+
+    const thoughtTitle = this.latestThought
+      ? `${this.latestThought.provider} Thought · ${this.latestThought.title}`
+      : 'Thought · Waiting for model reasoning';
+    lines.push(`  ${bold(cyan(thoughtTitle))}`);
+    const thoughtBodyLines = wrapTerminalLine(
+      this.latestThought?.body ?? 'The latest thought block will stay here and update in place.',
+      width,
+    );
+    for (const line of thoughtBodyLines) {
+      lines.push(`  ${dim('\u2502')}  ${line}`);
+    }
+    lines.push('');
+
+    const interviewTitle = this.latestInterview
+      ? `${this.latestInterview.provider} Interview`
+      : 'Wizard';
+    lines.push(`  ${bold(green(interviewTitle))}`);
+    const interviewBodyLines = wrapTerminalLine(
+      this.latestInterview?.message ?? 'The active question will stay anchored below.',
+      width,
+    );
+    for (const line of interviewBodyLines) {
+      lines.push(`  ${dim('\u2502')}  ${line}`);
+    }
+    lines.push('');
+
+    for (const status of this.statusLines) {
+      const marker =
+        status.level === 'warn'
+          ? yellow('Warning')
+          : status.level === 'error'
+            ? red('Error')
+            : status.level === 'debug'
+              ? dim('Debug')
+              : dim('Info');
+      for (const line of wrapTerminalLine(`${stripAnsi(marker)}: ${status.text}`, width)) {
+        lines.push(`  ${line}`);
+      }
+    }
+
+    const promptLines: string[] = [];
+    if (this.promptState) {
+      promptLines.push('');
+      promptLines.push(`  ${bold(green(this.promptState.question))}`);
+      for (const detail of this.promptState.details) {
+        for (const line of wrapTerminalLine(detail, width)) {
+          promptLines.push(`  ${line}`);
+        }
+      }
+      if (this.promptState.defaultValue && this.promptState.defaultValue.trim().length > 0) {
+        promptLines.push(`  ${dim(`Default: ${this.promptState.defaultValue}`)}`);
+      }
+      promptLines.push('');
+    }
+
+    const reservedLines = promptLines.length + 1;
+    const contentLines = lines.length;
+    const padding = Math.max(rows - contentLines - reservedLines, 0);
+    const frame = [...lines, ...Array.from({ length: padding }, () => ''), ...promptLines];
+
+    this.output.write('\x1b[2J\x1b[H');
+    this.output.write(frame.join('\n'));
+    if (!frame.at(-1)?.endsWith('\n')) {
+      this.output.write('\n');
+    }
+  }
+
+  private async askText(question: string, defaultValue?: string): Promise<string> {
+    this.setPrompt({
+      question,
+      details: [],
+      defaultValue,
+    });
+
+    const rl = readline.createInterface({
+      input: this.input,
+      output: this.output,
+    });
+
+    try {
+      const answer = await rl.question('  > ');
+      return answer || defaultValue || '';
+    } finally {
+      rl.close();
+      this.setPrompt(undefined);
+    }
+  }
+
+  private async askChoice<T extends string>(
+    question: string,
+    choices: readonly { value: T; label: string; description?: string }[],
+    defaultValue: T,
+  ): Promise<T> {
+    const defaultIndex = Math.max(
+      choices.findIndex((choice) => choice.value === defaultValue),
+      0,
+    );
+
+    while (true) {
+      const details = choices.map((choice, index) => {
+        const defaultMarker = index === defaultIndex ? ' (default)' : '';
+        const description = choice.description ? ` — ${choice.description}` : '';
+        return `${index + 1}. ${choice.label}${defaultMarker}${description}`;
+      });
+
+      this.setPrompt({
+        question,
+        details,
+        defaultValue: String(defaultIndex + 1),
+      });
+
+      const rl = readline.createInterface({
+        input: this.input,
+        output: this.output,
+      });
+
+      try {
+        const rawAnswer = (await rl.question('  > ')).trim();
+        const answer = rawAnswer.length === 0 ? String(defaultIndex + 1) : rawAnswer;
+        const numericIndex = Number(answer);
+
+        if (Number.isInteger(numericIndex) && numericIndex >= 1 && numericIndex <= choices.length) {
+          return choices[numericIndex - 1]!.value;
+        }
+
+        const matchedChoice = choices.find((choice) =>
+          choice.value === answer
+          || choice.label.toLowerCase() === answer.toLowerCase(),
+        );
+
+        if (matchedChoice) {
+          return matchedChoice.value;
+        }
+
+        this.pushStatus('warn', `Invalid selection "${answer}". Choose a number or option value.`);
+      } finally {
+        rl.close();
+        this.setPrompt(undefined);
+      }
+    }
+  }
 }
 
 function hasExplicitBirthInputs(input: AgentBootstrapInput): boolean {
@@ -615,65 +971,73 @@ export async function collectAgentBirthInteractiveInput(
   input: AgentBootstrapInput,
   dependencies: Partial<BirthWizardDependencies> = {},
 ): Promise<AgentBootstrapInput> {
-  const prompt = dependencies.prompt ?? defaultPromptAdapter();
-  const logger = dependencies.logger;
+  const terminalUi =
+    !dependencies.prompt && Boolean(dependencies.isInteractiveSession && process.stdin.isTTY && process.stdout.isTTY)
+      ? new BirthWizardTerminalUi()
+      : null;
+  terminalUi?.start();
+
+  const basePrompt = dependencies.prompt ?? defaultPromptAdapter();
+  const prompt = terminalUi ? terminalUi.createPromptAdapter(basePrompt) : basePrompt;
+  const logger = terminalUi ? terminalUi.createLogger(dependencies.logger) : dependencies.logger;
   const providerCliResolver = dependencies.providerCliResolver ?? detectProviderCli;
-  const resumeOutputDir = path.resolve(input.cwd, input.output ?? '.');
-  const dryRun = Boolean(dependencies.dryRun);
-  const draftAnswers =
-    input.forceMode === 'rebirth'
-      ? undefined
-      : (() => {
-          try {
-            return loadBirthWizardDraft(resumeOutputDir);
-          } catch (error) {
-            const message = error instanceof Error ? error.message : String(error);
-            logger?.warn(`Ignoring unreadable birth wizard draft. ${message}`);
-            return undefined;
-          }
-        })();
-  let workingSeed = mergeDraftAnswers(input, draftAnswers);
-  const output = workingSeed.output ?? '.';
-  let draftOutputDir = path.resolve(input.cwd, output);
-  let step = 0;
-  const draftState: AgentBirthWizardDraftAnswers = {
-    ...draftAnswers,
-    ...toDraftAnswers(workingSeed),
-  };
+  try {
+    const resumeOutputDir = path.resolve(input.cwd, input.output ?? '.');
+    const dryRun = Boolean(dependencies.dryRun);
+    const draftAnswers =
+      input.forceMode === 'rebirth'
+        ? undefined
+        : (() => {
+            try {
+              return loadBirthWizardDraft(resumeOutputDir);
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error);
+              logger?.warn(`Ignoring unreadable birth wizard draft. ${message}`);
+              return undefined;
+            }
+          })();
+    let workingSeed = mergeDraftAnswers(input, draftAnswers);
+    const output = workingSeed.output ?? '.';
+    let draftOutputDir = path.resolve(input.cwd, output);
+    let step = 0;
+    const draftState: AgentBirthWizardDraftAnswers = {
+      ...draftAnswers,
+      ...toDraftAnswers(workingSeed),
+    };
 
-  const persistDraft = (patch: AgentBirthWizardDraftAnswers): void => {
-    Object.assign(draftState, patch);
+    const persistDraft = (patch: AgentBirthWizardDraftAnswers): void => {
+      Object.assign(draftState, patch);
 
-  if (dryRun) {
-      return;
-    }
+      if (dryRun) {
+        return;
+      }
 
-    saveBirthWizardDraft(draftOutputDir, draftState);
-  };
+      saveBirthWizardDraft(draftOutputDir, draftState);
+    };
 
-  if (input.forceMode === 'rebirth') {
-    clearBirthWizardDraft(draftOutputDir);
-    logger?.info('Force mode enabled: restarting the birth wizard from scratch.');
-  } else if (draftAnswers) {
-    logger?.info(
-      `Resuming saved birth answers from ${buildBirthWizardDraftPath(draftOutputDir)}. Use --force rebirth to restart the wizard from scratch.`,
-    );
-  }
-
-  logger?.wizardIntro('collab agent birth');
-
-  logger?.wizardStep(++step, 'Workspace');
-  const outputDir = hasTextValue(workingSeed.output)
-    ? workingSeed.output
-    : await prompt.text('Output directory', output);
-  const resolvedOutputDir = path.resolve(input.cwd, outputDir);
-  if (resolvedOutputDir !== draftOutputDir) {
-    if (!dryRun) {
+    if (input.forceMode === 'rebirth') {
       clearBirthWizardDraft(draftOutputDir);
+      logger?.info('Force mode enabled: restarting the birth wizard from scratch.');
+    } else if (draftAnswers) {
+      logger?.info(
+        `Resuming saved birth answers from ${buildBirthWizardDraftPath(draftOutputDir)}. Use --force rebirth to restart the wizard from scratch.`,
+      );
     }
-    draftOutputDir = resolvedOutputDir;
-  }
-  persistDraft({ output: outputDir });
+
+    logger?.wizardIntro('collab agent birth');
+
+    logger?.wizardStep(++step, 'Workspace');
+    const outputDir = hasTextValue(workingSeed.output)
+      ? workingSeed.output
+      : await prompt.text('Output directory', output);
+    const resolvedOutputDir = path.resolve(input.cwd, outputDir);
+    if (resolvedOutputDir !== draftOutputDir) {
+      if (!dryRun) {
+        clearBirthWizardDraft(draftOutputDir);
+      }
+      draftOutputDir = resolvedOutputDir;
+    }
+    persistDraft({ output: outputDir });
 
   const wizardMode = dependencies.wizardMode ?? 'structured';
   const wizardPrevalidationResolver =
@@ -1036,32 +1400,35 @@ export async function collectAgentBirthInteractiveInput(
     : workingSeed.egressUrl;
   persistDraft({ egressUrl: parsedEgressUrls });
 
-  logger?.wizardOutro(`Birth answers captured for ${agentName || humanizeAgentSlug(agentSlug)}`);
+    logger?.wizardOutro(`Birth answers captured for ${agentName || humanizeAgentSlug(agentSlug)}`);
 
-  return {
-    ...workingSeed,
-    output: outputDir,
-    agentName,
-    agentSlug,
-    agentId,
-    scope,
-    operatorId,
-    selfRepository: repositories.selfRepository,
-    assignedRepositories: repositories.assignedRepositories.join(','),
-    provider,
-    providerAuthMethod,
-    model,
-    cognitiveMcpUrl,
-    cognitiveMcpApiKey,
-    redisUrl,
-    redisPassword,
-    telegramEnabled,
-    telegramBotToken,
-    telegramDefaultChatId,
-    telegramThreadId,
-    telegramAllowTopicCommands,
-    approvedNamespaces,
-    egressUrl: parsedEgressUrls,
-    birthProfile,
-  };
+    return {
+      ...workingSeed,
+      output: outputDir,
+      agentName,
+      agentSlug,
+      agentId,
+      scope,
+      operatorId,
+      selfRepository: repositories.selfRepository,
+      assignedRepositories: repositories.assignedRepositories.join(','),
+      provider,
+      providerAuthMethod,
+      model,
+      cognitiveMcpUrl,
+      cognitiveMcpApiKey,
+      redisUrl,
+      redisPassword,
+      telegramEnabled,
+      telegramBotToken,
+      telegramDefaultChatId,
+      telegramThreadId,
+      telegramAllowTopicCommands,
+      approvedNamespaces,
+      egressUrl: parsedEgressUrls,
+      birthProfile,
+    };
+  } finally {
+    terminalUi?.stop();
+  }
 }
