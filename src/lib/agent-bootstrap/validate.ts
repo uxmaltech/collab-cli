@@ -40,6 +40,15 @@ export function validateAgentBootstrapOptions(options: AgentBootstrapOptions): v
     ensureNonEmpty('Operator id', operatorId);
     ensureNoWhitespace('Operator id', operatorId);
   }
+  if (options.githubAppId.trim().length > 0) {
+    ensureNoWhitespace('GitHub App id', options.githubAppId);
+  }
+  if (options.githubAppInstallationId.trim().length > 0) {
+    ensureNoWhitespace('GitHub App installation id', options.githubAppInstallationId);
+  }
+  if (options.githubAppOwner.trim().length > 0) {
+    ensureNoWhitespace('GitHub App owner', options.githubAppOwner);
+  }
 
   if (!SLUG_PATTERN.test(options.agentSlug)) {
     throw new CliError(

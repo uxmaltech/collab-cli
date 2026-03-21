@@ -9,6 +9,11 @@ export interface AgentBootstrapCommandOptions {
   model?: string;
   providerAuth?: 'api-key' | 'cli';
   operatorId?: string;
+  githubAppId?: string;
+  githubAppInstallationId?: string;
+  githubAppOwner?: string;
+  githubAppOwnerType?: 'auto' | 'org' | 'user';
+  githubAppPrivateKeyPath?: string;
   telegramBotToken?: string;
   telegramDefaultChatId?: string;
   telegramThreadId?: string;

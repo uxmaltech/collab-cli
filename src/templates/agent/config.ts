@@ -163,6 +163,20 @@ export function agentConfigTemplate(options: AgentBootstrapOptions): string {
         [options.provider]: providerConfig,
       },
     },
+    github: {
+      app: {
+        id: options.githubAppId,
+        apiUrl: 'https://api.github.com',
+        installationId: options.githubAppInstallationId,
+        owner: options.githubAppOwner,
+        ownerType: options.githubAppOwnerType,
+        ...(options.githubAppPrivateKeyPath
+          ? { privateKeyPath: options.githubAppPrivateKeyPath }
+          : {}),
+        timeoutMs: 15000,
+        tokenRefreshSkewMs: 60000,
+      },
+    },
   };
 
   return JSON.stringify(payload, null, 2) + '\n';

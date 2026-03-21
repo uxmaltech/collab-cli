@@ -30,6 +30,11 @@ export interface AgentBootstrapInput {
   model?: string;
   providerAuthMethod?: AuthMethod;
   operatorId?: string;
+  githubAppId?: string;
+  githubAppInstallationId?: string;
+  githubAppOwner?: string;
+  githubAppOwnerType?: 'auto' | 'org' | 'user';
+  githubAppPrivateKeyPath?: string;
   cognitiveMcpUrl?: string;
   cognitiveMcpApiKey?: string;
   redisUrl?: string;
@@ -70,6 +75,11 @@ export interface AgentBootstrapOptions {
   model?: string;
   operatorId: string;
   operatorIds: string[];
+  githubAppId: string;
+  githubAppInstallationId: string;
+  githubAppOwner: string;
+  githubAppOwnerType: 'auto' | 'org' | 'user';
+  githubAppPrivateKeyPath: string;
   cognitiveMcpUrl: string;
   cognitiveMcpApiKey: string;
   redisUrl: string;

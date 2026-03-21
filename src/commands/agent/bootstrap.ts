@@ -116,6 +116,11 @@ export function registerAgentBootstrapCommand(program: Command): void {
     .option('--provider-auth <method>', 'Provider auth method: api-key|cli')
     .option('--model <model>', 'Default model for api-key providers; CLI transports use their own configuration')
     .option('--operator-id <id>', 'Stable operator identifiers, comma-separated with the primary operator first')
+    .option('--github-app-id <id>', 'GitHub App id used by the born agent')
+    .option('--github-app-installation-id <id>', 'GitHub App installation id used by the born agent')
+    .option('--github-app-owner <owner>', 'GitHub App owner login used by the born agent')
+    .option('--github-app-owner-type <type>', 'GitHub App owner type: auto|org|user')
+    .option('--github-app-private-key-path <path>', 'Path to the GitHub App private key PEM for the born agent')
     .option('--telegram-bot-token <token>', 'Telegram bot token used by the born agent')
     .option('--telegram-default-chat-id <id>', 'Telegram chat id for team summaries; requires --telegram-thread-id')
     .option('--telegram-thread-id <id>', 'Telegram thread id used for team summaries')
@@ -180,6 +185,23 @@ Examples:
         providerAuthMethod: getCliOptionValue(command, 'providerAuth', options.providerAuth),
         model: getCliOptionValue(command, 'model', options.model),
         operatorId: getCliOptionValue(command, 'operatorId', options.operatorId),
+        githubAppId: getCliOptionValue(command, 'githubAppId', options.githubAppId),
+        githubAppInstallationId: getCliOptionValue(
+          command,
+          'githubAppInstallationId',
+          options.githubAppInstallationId,
+        ),
+        githubAppOwner: getCliOptionValue(command, 'githubAppOwner', options.githubAppOwner),
+        githubAppOwnerType: getCliOptionValue(
+          command,
+          'githubAppOwnerType',
+          options.githubAppOwnerType,
+        ),
+        githubAppPrivateKeyPath: getCliOptionValue(
+          command,
+          'githubAppPrivateKeyPath',
+          options.githubAppPrivateKeyPath,
+        ),
         telegramBotToken: getCliOptionValue(
           command,
           'telegramBotToken',

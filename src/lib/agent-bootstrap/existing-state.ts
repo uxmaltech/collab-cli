@@ -6,6 +6,15 @@ import type { AgentBootstrapInput, AgentBirthProfile } from './types';
 
 interface ExistingAgentConfig {
   envFile?: string;
+  github?: {
+    app?: {
+      id?: string;
+      installationId?: string;
+      owner?: string;
+      ownerType?: 'auto' | 'org' | 'user';
+      privateKeyPath?: string;
+    };
+  };
   agent?: {
     id?: string;
     name?: string;
@@ -154,6 +163,16 @@ export function loadExistingAgentBootstrapInput(outputDir: string): Partial<Agen
   const telegramWebhookSecret = env.TELEGRAM_WEBHOOK_SECRET;
   const telegramWebhookBindHost = env.TELEGRAM_WEBHOOK_BIND_HOST;
   const telegramWebhookPort = env.TELEGRAM_WEBHOOK_PORT;
+  const githubAppId = env.COLLAB_RUNTIME_GITHUB_APP_ID || config.github?.app?.id;
+  const githubAppInstallationId =
+    env.COLLAB_RUNTIME_GITHUB_APP_INSTALLATION_ID || config.github?.app?.installationId;
+  const githubAppOwner =
+    env.COLLAB_RUNTIME_GITHUB_APP_OWNER || config.github?.app?.owner;
+  const githubAppOwnerType =
+    (env.COLLAB_RUNTIME_GITHUB_APP_OWNER_TYPE as AgentBootstrapInput['githubAppOwnerType'] | undefined)
+    || config.github?.app?.ownerType;
+  const githubAppPrivateKeyPath =
+    env.COLLAB_RUNTIME_GITHUB_APP_PRIVATE_KEY_PATH || config.github?.app?.privateKeyPath;
   return {
     output: outputDir,
     agentName: config.agent.name,
@@ -169,6 +188,11 @@ export function loadExistingAgentBootstrapInput(outputDir: string): Partial<Agen
     operatorId:
       config.agent.profiles?.operator?.ids?.join(',')
       || config.agent.profiles?.operator?.id,
+    githubAppId,
+    githubAppInstallationId,
+    githubAppOwner,
+    githubAppOwnerType,
+    githubAppPrivateKeyPath,
     cognitiveMcpUrl: config.agent.mcp?.cognitive?.serverUrl,
     cognitiveMcpApiKey:
       config.agent.mcp?.cognitive?.apiKeyEnvVar

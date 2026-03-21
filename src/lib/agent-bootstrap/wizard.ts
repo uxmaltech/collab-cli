@@ -576,6 +576,15 @@ function hasListValue(value: readonly string[] | undefined): value is readonly s
   return Array.isArray(value) && value.length > 0;
 }
 
+function inferGitHubOwnerFromRepository(repository: string | undefined): string | undefined {
+  if (!hasTextValue(repository)) {
+    return undefined;
+  }
+
+  const [owner] = repository.split('/');
+  return owner?.trim().length ? owner.trim() : undefined;
+}
+
 function mergeDraftAnswers(
   input: AgentBootstrapInput,
   draftAnswers: AgentBirthWizardDraftAnswers | undefined,
@@ -616,6 +625,11 @@ function toDraftAnswers(seed: AgentBootstrapInput): AgentBirthWizardDraftAnswers
     providerAuthMethod: seed.providerAuthMethod,
     model: seed.model,
     operatorId: seed.operatorId,
+    githubAppId: seed.githubAppId,
+    githubAppInstallationId: seed.githubAppInstallationId,
+    githubAppOwner: seed.githubAppOwner,
+    githubAppOwnerType: seed.githubAppOwnerType,
+    githubAppPrivateKeyPath: seed.githubAppPrivateKeyPath,
     cognitiveMcpUrl: seed.cognitiveMcpUrl,
     cognitiveMcpApiKey: seed.cognitiveMcpApiKey,
     redisUrl: seed.redisUrl,
@@ -689,7 +703,7 @@ function shouldResetDeterministicInterviewTranscript(
   }
 
   return transcript.some((message) =>
-    /(telegram|chat id|thread id|stable operator ids?|operator ids?)/i.test(message.content),
+    /(telegram|chat id|thread id|stable operator ids?|operator ids?|github app|installation id|private key path|self repo|self repository|assigned repositor|where will this agent|own code and configuration live|repository names)/i.test(message.content),
   );
 }
 
@@ -718,6 +732,21 @@ function normalizeConversationPatch(
     patch.operatorId = capture.operatorIds.join(',');
   } else if (hasTextValue(capture.operatorId)) {
     patch.operatorId = capture.operatorId;
+  }
+  if (hasTextValue(capture.githubAppId)) {
+    patch.githubAppId = capture.githubAppId;
+  }
+  if (hasTextValue(capture.githubAppInstallationId)) {
+    patch.githubAppInstallationId = capture.githubAppInstallationId;
+  }
+  if (hasTextValue(capture.githubAppOwner)) {
+    patch.githubAppOwner = capture.githubAppOwner;
+  }
+  if (capture.githubAppOwnerType) {
+    patch.githubAppOwnerType = capture.githubAppOwnerType;
+  }
+  if (hasTextValue(capture.githubAppPrivateKeyPath)) {
+    patch.githubAppPrivateKeyPath = capture.githubAppPrivateKeyPath;
   }
   if (hasTextValue(capture.selfRepository)) {
     patch.selfRepository = capture.selfRepository;
@@ -833,6 +862,11 @@ async function runConversationalBirthInterview(
             hasTextValue(current.operatorId)
               ? parseCsvList(current.operatorId)
               : undefined,
+          githubAppId: current.githubAppId,
+          githubAppInstallationId: current.githubAppInstallationId,
+          githubAppOwner: current.githubAppOwner,
+          githubAppOwnerType: current.githubAppOwnerType,
+          githubAppPrivateKeyPath: current.githubAppPrivateKeyPath,
           selfRepository: repositories?.selfRepository ?? current.selfRepository,
           assignedRepositories:
             repositories?.assignedRepositories
@@ -878,6 +912,11 @@ async function runConversationalBirthInterview(
           agentId: current.agentId,
           scope: current.scope,
           operatorId: current.operatorId,
+          githubAppId: current.githubAppId,
+          githubAppInstallationId: current.githubAppInstallationId,
+          githubAppOwner: current.githubAppOwner,
+          githubAppOwnerType: current.githubAppOwnerType,
+          githubAppPrivateKeyPath: current.githubAppPrivateKeyPath,
           provider:
             hasTextValue(current.provider)
             ? (current.provider.trim().toLowerCase() as ProviderKey)
@@ -1203,58 +1242,6 @@ export async function collectAgentBirthInteractiveInput(
     telegramWebhookPort,
   });
 
-  if (wizardMode === 'auto') {
-    const preferredProvider =
-      hasTextValue(workingSeed.provider)
-        ? (workingSeed.provider.trim().toLowerCase() as ProviderKey)
-        : 'gemini';
-    const prevalidation = wizardPrevalidationResolver(preferredProvider);
-
-    if (prevalidation.mode === 'conversational' && conversationAssistant) {
-      const initialTranscript = shouldResetDeterministicInterviewTranscript(
-        draftAnswers?.interviewTranscript ?? [],
-      )
-        ? []
-        : (draftAnswers?.interviewTranscript ?? []);
-      if (initialTranscript.length === 0 && (draftAnswers?.interviewTranscript?.length ?? 0) > 0) {
-        logger?.info(
-          'Resetting the saved conversational interview transcript because operator and Telegram routing are now collected deterministically by the wizard.',
-        );
-      }
-      workingSeed = await runConversationalBirthInterview(
-        {
-          ...workingSeed,
-          output: outputDir,
-          agentName,
-          agentSlug,
-          agentId,
-          scope,
-          operatorId,
-          telegramEnabled,
-          telegramBotToken,
-          telegramDefaultChatId,
-          telegramThreadId,
-          telegramAllowTopicCommands,
-          telegramWebhookPublicBaseUrl,
-          telegramWebhookSecret,
-          telegramWebhookBindHost,
-          telegramWebhookPort,
-        },
-        undefined,
-        prompt,
-        logger,
-        persistDraft,
-        conversationAssistant,
-        prevalidation,
-        ++step,
-        resolveBirthCollabDir(input, dependencies, outputDir),
-        initialTranscript,
-      );
-    } else {
-      logger?.info(prevalidation.reason);
-    }
-  }
-
   logger?.wizardStep(++step, 'Repositories', 'GitHub selection');
 
   const repositoryPicker =
@@ -1285,6 +1272,100 @@ export async function collectAgentBirthInteractiveInput(
     selfRepository: repositories.selfRepository,
     assignedRepositories: repositories.assignedRepositories.join(','),
   });
+
+  logger?.wizardStep(++step, 'GitHub App');
+  const githubAppOwner =
+    hasTextValue(workingSeed.githubAppOwner)
+      ? workingSeed.githubAppOwner.trim()
+      : inferGitHubOwnerFromRepository(repositories.selfRepository)
+        ?? agentSlug;
+  const githubAppOwnerType = workingSeed.githubAppOwnerType ?? 'auto';
+  const githubAppId = hasTextValue(workingSeed.githubAppId)
+    ? workingSeed.githubAppId.trim()
+    : await prompt.text(
+        'GitHub App id',
+        workingSeed.githubAppId ?? process.env.COLLAB_RUNTIME_GITHUB_APP_ID ?? '',
+      );
+  const githubAppInstallationId = hasTextValue(workingSeed.githubAppInstallationId)
+    ? workingSeed.githubAppInstallationId.trim()
+    : await prompt.text(
+        'GitHub App installation id',
+        workingSeed.githubAppInstallationId
+          ?? process.env.COLLAB_RUNTIME_GITHUB_APP_INSTALLATION_ID
+          ?? '',
+      );
+  const githubAppPrivateKeyPath = hasTextValue(workingSeed.githubAppPrivateKeyPath)
+    ? workingSeed.githubAppPrivateKeyPath.trim()
+    : await prompt.text(
+        'GitHub App private key path (optional)',
+        workingSeed.githubAppPrivateKeyPath
+          ?? process.env.COLLAB_RUNTIME_GITHUB_APP_PRIVATE_KEY_PATH
+          ?? '',
+      );
+  persistDraft({
+    githubAppId,
+    githubAppInstallationId,
+    githubAppOwner,
+    githubAppOwnerType,
+    githubAppPrivateKeyPath,
+  });
+
+  if (wizardMode === 'auto') {
+    const preferredProvider =
+      hasTextValue(workingSeed.provider)
+        ? (workingSeed.provider.trim().toLowerCase() as ProviderKey)
+        : 'gemini';
+    const prevalidation = wizardPrevalidationResolver(preferredProvider);
+
+    if (prevalidation.mode === 'conversational' && conversationAssistant) {
+      const initialTranscript = shouldResetDeterministicInterviewTranscript(
+        draftAnswers?.interviewTranscript ?? [],
+      )
+        ? []
+        : (draftAnswers?.interviewTranscript ?? []);
+      if (initialTranscript.length === 0 && (draftAnswers?.interviewTranscript?.length ?? 0) > 0) {
+        logger?.info(
+          'Resetting the saved conversational interview transcript because operator, GitHub App, and Telegram routing are now collected deterministically by the wizard.',
+        );
+      }
+      workingSeed = await runConversationalBirthInterview(
+        {
+          ...workingSeed,
+          output: outputDir,
+          agentName,
+          agentSlug,
+          agentId,
+          scope,
+          operatorId,
+          githubAppId,
+          githubAppInstallationId,
+          githubAppOwner,
+          githubAppOwnerType,
+          githubAppPrivateKeyPath,
+          telegramEnabled,
+          telegramBotToken,
+          telegramDefaultChatId,
+          telegramThreadId,
+          telegramAllowTopicCommands,
+          telegramWebhookPublicBaseUrl,
+          telegramWebhookSecret,
+          telegramWebhookBindHost,
+          telegramWebhookPort,
+        },
+        repositories,
+        prompt,
+        logger,
+        persistDraft,
+        conversationAssistant,
+        prevalidation,
+        ++step,
+        resolveBirthCollabDir(input, dependencies, outputDir),
+        initialTranscript,
+      );
+    } else {
+      logger?.info(prevalidation.reason);
+    }
+  }
 
   logger?.wizardStep(++step, 'Mission');
   const defaultRole = workingSeed.birthProfile?.personaRole?.trim() || `${humanizeAgentSlug(agentSlug)} lead`;
@@ -1444,6 +1525,11 @@ export async function collectAgentBirthInteractiveInput(
       agentId,
       scope,
       operatorId,
+      githubAppId,
+      githubAppInstallationId,
+      githubAppOwner,
+      githubAppOwnerType,
+      githubAppPrivateKeyPath,
       selfRepository: repositories.selfRepository,
       assignedRepositories: repositories.assignedRepositories.join(','),
       provider,

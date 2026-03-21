@@ -399,6 +399,7 @@ test('birth interview skill treats Telegram as required infrastructure', () => {
   const prompt = buildBirthInterviewSystemPrompt();
   assert.match(prompt, /Treat Telegram as required operational infrastructure/);
   assert.match(prompt, /Do not ask for operator ids, bot tokens, chat ids, thread ids/);
+  assert.match(prompt, /Do not ask for GitHub App ids, installation ids, owners, or private key paths/);
   assert.match(prompt, /Do not ask for raw secrets/);
 });
 
@@ -480,7 +481,7 @@ test('createBirthInterviewAssistant retries when Gemini asks for deterministic C
     const prompt = payload.contents[0].parts[0].text;
 
     if (callCount === 2) {
-      assert.match(prompt, /assistantMessage must not ask for operator ids, chat ids, thread ids, or bot tokens/i);
+      assert.match(prompt, /assistantMessage must not ask for operator ids, GitHub App identity fields, chat ids, thread ids, or bot tokens/i);
       assert.match(prompt, /capture\.operatorIds must not be emitted by the model/i);
       assert.match(prompt, /capture\.telegramThreadId must not be emitted by the model/i);
     }

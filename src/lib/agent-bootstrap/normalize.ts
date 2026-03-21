@@ -118,6 +118,9 @@ export function normalizeAgentBootstrapOptions(input: AgentBootstrapInput): Agen
     normalizeOperatorId,
   );
   const primaryOperatorId = operatorIds[0];
+  const inferredGitHubOwner = selfRepository.split('/')[0] ?? inferredSlug;
+  const githubAppOwner = input.githubAppOwner?.trim() || inferredGitHubOwner;
+  const githubAppOwnerType = input.githubAppOwnerType?.trim() || 'auto';
 
   const baseOptions = {
     cwd: input.cwd,
@@ -136,6 +139,23 @@ export function normalizeAgentBootstrapOptions(input: AgentBootstrapInput): Agen
         : input.model?.trim() || PROVIDER_DEFAULTS[providerValue].models[0] || providerValue,
     operatorId: primaryOperatorId,
     operatorIds,
+    githubAppId:
+      input.githubAppId?.trim()
+      || process.env.COLLAB_RUNTIME_GITHUB_APP_ID?.trim()
+      || '',
+    githubAppInstallationId:
+      input.githubAppInstallationId?.trim()
+      || process.env.COLLAB_RUNTIME_GITHUB_APP_INSTALLATION_ID?.trim()
+      || '',
+    githubAppOwner,
+    githubAppOwnerType:
+      githubAppOwnerType === 'org' || githubAppOwnerType === 'user'
+        ? githubAppOwnerType
+        : 'auto',
+    githubAppPrivateKeyPath:
+      input.githubAppPrivateKeyPath?.trim()
+      || process.env.COLLAB_RUNTIME_GITHUB_APP_PRIVATE_KEY_PATH?.trim()
+      || '',
     cognitiveMcpUrl,
     cognitiveMcpApiKey,
     redisUrl: input.redisUrl?.trim() || DEFAULT_REDIS_URL,

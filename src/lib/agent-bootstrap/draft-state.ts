@@ -14,6 +14,11 @@ export interface AgentBirthWizardDraftAnswers {
   providerAuthMethod?: AuthMethod;
   model?: string;
   operatorId?: string;
+  githubAppId?: string;
+  githubAppInstallationId?: string;
+  githubAppOwner?: string;
+  githubAppOwnerType?: 'auto' | 'org' | 'user';
+  githubAppPrivateKeyPath?: string;
   cognitiveMcpUrl?: string;
   cognitiveMcpApiKey?: string;
   redisUrl?: string;

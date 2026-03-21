@@ -27,6 +27,11 @@ export interface BirthInterviewCapture {
   scope?: string;
   operatorId?: string;
   operatorIds?: string[];
+  githubAppId?: string;
+  githubAppInstallationId?: string;
+  githubAppOwner?: string;
+  githubAppOwnerType?: 'auto' | 'org' | 'user';
+  githubAppPrivateKeyPath?: string;
   selfRepository?: string;
   assignedRepositories?: string[];
   provider?: ProviderKey;
@@ -119,6 +124,11 @@ const PROFILE_ARRAY_FIELDS = [
 const FORBIDDEN_MODEL_KEYS = [
   'operatorId',
   'operatorIds',
+  'githubAppId',
+  'githubAppInstallationId',
+  'githubAppOwner',
+  'githubAppOwnerType',
+  'githubAppPrivateKeyPath',
   'telegramEnabled',
   'telegramDefaultChatId',
   'telegramThreadId',
@@ -128,6 +138,12 @@ const FORBIDDEN_MODEL_KEYS = [
   'TELEGRAM_THREAD_ID',
   'COGNITIVE_MCP_API_KEY',
   'REDIS_PASSWORD',
+  'COLLAB_RUNTIME_GITHUB_APP_ID',
+  'COLLAB_RUNTIME_GITHUB_APP_INSTALLATION_ID',
+  'COLLAB_RUNTIME_GITHUB_APP_OWNER',
+  'COLLAB_RUNTIME_GITHUB_APP_OWNER_TYPE',
+  'COLLAB_RUNTIME_GITHUB_APP_PRIVATE_KEY',
+  'COLLAB_RUNTIME_GITHUB_APP_PRIVATE_KEY_PATH',
   'GEMINI_API_KEY',
   'OPENAI_API_KEY',
   'XAI_API_KEY',
@@ -238,8 +254,8 @@ function validateBirthInterviewPayload(payload: ParsedObject): string[] {
 
   if (typeof assistantMessage !== 'string' || assistantMessage.trim().length === 0) {
     issues.push('assistantMessage must be a non-empty string.');
-  } else if (/(operator ids?|chat id|thread id|bot token)/i.test(assistantMessage)) {
-    issues.push('assistantMessage must not ask for operator ids, chat ids, thread ids, or bot tokens.');
+  } else if (/(operator ids?|chat id|thread id|bot token|github app|installation id|private key path)/i.test(assistantMessage)) {
+    issues.push('assistantMessage must not ask for operator ids, GitHub App identity fields, chat ids, thread ids, or bot tokens.');
   }
 
   if (missing !== undefined && !isStringArray(missing)) {
@@ -578,6 +594,16 @@ function toBirthInterviewCapture(value: unknown): BirthInterviewCapture {
     scope: toOptionalString(payload.scope),
     operatorId: toOptionalString(payload.operatorId),
     operatorIds: toFlexibleStringArray(payload.operatorIds),
+    githubAppId: toOptionalString(payload.githubAppId),
+    githubAppInstallationId: toOptionalString(payload.githubAppInstallationId),
+    githubAppOwner: toOptionalString(payload.githubAppOwner),
+    githubAppOwnerType:
+      payload.githubAppOwnerType === 'org' || payload.githubAppOwnerType === 'user'
+        ? payload.githubAppOwnerType
+        : payload.githubAppOwnerType === 'auto'
+          ? 'auto'
+          : undefined,
+    githubAppPrivateKeyPath: toOptionalString(payload.githubAppPrivateKeyPath),
     selfRepository: toOptionalString(payload.selfRepository),
     assignedRepositories: toFlexibleStringArray(payload.assignedRepositories),
     provider: toOptionalProviderKey(payload.provider),
@@ -650,7 +676,7 @@ function buildDraftPrompt(options: AgentBootstrapOptions): string {
         'Treat persona and soul as behavior-shaping instructions.',
         'Keep durable state behind agent.* and approved MCP boundaries.',
         'Mention the self repository and assigned repositories when relevant.',
-        'Do not emit operator ids, Telegram routing fields, env vars, or secret placeholders. The CLI owns those values.',
+        'Do not emit operator ids, GitHub App identity fields, Telegram routing fields, env vars, or secret placeholders. The CLI owns those values.',
       ],
       input: {
         agentName: options.agentName,
@@ -666,6 +692,10 @@ function buildDraftPrompt(options: AgentBootstrapOptions): string {
         operatorNamespaces: options.operatorNamespaces,
         cognitiveMcpUrl: options.cognitiveMcpUrl,
         egressUrls: options.egressUrls,
+        githubAppId: options.githubAppId,
+        githubAppInstallationId: options.githubAppInstallationId,
+        githubAppOwner: options.githubAppOwner,
+        githubAppOwnerType: options.githubAppOwnerType,
         existingBirthProfile: options.birthProfile,
       },
     },
@@ -692,6 +722,11 @@ function buildInterviewPrompt(
           agentSlug: 'string?',
           agentId: 'string?',
           scope: 'string?',
+          githubAppId: 'string?',
+          githubAppInstallationId: 'string?',
+          githubAppOwner: 'string?',
+          githubAppOwnerType: '"auto" | "org" | "user"?',
+          githubAppPrivateKeyPath: 'string?',
           selfRepository: 'string?',
           assignedRepositories: ['string'],
           provider: '"codex" | "claude" | "gemini" | "copilot"?',
@@ -723,9 +758,9 @@ function buildInterviewPrompt(
         'Do not ask for a model if providerAuthMethod is cli or provider is copilot.',
         'Treat Telegram as required operational infrastructure for the agent birth.',
         'Do not ask for raw secrets such as bot tokens or API keys. The CLI will collect them locally.',
-        'Do not emit operator ids, Telegram routing fields, or any env/config variables in capture. The CLI owns those values.',
-        'Treat role, purpose, soul, and durable boundaries as the highest-priority gaps.',
-        'Do not set status to complete until telegramEnabled and the operator roster are known.',
+        'Do not emit operator ids, GitHub App identity fields, Telegram routing fields, or any env/config variables in capture. The CLI owns those values.',
+        'Treat role, purpose, soul, durable boundaries, and GitHub lifecycle as the highest-priority gaps.',
+        'Do not set status to complete until telegramEnabled, the operator roster, and the GitHub App identity are known.',
         'Use safe defaults for low-risk fields when the user intent is already clear.',
         'When enough information exists to generate the birth package, set status to complete.',
       ],

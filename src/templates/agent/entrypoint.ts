@@ -79,6 +79,22 @@ function buildInspectPayload(workspaceDir) {
         operationalOutputMode: config.agent.notifications?.telegram?.operationalOutput?.mode || 'disabled',
         teamSummaryMode: config.agent.notifications?.telegram?.teamSummary?.mode || 'disabled',
       },
+      githubApp: {
+        id: process.env.COLLAB_RUNTIME_GITHUB_APP_ID || config.github?.app?.id || '',
+        installationId:
+          process.env.COLLAB_RUNTIME_GITHUB_APP_INSTALLATION_ID
+          || config.github?.app?.installationId
+          || '',
+        owner: process.env.COLLAB_RUNTIME_GITHUB_APP_OWNER || config.github?.app?.owner || '',
+        ownerType:
+          process.env.COLLAB_RUNTIME_GITHUB_APP_OWNER_TYPE
+          || config.github?.app?.ownerType
+          || 'auto',
+        privateKeyPath:
+          process.env.COLLAB_RUNTIME_GITHUB_APP_PRIVATE_KEY_PATH
+          || config.github?.app?.privateKeyPath
+          || '',
+      },
     },
   };
 }

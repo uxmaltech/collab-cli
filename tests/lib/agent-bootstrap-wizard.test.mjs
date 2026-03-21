@@ -27,6 +27,18 @@ function telegramResponse(result) {
 }
 
 function defaultWizardTextAnswer(question) {
+  if (question === 'GitHub App id') {
+    return '123456';
+  }
+
+  if (question === 'GitHub App installation id') {
+    return '999999';
+  }
+
+  if (question === 'GitHub App private key path (optional)') {
+    return '';
+  }
+
   if (question === 'TELEGRAM_WEBHOOK_PUBLIC_BASE_URL') {
     return '';
   }
@@ -215,6 +227,10 @@ test('collectAgentBirthInteractiveInput maps wizard answers into canonical boots
   assert.equal(input.agentSlug, 'iot-development-agent');
   assert.equal(input.scope, 'anystream.iot');
   assert.equal(input.operatorId, 'operator.telegram.130149339,operator.github.enrique');
+  assert.equal(input.githubAppId, '123456');
+  assert.equal(input.githubAppInstallationId, '999999');
+  assert.equal(input.githubAppOwner, 'anystream');
+  assert.equal(input.githubAppOwnerType, 'auto');
   assert.equal(input.selfRepository, 'anystream/iot-development-agent');
   assert.equal(input.assignedRepositories, 'anystream/iot-platform,anystream/iot-firmware');
   assert.equal(input.provider, 'gemini');
@@ -546,6 +562,9 @@ test('collectAgentBirthInteractiveInput uses conversational birth mode when auto
           assert.equal(currentState.agentName, 'AnyStream IoT Development Agent');
           assert.equal(currentState.scope, 'anystream.iot');
           assert.equal(currentState.operatorIds?.join(','), 'operator.telegram.130149339');
+          assert.equal(currentState.githubAppId, '123456');
+          assert.equal(currentState.githubAppInstallationId, '999999');
+          assert.equal(currentState.githubAppOwner, 'anystream');
           assert.equal(currentState.telegramEnabled, true);
           assert.equal(currentState.telegramThreadId, '12');
           assert.equal(transcript.length, 1);
@@ -580,7 +599,10 @@ test('collectAgentBirthInteractiveInput uses conversational birth mode when auto
       repositoryPicker: {
         async pickRepositories() {
           repositoryPickerCalls += 1;
-          throw new Error('repository picker should not run when the conversational interview already captured repos');
+          return {
+            selfRepository: 'anystream/iot-development-agent',
+            assignedRepositories: ['anystream/iot-platform'],
+          };
         },
       },
       providerCliResolver() {
@@ -651,6 +673,9 @@ test('collectAgentBirthInteractiveInput uses conversational birth mode when auto
   assert.equal(input.providerAuthMethod, 'cli');
   assert.equal(input.model, undefined);
   assert.equal(input.operatorId, 'operator.telegram.130149339');
+  assert.equal(input.githubAppId, '123456');
+  assert.equal(input.githubAppInstallationId, '999999');
+  assert.equal(input.githubAppOwner, 'anystream');
   assert.equal(input.selfRepository, 'anystream/iot-development-agent');
   assert.equal(input.assignedRepositories, 'anystream/iot-platform');
   assert.equal(input.birthProfile?.personaRole, 'Senior IoT Development Agent');
@@ -659,7 +684,7 @@ test('collectAgentBirthInteractiveInput uses conversational birth mode when auto
   assert.equal(input.telegramEnabled, true);
   assert.equal(input.telegramBotToken, 'telegram-token');
   assert.equal(conversationTurns, 1);
-  assert.equal(repositoryPickerCalls, 0);
+  assert.equal(repositoryPickerCalls, 1);
   assert.ok(logs.some((line) => line.includes('Gemini interview')));
   assert.equal(promptedTexts.includes('Agent name'), true);
   assert.equal(promptedTexts.includes('Default provider'), false);
@@ -674,6 +699,9 @@ test('collectAgentBirthInteractiveInput uses conversational birth mode when auto
     'TELEGRAM_BOT_TOKEN',
     'TELEGRAM_WEBHOOK_PUBLIC_BASE_URL',
     'TELEGRAM_WEBHOOK_SECRET (optional)',
+    'GitHub App id',
+    'GitHub App installation id',
+    'GitHub App private key path (optional)',
     'Cognitive MCP API key (optional)',
     'Redis password',
   ]);
@@ -771,6 +799,9 @@ test('collectAgentBirthInteractiveInput resumes saved answers and skips complete
   assert.deepEqual(promptedTexts, [
     'TELEGRAM_WEBHOOK_PUBLIC_BASE_URL',
     'TELEGRAM_WEBHOOK_SECRET (optional)',
+    'GitHub App id',
+    'GitHub App installation id',
+    'GitHub App private key path (optional)',
     'Redis URL',
     'Cognitive MCP API key (optional)',
     'Redis password',
@@ -882,6 +913,9 @@ test('collectAgentBirthInteractiveInput re-prompts operators when the saved draf
     'Additional operators (comma-separated, optional)',
     'TELEGRAM_WEBHOOK_PUBLIC_BASE_URL',
     'TELEGRAM_WEBHOOK_SECRET (optional)',
+    'GitHub App id',
+    'GitHub App installation id',
+    'GitHub App private key path (optional)',
     'Cognitive MCP API key (optional)',
     'Redis password',
     'Approved namespaces (comma-separated)',
@@ -960,8 +994,13 @@ test('collectAgentBirthInteractiveInput resumes a saved conversational interview
       conversationAssistant: {
         async planTurn(_preferredProvider, currentState, transcript) {
           conversationTurns += 1;
-          assert.equal(transcript.at(-1)?.role, 'user');
-          assert.equal(transcript.at(-1)?.content, 'https://github.com/anystream/iot-development-agent');
+          assert.equal(transcript.at(-1)?.role, 'assistant');
+          assert.match(transcript.at(-1)?.content ?? '', /I will define the birth of this agent/);
+          assert.equal(currentState.selfRepository, 'anystream/iot-development-agent');
+          assert.deepEqual(currentState.assignedRepositories, [
+            'anystream/iot-websocket-relay',
+            'anystream/balena-ws-player',
+          ]);
           return {
             status: 'complete',
             assistantMessage: 'I have enough to finish the birth package.',
@@ -984,7 +1023,10 @@ test('collectAgentBirthInteractiveInput resumes a saved conversational interview
       repositoryPicker: {
         async pickRepositories() {
           repositoryPickerCalls += 1;
-          throw new Error('repository picker should not run when interview transcript already captured repository answers');
+          return {
+            selfRepository: 'anystream/iot-development-agent',
+            assignedRepositories: ['anystream/iot-websocket-relay', 'anystream/balena-ws-player'],
+          };
         },
       },
       providerCliResolver() {
@@ -1023,11 +1065,13 @@ test('collectAgentBirthInteractiveInput resumes a saved conversational interview
   );
 
   assert.equal(conversationTurns, 1);
-  assert.equal(repositoryPickerCalls, 0);
+  assert.equal(repositoryPickerCalls, 1);
   assert.deepEqual(promptedTexts, [
     'TELEGRAM_WEBHOOK_PUBLIC_BASE_URL',
     'TELEGRAM_WEBHOOK_SECRET (optional)',
-    'Your answer',
+    'GitHub App id',
+    'GitHub App installation id',
+    'GitHub App private key path (optional)',
     'Cognitive MCP API key (optional)',
     'Redis password',
   ]);
@@ -1040,7 +1084,7 @@ test('collectAgentBirthInteractiveInput resumes a saved conversational interview
   assert.equal(input.redisUrl, 'redis://localhost:6379');
   assert.deepEqual(input.egressUrl, ['*']);
   assert.ok(logs.some((line) => line.includes('Resuming saved birth answers')));
-  assert.ok(logs.some((line) => line.includes("Where will this agent's own code and configuration live?")));
+  assert.ok(logs.some((line) => line.includes('Resetting the saved conversational interview transcript')));
 });
 
 test('collectAgentBirthInteractiveInput resets stale conversational transcript entries for Telegram and operators', async (t) => {
